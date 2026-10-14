@@ -104,9 +104,14 @@ def _reader_sintetico(levels, shape=(3, 4)):
     r.index, r.cache = {}, {}
     r.lats = np.linspace(-10, 10, shape[0])
     r.lons = np.linspace(-60, -30, shape[1])
-    r.grid = {"ni": shape[1], "nj": shape[0]}
+    r.grid = {"grid_type": "regular_ll", "ni": shape[1], "nj": shape[0],
+              "lat_first": float(r.lats[-1]), "lon_first": float(r.lons[0]),
+              "lat_last": float(r.lats[0]), "lon_last": float(r.lons[-1]),
+              "di": float(r.lons[1] - r.lons[0]), "dj": float(r.lats[1] - r.lats[0]),
+              "j_positive": 0}
     run = dt.datetime(2026, 10, 13, 12, tzinfo=dt.timezone.utc)
     r.steps = [GribStep("6", run, run + dt.timedelta(hours=6))]
+    r._compute_windows()
     r.levels = sorted(levels, reverse=True)
     r.variables = ["u", "v", "t"]
     for lv in levels:

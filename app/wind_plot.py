@@ -49,9 +49,24 @@ except Exception:  # pragma: no cover - depende del entorno
 SPEED_CMAP = ListedColormap(SPEED_COLORS)
 SPEED_NORM = BoundaryNorm(SPEED_BINS + [10000], ncolors=len(SPEED_COLORS))
 
-# Colores del mapa (fondo oscuro estilo pantalla ATC)
-MAP_BG = "#000000"
-MAP_AX_BG = "#060606"
+# Paleta por defecto del mapa (fondo oscuro estilo pantalla ATC). La ventana
+# la reemplaza con los colores del tema vía WindPlot.set_palette(). Los
+# colores de los datos (escala de barbas, contornos de temperatura) no son
+# de la interfaz y no cambian con el tema.
+DEFAULT_PALETTE = {
+    "bg": "#000000",         # fondo de la figura
+    "ax_bg": "#060606",      # fondo de los ejes
+    "text": "#e8e8e8",       # títulos, etiquetas, leyenda
+    "text_dim": "#aaaaaa",   # textos secundarios y spines
+    "coast": "#c8c8c8",      # costas
+    "border": "#8c8c8c",     # fronteras
+    "grid": "#5a5a5a",       # meridianos/paralelos cada 10°
+    "grid_fine": "#333333",  # grilla fina del archivo
+    "legend_bg": "#111111",  # fondo de la leyenda
+    "warn": "#ff9966",       # avisos sobre el mapa
+}
+TEMP_CONTOUR = "#ff5cf0"       # contornos de temperatura (dato, no tema)
+TEMP_LABEL = "#ffb3f7"
 
 
 # ---------------------------------------------------------------------------
@@ -62,7 +77,8 @@ class WindPlot:
     dibuja barbas, contornos, leyenda y grilla sobre un fondo oscuro."""
 
     def __init__(self, master=None):
-        self.fig = Figure(figsize=(9, 7), dpi=100, facecolor=MAP_BG)
+        self.pal = dict(DEFAULT_PALETTE)
+        self.fig = Figure(figsize=(9, 7), dpi=100, facecolor=self.pal["bg"])
         self.canvas = FigureCanvasQTAgg(self.fig)
         if master is not None:
             self.canvas.setParent(master)
@@ -87,12 +103,20 @@ class WindPlot:
 
     def _style_axes(self):
         ax = self.ax
-        ax.set_facecolor(MAP_AX_BG)
+        self.fig.set_facecolor(self.pal["bg"])
+        ax.set_facecolor(self.pal["ax_bg"])
         for sp in ax.spines.values():
-            sp.set_edgecolor("#666666")
-        ax.tick_params(colors="#dddddd", labelsize=8)
-        ax.xaxis.label.set_color("#dddddd")
-        ax.yaxis.label.set_color("#dddddd")
+            sp.set_edgecolor(self.pal["text_dim"])
+        ax.tick_params(colors=self.pal["text"], labelsize=8)
+        ax.xaxis.label.set_color(self.pal["text"])
+        ax.yaxis.label.set_color(self.pal["text"])
+
+    def set_palette(self, **colors):
+        """Reemplaza colores de la paleta (claves de DEFAULT_PALETTE). El
+        cambio se ve en el próximo draw()/draw_empty()."""
+        for k, v in colors.items():
+            if k in self.pal and v:
+                self.pal[k] = v
 
     def _tr(self):
         """kwargs de transformación para cartopy (vacío sin cartopy)."""
@@ -127,7 +151,7 @@ class WindPlot:
         self.has_data = False
         self._base_map()
         self.ax.text(0.5, 0.5, message, transform=self.ax.transAxes, ha="center",
-                     va="center", color="#aaaaaa", fontsize=12)
+                     va="center", color=self.pal["text_dim"], fontsize=12)
         if self.use_cartopy:
             self.ax.set_global()
         self.canvas.draw_idle()
@@ -140,9 +164,9 @@ class WindPlot:
             return
         try:
             coast = cfeature.NaturalEarthFeature("physical", "coastline", "50m",
-                                                 edgecolor="#c8c8c8", facecolor="none")
+                                                 edgecolor=self.pal["coast"], facecolor="none")
             borders = cfeature.NaturalEarthFeature("cultural", "admin_0_boundary_lines_land",
-                                                   "50m", edgecolor="#8c8c8c",
+                                                   "50m", edgecolor=self.pal["border"],
                                                    facecolor="none")
             # Fuerza la descarga/lectura de los shapefiles ahora
             list(coast.geometries())
@@ -163,12 +187,12 @@ class WindPlot:
                 self.ax.text(0.99, 0.99,
                              "No se pudieron cargar las costas de Natural Earth "
                              f"(¿sin conexión?): {self._features_error}",
-                             transform=self.ax.transAxes, color="#ff9966", fontsize=7,
+                             transform=self.ax.transAxes, color=self.pal["warn"], fontsize=7,
                              ha="right", va="top", zorder=10, wrap=True)
         else:
             self.ax.set_aspect("equal", adjustable="box")
             self.ax.text(0.99, 0.99, "cartopy no instalado: mapa sin costas ni fronteras",
-                         transform=self.ax.transAxes, color="#ff9966", fontsize=7,
+                         transform=self.ax.transAxes, color=self.pal["warn"], fontsize=7,
                          ha="right", va="top", zorder=10)
 
     def _gridlines(self, lons, lats, fine):
@@ -180,33 +204,34 @@ class WindPlot:
             gl = self.ax.gridlines(crs=self.proj, draw_labels=True,
                                    xlocs=mticker.MultipleLocator(10),
                                    ylocs=mticker.MultipleLocator(10),
-                                   color="#5a5a5a", linewidth=0.6, linestyle="--", zorder=2)
+                                   color=self.pal["grid"], linewidth=0.6, linestyle="--", zorder=2)
             gl.top_labels = False
             gl.right_labels = False
-            gl.xlabel_style = {"color": "#dddddd", "size": 8}
-            gl.ylabel_style = {"color": "#dddddd", "size": 8}
+            gl.xlabel_style = {"color": self.pal["text"], "size": 8}
+            gl.ylabel_style = {"color": self.pal["text"], "size": 8}
             if fine:
                 self.ax.gridlines(crs=self.proj, draw_labels=False,
                                   xlocs=mticker.MultipleLocator(dlon),
                                   ylocs=mticker.MultipleLocator(dlat),
-                                  color="#333333", linewidth=0.4, zorder=1)
+                                  color=self.pal["grid_fine"], linewidth=0.4, zorder=1)
         else:
             self.ax.xaxis.set_major_locator(mticker.MultipleLocator(10))
             self.ax.yaxis.set_major_locator(mticker.MultipleLocator(10))
             self.ax.xaxis.set_minor_locator(mticker.MultipleLocator(dlon))
             self.ax.yaxis.set_minor_locator(mticker.MultipleLocator(dlat))
-            self.ax.grid(True, which="major", color="#5a5a5a", linewidth=0.6, linestyle="--")
+            self.ax.grid(True, which="major", color=self.pal["grid"], linewidth=0.6, linestyle="--")
             if fine:
-                self.ax.grid(True, which="minor", color="#333333", linewidth=0.4)
+                self.ax.grid(True, which="minor", color=self.pal["grid_fine"], linewidth=0.4)
             self.ax.set_xlabel("Longitud")
             self.ax.set_ylabel("Latitud")
 
     def _legend(self):
         handles = [Line2D([0], [0], color=c, lw=3) for c in SPEED_COLORS]
         leg = self.ax.legend(handles, SPEED_LABELS, loc="lower left", fontsize=7,
-                             title="Viento (kt)", title_fontsize=8, facecolor="#111111",
-                             edgecolor="#777777", labelcolor="#eeeeee", framealpha=0.85)
-        leg.get_title().set_color("#eeeeee")
+                             title="Viento (kt)", title_fontsize=8, facecolor=self.pal["legend_bg"],
+                             edgecolor=self.pal["text_dim"], labelcolor=self.pal["text"],
+                             framealpha=0.85)
+        leg.get_title().set_color(self.pal["text"])
         leg.set_zorder(20)
 
     # -------------------------------------------------------------- draw
@@ -264,10 +289,10 @@ class WindPlot:
                 tmax = math.ceil(float(tc.max()) / 2.0) * 2.0
                 levels = np.arange(tmin, tmax + 0.1, 2.0)
                 if len(levels) >= 2:
-                    cs = ax.contour(X, Y, tc, levels=levels, colors="#ff5cf0",
+                    cs = ax.contour(X, Y, tc, levels=levels, colors=TEMP_CONTOUR,
                                     linewidths=0.7, linestyles="solid", zorder=4, **tr)
                     try:
-                        ax.clabel(cs, fmt="%d", fontsize=7, colors="#ffb3f7", inline=True)
+                        ax.clabel(cs, fmt="%d", fontsize=7, colors=TEMP_LABEL, inline=True)
                     except Exception:
                         pass
 
@@ -288,7 +313,7 @@ class WindPlot:
             for j in range(nj):
                 for i in range(ni):
                     parts = []
-                    col = "#dddddd"
+                    col = self.pal["text"]
                     if spd_s is not None and not np.ma.is_masked(spd_s[j, i]):
                         s_val = float(spd_s[j, i])
                         parts.append(f"{s_val:.0f}")
@@ -309,10 +334,10 @@ class WindPlot:
         self._gridlines(lons, lats, opts.get("grid", False))
         if draw_wind:
             self._legend()
-        ax.set_title(opts.get("title", ""), color="#e8e8e8", fontsize=10, loc="left")
+        ax.set_title(opts.get("title", ""), color=self.pal["text"], fontsize=10, loc="left")
         if not show_wind:
             ax.text(0.99, 0.01, "Capa de datos deshabilitada", transform=ax.transAxes,
-                    ha="right", va="bottom", color="#ff9966", fontsize=8, zorder=10)
+                    ha="right", va="bottom", color=self.pal["warn"], fontsize=8, zorder=10)
 
         # Extensión
         extent = opts.get("extent")

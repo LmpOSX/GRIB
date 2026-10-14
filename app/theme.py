@@ -649,11 +649,6 @@ QStatusBar {{
     font-size: {h2}px;
 }}
 QStatusBar::item {{ border: none; }}
-#MapPanel {{
-    background: {bg_dlg};
-    border-radius: 10px;
-    border: none;
-}}
 QScrollArea {{
     background: transparent;
     border: none;

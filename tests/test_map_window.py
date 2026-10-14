@@ -1,0 +1,299 @@
+# -*- coding: utf-8 -*-
+"""Tests offscreen de la ventana con mapa (Fase 3): cambiar nivel, paso,
+variable u opciones redibuja sobre un GribReader sintético; exportaciones;
+hover; recuadro; capa de datos; Escape."""
+import csv
+import os
+import tempfile
+import unittest
+
+os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
+
+from PyQt6.QtWidgets import QApplication, QMessageBox  # noqa: E402
+
+from app import config  # noqa: E402
+from app.dialogs import glass_dialog  # noqa: E402
+from tests.test_grib_reader import _reader_sintetico  # noqa: E402
+
+glass_dialog._apply_dialog_blur = lambda w: None
+
+_app = QApplication.instance() or QApplication([])
+
+
+class _MapBase(unittest.TestCase):
+    def setUp(self):
+        from app.main_window import MainWindow
+        self._tmp = tempfile.TemporaryDirectory()
+        self._old_cfg_path = config.CONFIG_PATH
+        config.CONFIG_PATH = os.path.join(self._tmp.name, "config.json")
+        self.w = MainWindow()
+        self.w.show()
+        _app.processEvents()
+        # Contador de redibujos
+        self.draws = []
+        orig = self.w.plot.draw
+
+        def counted(*a, **k):
+            self.draws.append(k.get("opts") or (a[5] if len(a) > 5 else None))
+            return orig(*a, **k)
+        self.w.plot.draw = counted
+        self.reader = _reader_sintetico([850, 700, 500, 300, 200], shape=(5, 6))
+        self.reader.path = os.path.join(self._tmp.name, "sintetico.grib2")
+        self.w.load_reader(self.reader, self.reader.path)
+        _app.processEvents()
+
+    def tearDown(self):
+        self.w.close()
+        self.w.deleteLater()
+        _app.processEvents()
+        config.CONFIG_PATH = self._old_cfg_path
+        self._tmp.cleanup()
+
+
+class TestCargaYRedibujo(_MapBase):
+    def test_carga_muestra_mapa(self):
+        self.assertEqual(len(self.draws), 1)
+        self.assertTrue(self.w._main_area.isVisible())
+        self.assertFalse(self.w._welcome.isVisible())
+        self.assertIn("sintetico.grib2", self.w.windowTitle())
+        self.assertIn("NIVELES (hPa): 850, 700, 500, 300, 200",
+                      self.w.inventory.toPlainText())
+        self.assertTrue(self.w._act_export_csv.isEnabled())
+        self.assertIn("RUN:   12:00 13/10 UTC", self.w.panel.lbl_run.text())
+        self.assertIn("F300 = 300.9 hPa", self.w.panel.lbl_level.text())
+        self.assertIn("interpolado en ln(p) entre 500 y 300", self.w.panel.lbl_level.text())
+        self.assertIn("VALIDITY [18:00–21:00] UTC", self.w.panel.lbl_valid_utc.text())
+
+    def test_boton_de_nivel_redibuja(self):
+        self.w.panel._fl_buttons[100].click()
+        self.assertEqual(len(self.draws), 2)
+        self.assertEqual(self.w.panel.sel_fl, 100)
+        self.assertEqual(self.w.panel.level_mode, "fl")
+        self.assertIn("F100 = 696.8 hPa", self.w.panel.lbl_level.text())
+        self.assertIn("F100 (697 hPa) interp. 700/500 hPa", self.draws[-1]["title"])
+
+    def test_extrapolado_en_status(self):
+        # F530 = 100.4 hPa queda por encima del nivel más alto (200 hPa)
+        self.w.panel._fl_buttons[530].click()
+        self.assertIn("extrapolado / nivel más cercano: 200 hPa",
+                      self.w.panel.lbl_level.text())
+        self.assertIn("nivel más cercano 200 hPa", self.draws[-1]["title"])
+        # F050 = 843 hPa está dentro de 850–200: se interpola, no se extrapola
+        self.w.panel._fl_buttons[50].click()
+        self.assertIn("interpolado en ln(p) entre 850 y 700 hPa",
+                      self.w.panel.lbl_level.text())
+        # Con un archivo cuyo nivel más bajo es 700 hPa, F050 sí extrapola
+        r = _reader_sintetico([700, 500, 300])
+        r.path = self.reader.path
+        self.w.load_reader(r, r.path)
+        self.assertIn("extrapolado / nivel más cercano: 700 hPa",
+                      self.w.panel.lbl_level.text())
+
+    def test_combo_de_presion_sin_interpolar(self):
+        self.w.panel.cb_press.setCurrentIndex(2)      # 700 hPa
+        self.assertEqual(len(self.draws), 2)
+        self.assertEqual(self.w.panel.level_mode, "p")
+        self.assertEqual(self.w.panel.sel_p, 700.0)
+        self.assertIn("LEVEL: 700 hPa (nivel del archivo)", self.w.panel.lbl_level.text())
+        self.assertFalse(any(b.isChecked() for b in self.w.panel._fl_buttons.values()))
+        # Volver a FL: el combo vuelve a "(interpolar por FL)"
+        self.w.panel._fl_buttons[300].click()
+        self.assertEqual(self.w.panel.level_mode, "fl")
+        self.assertEqual(self.w.panel.cb_press.currentIndex(), 0)
+        self.assertEqual(len(self.draws), 3)
+
+    def test_paso_redibuja(self):
+        import datetime as dt
+        from app.grib_reader import GribStep
+        run = self.reader.steps[0].run
+        self.reader.steps = [GribStep(str(h), run, run + dt.timedelta(hours=h))
+                             for h in (6, 9, 12)]
+        self.reader._compute_windows()
+        for h in (9, 12):
+            idx = (h - 6) // 3
+            for var in ("u", "v", "t"):
+                for lv in self.reader.levels:
+                    self.reader.index[(idx, var, lv)] = object()
+                    self.reader.cache[(idx, var, lv)] = self.reader.cache[(0, var, lv)]
+        self.w.load_reader(self.reader, self.reader.path)
+        n = len(self.draws)
+        self.assertFalse(self.w.panel._steps_row.isVisible())   # 3 pasos: sin combo
+        self.w.panel.rb_time[1].click()
+        self.assertEqual(len(self.draws), n + 1)
+        self.assertEqual(self.w.panel.step_index(), 1)
+        self.assertIn("STEP:  [1] +9 h", self.w.panel.lbl_step.text())
+        self.assertIn("VALIDITY [21:00–00:00] UTC", self.w.panel.lbl_valid_utc.text())
+
+    def test_mas_de_tres_pasos_muestra_combo(self):
+        import datetime as dt
+        from app.grib_reader import GribStep
+        run = self.reader.steps[0].run
+        self.reader.steps = [GribStep(str(h), run, run + dt.timedelta(hours=h))
+                             for h in (3, 6, 9, 12)]
+        self.reader._compute_windows()
+        for idx in range(1, 4):
+            for var in ("u", "v", "t"):
+                for lv in self.reader.levels:
+                    self.reader.index[(idx, var, lv)] = object()
+                    self.reader.cache[(idx, var, lv)] = self.reader.cache[(0, var, lv)]
+        self.w.load_reader(self.reader, self.reader.path)
+        _app.processEvents()
+        self.assertTrue(self.w.panel._steps_row.isVisibleTo(self.w.panel))
+        n = len(self.draws)
+        self.w.panel.cb_steps.setCurrentIndex(3)
+        self.assertEqual(len(self.draws), n + 1)
+        self.assertEqual(self.w.panel.step_index(), 3)
+        self.assertFalse(any(rb.isChecked() for rb in self.w.panel.rb_time))
+
+    def test_variable_y_opciones_redibujan(self):
+        n = len(self.draws)
+        self.w.panel.rb_var[1].click()                      # Temperatura
+        self.assertEqual(len(self.draws), n + 1)
+        self.assertEqual(self.draws[-1]["mode"], "temperatura")
+        self.w.panel.chk_extra.click()
+        self.assertEqual(len(self.draws), n + 2)
+        self.assertTrue(self.draws[-1]["extra_info"])
+        self.w.panel.chk_grid.click()
+        self.w.panel.chk_fill.click()
+        self.assertEqual(len(self.draws), n + 4)
+        self.w.panel.spin_stride.setValue(2)
+        self.assertEqual(len(self.draws), n + 5)
+        self.assertEqual(self.draws[-1]["stride"], 2)
+        self.w.panel.btn_update.click()
+        self.assertEqual(len(self.draws), n + 6)
+
+    def test_capa_de_datos(self):
+        n = len(self.draws)
+        self.w.panel.btn_disable.click()
+        self.assertEqual(len(self.draws), n + 1)
+        self.assertFalse(self.draws[-1]["show_wind"])
+        self.assertEqual(self.w.panel.btn_disable.text(), "Enable")
+        self.assertFalse(self.w._act_layer.isChecked())
+        self.assertIn("DESHABILITADA", self.w.panel.lbl_level.text())
+        self.w.toggle_layer()
+        self.assertTrue(self.draws[-1]["show_wind"])
+        self.assertEqual(self.w.panel.btn_disable.text(), "Disable")
+
+    def test_tema_redibuja_con_paleta(self):
+        n = len(self.draws)
+        self.w._apply_theme("#5B8C5A")
+        self.assertEqual(len(self.draws), n + 1)
+        from app.theme import generate_palette
+        self.assertEqual(self.w.plot.pal["bg"], generate_palette("#5B8C5A")["bg_data"].name())
+
+
+class TestRecuadroYCursor(_MapBase):
+    def test_recuadro_y_todo_el_dominio(self):
+        self.w.apply_extent(-55.0, -40.0, -8.0, 2.0)
+        self.w.plot.canvas.draw()            # emite draw_event → entradas del recuadro
+        _app.processEvents()
+        self.assertEqual(self.w.panel.ent_lonmin.text(), "-55.00")
+        self.assertEqual(self.w.panel.ent_latmax.text(), "2.00")
+        self.w.full_extent()
+        self.w.plot.canvas.draw()
+        _app.processEvents()
+        self.assertEqual(self.w.panel.ent_lonmin.text(), "-60.00")
+        self.assertEqual(self.w.panel.ent_latmin.text(), "-10.00")
+
+    def test_recuadro_desde_el_panel(self):
+        p = self.w.panel
+        p.ent_latmin.setText("-9"); p.ent_latmax.setText("1")
+        p.ent_lonmin.setText("-58"); p.ent_lonmax.setText("-35")
+        p._apply_extent()
+        ext = self.w.plot.get_extent()
+        self.assertAlmostEqual(ext[0], -58.0, places=3)
+        self.assertAlmostEqual(ext[3], 1.0, places=3)
+
+    def test_recuadro_invalido_avisa(self):
+        avisos = []
+        old = QMessageBox.warning
+        QMessageBox.warning = staticmethod(lambda *a, **k: avisos.append(a[2]))
+        try:
+            p = self.w.panel
+            p.ent_latmin.setText("5"); p.ent_latmax.setText("1")
+            p._apply_extent()
+        finally:
+            QMessageBox.warning = old
+        self.assertEqual(len(avisos), 1)
+
+    def test_texto_del_cursor(self):
+        lats, lons = self.reader.lats, self.reader.lons
+        txt = self.w.cursor_text(float(lons[2]), float(lats[1]))
+        self.assertIn(f"punto ({lats[1]:.2f}, {lons[2]:.2f})", txt)
+        self.assertIn("Viento", txt)
+        self.assertIn("°C", txt)
+        txt_fuera = self.w.cursor_text(100.0, 80.0)
+        self.assertNotIn("punto", txt_fuera)
+
+    def test_escape_sale_del_modo_zoom(self):
+        self.w._map_zoom()
+        self.assertTrue(self.w._btn_zoom.isChecked())
+        self.w._on_escape()
+        self.assertFalse(self.w._btn_zoom.isChecked())
+        self.assertEqual(self.w._toolbar_mode(), "NONE")
+        self.w._map_pan()
+        self.assertTrue(self.w._btn_pan.isChecked())
+        self.w._on_escape()
+        self.assertFalse(self.w._btn_pan.isChecked())
+
+
+class TestExportar(_MapBase):
+    def test_nombre_por_defecto(self):
+        self.assertEqual(self.w._default_name("png"), "sintetico_paso0_F300.png")
+        self.w.panel.cb_press.setCurrentIndex(1)
+        self.assertEqual(self.w._default_name("csv"), "sintetico_paso0_850hPa.csv")
+
+    def test_csv(self):
+        path = os.path.join(self._tmp.name, "salida.csv")
+        self.w.write_csv(path)
+        with open(path, newline="", encoding="utf-8") as fh:
+            rows = list(csv.reader(fh))
+        nj, ni = len(self.reader.lats), len(self.reader.lons)
+        self.assertEqual(len(rows), 4 + nj * ni)
+        self.assertEqual(rows[3], ["lat", "lon", "u_ms", "v_ms", "velocidad_kt",
+                                   "direccion_deg", "t_c"])
+        self.assertEqual(rows[2][3], "FL interpolado")
+        first = rows[4]
+        self.assertEqual(first[0], f"{self.reader.lats[0]:.3f}")
+        self.assertEqual(first[1], f"{self.reader.lons[0]:.3f}")
+        self.assertTrue(float(first[4]) > 0)
+
+    def test_png(self):
+        path = os.path.join(self._tmp.name, "salida.png")
+        self.w.write_png(path)
+        self.assertTrue(os.path.getsize(path) > 1000)
+
+
+class TestCierreYValidacion(_MapBase):
+    def test_cerrar_archivo_vuelve_a_bienvenida(self):
+        self.w._file_close()
+        self.assertTrue(self.w._welcome.isVisible())
+        self.assertFalse(self.w._main_area.isVisible())
+        self.assertIsNone(self.w._reader)
+        self.assertEqual(self.w.windowTitle(), "Visor GRIB")
+        self.assertFalse(self.w._act_close.isEnabled())
+
+    def test_sin_viento_solo_temperatura(self):
+        r = _reader_sintetico([850, 700])
+        r.variables = ["t"]
+        old = QMessageBox.warning
+        QMessageBox.warning = staticmethod(lambda *a, **k: None)
+        try:
+            self.assertTrue(self.w._accept_reader(r))
+        finally:
+            QMessageBox.warning = old
+        self.assertEqual(self.w.panel.mode(), "temperatura")
+
+    def test_sin_datos_no_abre(self):
+        r = _reader_sintetico([850])
+        r.variables = []
+        old = QMessageBox.critical
+        QMessageBox.critical = staticmethod(lambda *a, **k: None)
+        try:
+            self.assertFalse(self.w._accept_reader(r))
+        finally:
+            QMessageBox.critical = old
+
+
+if __name__ == "__main__":
+    unittest.main()
