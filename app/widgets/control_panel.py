@@ -53,8 +53,8 @@ class ControlPanel(QWidget):
         frame = QFrame()
         frame.setObjectName("GlassPanel")
         lay = QVBoxLayout(frame)
-        lay.setContentsMargins(12, 6, 12, 8)
-        lay.setSpacing(4)
+        lay.setContentsMargins(10, 5, 10, 7)
+        lay.setSpacing(3)
         lbl = QLabel(title)
         lbl.setObjectName("PanelTitle")
         lay.addWidget(lbl)
@@ -70,9 +70,9 @@ class ControlPanel(QWidget):
         f = QFrame()
         f.setObjectName("PanelSep")
         f.setFixedHeight(1)
-        lay.addSpacing(2)
+        lay.addSpacing(1)
         lay.addWidget(f)
-        lay.addSpacing(2)
+        lay.addSpacing(1)
 
     @staticmethod
     def _sub(lay, text):
@@ -125,7 +125,7 @@ class ControlPanel(QWidget):
     def _build(self):
         self._root = QVBoxLayout(self)
         self._root.setContentsMargins(0, 0, 0, 0)
-        self._root.setSpacing(8)
+        self._root.setSpacing(6)
         self._build_status()
 
         # ── TIME ──
@@ -222,18 +222,18 @@ class ControlPanel(QWidget):
                                  "color por velocidad) o curvas (líneas de corriente)")
         self.cb_style.currentIndexChanged.connect(lambda _i: self._emit_if_live(self.options_changed))
         row.addWidget(self.cb_style, 1)
-        lay.addLayout(row)
-        row = QHBoxLayout()
-        row.addWidget(QLabel("Densidad: cada"))
+        row.addSpacing(6)
+        lbl = QLabel("cada")
+        lbl.setToolTip("Densidad: dibujar un punto de grilla cada N (en curvas baja la "
+                       "densidad de líneas)")
+        row.addWidget(lbl)
         self.spin_stride = QSpinBox()
         self.spin_stride.setRange(1, 10)
         self.spin_stride.setValue(1)
-        self.spin_stride.setToolTip("Dibujar un punto de grilla cada N (en curvas baja la "
-                                    "densidad de líneas)")
+        self.spin_stride.setToolTip(lbl.toolTip())
         self.spin_stride.valueChanged.connect(lambda _=0: self._emit_if_live(self.options_changed))
         row.addWidget(self.spin_stride)
-        row.addWidget(QLabel("puntos"))
-        row.addStretch()
+        row.addWidget(QLabel("pts"))
         lay.addLayout(row)
         self._sep(lay)
         self._sub(lay, "Capas adicionales")

@@ -87,7 +87,7 @@ class MainWindow(QMainWindow):
             return
         # El panel lateral crece con el tamaño de fuente para no cortarse
         scale = self._cfg.get("font_size", 13) / 13.0
-        self._side_scroll.setFixedWidth(int(PANEL_WIDTH * scale))
+        self._side.setFixedWidth(int(PANEL_WIDTH * scale))
         p = generate_palette(self._cfg["accent_color"])
         # Fuentes del mapa escaladas con el zoom de fuente (13 = tamaño base)
         plot.set_font_scale(self._cfg.get("font_size", 13) / 13.0)
@@ -223,23 +223,14 @@ class MainWindow(QMainWindow):
         self.plot.on_view_push = self._toolbar.push_current
         self._main_lay.addWidget(map_frame, 1)
 
-        # ── Panel derecho con scroll ──
-        scroll = QScrollArea()
-        scroll.setWidgetResizable(True)
-        scroll.setFixedWidth(PANEL_WIDTH)
-        scroll.setFrameShape(QFrame.Shape.NoFrame)
-        scroll.setHorizontalScrollBarPolicy(Qt.ScrollBarPolicy.ScrollBarAlwaysOff)
-        # El viewport del QScrollArea pinta el color Base del sistema aunque el
-        # stylesheet lo declare transparente, y tapa el desenfoque detrás de
-        # todo el panel: se desactiva el relleno automático.
-        scroll.viewport().setAutoFillBackground(False)
-        scroll.setAttribute(Qt.WidgetAttribute.WA_TranslucentBackground)
+        # ── Panel derecho, fijo (sólo el inventario se desplaza) ──
         side = QWidget()
+        side.setObjectName("SidePanel")
         side.setAutoFillBackground(False)
-        side.setMinimumWidth(0)
+        side.setFixedWidth(PANEL_WIDTH)
         side_lay = QVBoxLayout(side)
-        side_lay.setContentsMargins(0, 0, 4, 0)
-        side_lay.setSpacing(8)
+        side_lay.setContentsMargins(0, 0, 0, 0)
+        side_lay.setSpacing(6)
         self.plot.set_projection(self.panel.projection())
         side_lay.addWidget(self.panel)
         inv_frame = QFrame()
@@ -252,12 +243,11 @@ class MainWindow(QMainWindow):
         self.inventory = InventoryPanel()
         inv_lay.addWidget(self.inventory)
         side_lay.addWidget(inv_frame, 1)        # el inventario absorbe el alto que sobra
-        scroll.setWidget(side)
-        self._side_scroll = scroll
-        self._main_lay.addWidget(scroll)
+        self._side = side
+        self._main_lay.addWidget(side)
 
         # ── Señales del panel: cualquier cambio redibuja solo ──
-        self._side_scroll.setVisible(bool(self._cfg.get("panel_visible", True)))
+        self._side.setVisible(bool(self._cfg.get("panel_visible", True)))
         self.panel.step_changed.connect(lambda _i: self.redraw())
         self.panel.level_changed.connect(self.redraw)
         self.panel.variable_changed.connect(lambda _m: self.redraw())
@@ -294,22 +284,29 @@ class MainWindow(QMainWindow):
         bar = QFrame()
         bar.setObjectName("ActionBar")
         lay = QHBoxLayout(bar)
-        lay.setContentsMargins(8, 4, 8, 4)
-        lay.setSpacing(4)
+        lay.setContentsMargins(8, 5, 8, 5)
+        lay.setSpacing(6)
 
+        # Grupo «datos»: abrir, fuente y descarga
         open_btn = QPushButton("Abrir GRIB…")
         open_btn.setToolTip("Abrir un archivo GRIB2 (Ctrl+O)")
         open_btn.clicked.connect(self._file_open)
         lay.addWidget(open_btn)
-        lay.addWidget(self._action_sep())
+        # «Fuente» y su selector forman un solo control con borde
+        group = QFrame()
+        group.setObjectName("SourceGroup")
+        g_lay = QHBoxLayout(group)
+        g_lay.setContentsMargins(0, 0, 0, 0)
+        g_lay.setSpacing(0)
         lbl = QLabel("Fuente")
-        lay.addWidget(lbl)
+        g_lay.addWidget(lbl)
         self.cb_source = QComboBox()
         self.cb_source.setToolTip("Fuente de datos; se configura en Preferencias ▸ Fuentes. "
                                   "✓ FL = publica los niveles OACI por nivel de vuelo")
         self._refresh_sources_combo()
         self.cb_source.currentIndexChanged.connect(self._on_source_combo)
-        lay.addWidget(self.cb_source)
+        g_lay.addWidget(self.cb_source)
+        lay.addWidget(group)
         dl_btn = QPushButton("Obtener datos…")
         dl_btn.setToolTip("Elegir corrida, plazos, variables, niveles y zona de la fuente "
                           "y descargar (Ctrl+Shift+D)")
@@ -320,7 +317,7 @@ class MainWindow(QMainWindow):
         self._bar_file_area = QWidget()
         self._bar_file_lay = QHBoxLayout(self._bar_file_area)
         self._bar_file_lay.setContentsMargins(0, 0, 0, 0)
-        self._bar_file_lay.setSpacing(4)
+        self._bar_file_lay.setSpacing(6)
         self._bar_file_lay.addWidget(self._action_sep())
         self._build_file_actions(self._bar_file_lay)
         lay.addWidget(self._bar_file_area)
@@ -364,9 +361,9 @@ class MainWindow(QMainWindow):
     @staticmethod
     def _action_sep() -> QFrame:
         s = QFrame()
-        s.setFrameShape(QFrame.Shape.VLine)
+        s.setFrameShape(QFrame.Shape.NoFrame)
         s.setObjectName("ActionSep")
-        s.setFixedHeight(22)
+        s.setFixedSize(10, 22)
         return s
 
     def _build_file_actions(self, lay: QHBoxLayout):
@@ -468,7 +465,7 @@ class MainWindow(QMainWindow):
         """Muestra u oculta el panel lateral; el mapa ocupa el ancho que
         queda. Se guarda en la configuración."""
         visible = bool(visible)
-        self._side_scroll.setVisible(visible)
+        self._side.setVisible(visible)
         for w in (self._btn_panel, self._act_panel):
             w.blockSignals(True)
             w.setChecked(visible)

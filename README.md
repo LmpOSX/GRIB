@@ -229,8 +229,8 @@ El panel de la derecha agrupa los controles por pregunta: *qué miro*
 sección separa sus grupos con una línea fina y un subtítulo; nada impone
 ancho (los combos recortan el texto largo y el desplegable lo muestra
 entero), así que el panel nunca se corta ni necesita scroll horizontal.
-Tampoco necesita scroll vertical: el INVENTARIO absorbe el alto que sobra
-y se desplaza por dentro. El botón `▥` de la barra de acciones (o Vista ▸
+Tampoco tiene scroll: las secciones son fijas y sólo el INVENTARIO, que
+absorbe el alto que sobra, se desplaza por dentro (vertical y horizontal). El botón `▥` de la barra de acciones (o Vista ▸
 Panel lateral, ⌘⇧P) oculta el panel y el mapa ocupa todo el ancho; la
 elección se recuerda. La ventana arranca en 1600×1000 (o lo que entre en
 la pantalla) y recuerda tamaño y posición.
@@ -279,8 +279,15 @@ acciones globales `Actualizar` (F5) y `Ocultar capa` / `Mostrar capa`
 
 ### Barra de acciones y mapa
 
-`Abrir GRIB…`, `Inicio` (vista inicial), `Guardar PNG` y `⚙` (preferencias:
-color de acento y transparencia). El mapa se mueve arrastrándolo con el
+La barra de acciones tiene tres grupos del mismo alto, separados con
+aire: *datos* (`Abrir GRIB…`, el selector `Fuente` integrado en un solo
+control con borde, `Obtener datos…`), *mapa* (`Inicio`, `Actualizar`,
+`Ocultar capa`) y *salida* (`Guardar PNG`); a la derecha, `▥` (panel
+lateral) y `⚙` (preferencias). La franja STATUS y la barra de estado
+inferior usan un tamaño de letra fijo que no sigue ⌘ +/−. El mapa ocupa
+el área con márgenes justos para las etiquetas de lat/lon; el título
+(corrida, validez, nivel y variable) no se dibuja en pantalla, porque
+STATUS ya lo muestra, pero sí en el PNG exportado. El mapa se mueve arrastrándolo con el
 botón izquierdo (cursor de mano) y se acerca o aleja con la rueda del mouse
 alrededor del cursor; no hay modos ni botones de zoom/pan. La vista se
 conserva al cambiar paso, nivel, variable u opciones; `Inicio` o `Todo el

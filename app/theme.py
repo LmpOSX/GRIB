@@ -365,8 +365,33 @@ QGroupBox::title {{
     border-bottom: 1px solid {brd};
 }}
 #ActionSep {{
-    color: {brd};
-    margin: 0 2px;
+    /* separa grupos de la barra con aire, sin línea */
+    color: transparent;
+    background: transparent;
+    border: none;
+    min-width: 10px;
+    max-width: 10px;
+}}
+#ActionBar QPushButton, #ActionBar QComboBox {{
+    min-height: 20px;
+    max-height: 20px;
+    padding: 3px 12px;
+}}
+#SourceGroup {{
+    background: {bg2};
+    border: 1px solid {brd};
+    border-radius: 7px;
+}}
+#SourceGroup QLabel {{
+    color: {txd};
+    padding: 0 2px 0 10px;
+    font-weight: 500;
+}}
+#SourceGroup QComboBox {{
+    background: transparent;
+    border: none;
+    padding-left: 4px;
+    font-weight: 500;
 }}
 #SearchField {{
     background: {bg2};
@@ -610,6 +635,9 @@ QFrame#StatusStrip {{
     border: 1px solid {brd};
     border-radius: 10px;
 }}
+QFrame#StatusStrip QLabel#StatusMono {{
+    font-size: 13px;          /* fija: no sigue el zoom de fuente */
+}}
 QLabel#StatusMono {{
     font-family: "Menlo", "Consolas", "DejaVu Sans Mono", monospace;
     font-size: {h2}px;
@@ -687,7 +715,7 @@ QStatusBar {{
     border-top: 1px solid {brd};
     color: {txt};
     font-family: "Menlo", "Consolas", "DejaVu Sans Mono", monospace;
-    font-size: {h2}px;
+    font-size: 12px;          /* fija: no sigue el zoom de fuente */
 }}
 QStatusBar::item {{ border: none; }}
 QScrollArea {{

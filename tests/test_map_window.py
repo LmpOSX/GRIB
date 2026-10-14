@@ -297,15 +297,13 @@ class TestCargaYRedibujo(_MapBase):
     def test_panel_entra_en_el_ancho(self):
         """Nada del panel impone un ancho mayor que el área con scroll, ni
         con fuente grande; STATUS va en la franja pegada al mapa."""
-        side = self.w._side_scroll.widget()
+        side = self.w._side
         for size in (13, 18):
             vals = dict(self.w._cfg); vals["font_size"] = size
             self.w.apply_settings(vals)
             _app.processEvents()
-            self.assertLessEqual(side.minimumSizeHint().width(),
-                                 self.w._side_scroll.viewport().width(), size)
-            self.assertLessEqual(self.w.panel.minimumSizeHint().width(),
-                                 self.w._side_scroll.viewport().width(), size)
+            self.assertLessEqual(side.minimumSizeHint().width(), side.width(), size)
+            self.assertLessEqual(self.w.panel.minimumSizeHint().width(), side.width(), size)
         self.assertEqual(list(self.w.panel._sections), ["TIME", "LEVEL", "VARIABLE", "VIENTO", "MAPA"])
         self.assertIsNot(self.w.panel.status.parentWidget(), self.w.panel)
         self.assertTrue(self.w.panel.status.isVisible())
@@ -317,19 +315,22 @@ class TestCargaYRedibujo(_MapBase):
         w = self.w
         w.resize(1600, 1000)
         _app.processEvents()
-        side = w._side_scroll.widget()
-        self.assertLessEqual(side.minimumSizeHint().height(), w._side_scroll.viewport().height())
+        side = w._side
+        self.assertLessEqual(side.minimumSizeHint().height(), side.height())
+        self.assertLessEqual(side.minimumSizeHint().height(), 800)   # entra en una pantalla de 13"
+        from PyQt6.QtWidgets import QScrollArea
+        self.assertEqual(w.findChildren(QScrollArea), [])            # sólo el inventario se desplaza
         self.assertEqual(len(w.panel._fl_buttons), 16)
         map_w = w.plot.canvas.width()
         w._btn_panel.click()
         _app.processEvents()
-        self.assertFalse(w._side_scroll.isVisible())
+        self.assertFalse(w._side.isVisible())
         self.assertFalse(w._act_panel.isChecked())
         self.assertGreater(w.plot.canvas.width(), map_w)
         self.assertFalse(config.load_config()["panel_visible"])
         w._act_panel.trigger()
         _app.processEvents()
-        self.assertTrue(w._side_scroll.isVisible())
+        self.assertTrue(w._side.isVisible())
         self.assertTrue(w._btn_panel.isChecked())
         self.assertTrue(config.load_config()["panel_visible"])
 

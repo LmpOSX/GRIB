@@ -218,6 +218,7 @@ class WindPlot:
     def __init__(self, master=None):
         self.pal = dict(DEFAULT_PALETTE)
         self.font_scale = 1.0           # multiplicador de todas las fuentes del mapa
+        self._title = ""                # título del mapa (sólo en el PNG exportado)
         self.alpha = 1.0                # opacidad del fondo de la figura (0–1)
         self.fig = Figure(figsize=(9, 7), dpi=100, facecolor=self.pal["bg"])
         self.canvas = TranslucentCanvas(self.fig)
@@ -262,7 +263,7 @@ class WindPlot:
             self.ax = self.fig.add_subplot(1, 1, 1, projection=self.proj)
         else:
             self.ax = self.fig.add_subplot(1, 1, 1)
-        self.fig.subplots_adjust(left=0.045, right=0.995, top=0.955, bottom=0.055)
+        self._apply_margins()
         self._base_artists, self._gridliners = [], []
         self._static_artists, self._view_artists, self._label_artists = [], [], []
         self._base_key = None
@@ -326,6 +327,7 @@ class WindPlot:
         if abs(scale - self.font_scale) > 1e-6:
             self.font_scale = scale
             self._base_key = None       # etiquetas de la grilla con el tamaño nuevo
+            self._apply_margins()
 
     def set_opacity(self, alpha):
         """Opacidad del fondo de la figura y de los ejes (0 = transparente)."""
@@ -392,8 +394,30 @@ class WindPlot:
             cy = (y0 + y1) / 2.0
             ax.set_ylim(cy - new_h / 2.0, cy + new_h / 2.0)
 
+    def _apply_margins(self, with_title=False):
+        """Márgenes de la figura en píxeles (no en fracción): lo justo para
+        las etiquetas de lat/lon a la izquierda y abajo, y para el título
+        sólo cuando se exporta (en pantalla lo reemplaza la franja STATUS)."""
+        try:
+            w_in, h_in = self.fig.get_size_inches()
+            dpi = float(self.fig.dpi)
+            w, h = w_in * dpi, h_in * dpi
+        except Exception:
+            return
+        if w < 80 or h < 80:
+            return
+        s = max(0.8, self.font_scale)
+        left = 48.0 * s
+        right = 10.0
+        top = (34.0 * s) if with_title else 8.0
+        bottom = 28.0 * s
+        self.fig.subplots_adjust(left=left / w, right=1.0 - right / w,
+                                 top=1.0 - top / h, bottom=bottom / h)
+
     def _on_resize(self, _event):
-        """Al cambiar el tamaño del canvas se vuelve a llenar el área."""
+        """Al cambiar el tamaño del canvas se recalculan los márgenes y se
+        vuelve a llenar el área."""
+        self._apply_margins()
         if self.has_data and not self._in_draw:
             self._fit_view_to_box()
 
@@ -710,8 +734,9 @@ class WindPlot:
 
             if draw_wind:
                 self._static_artists.append(self._legend())
-            ax.set_title(opts.get("title", ""), color=self.pal["text"],
-                         fontsize=self._fs(10), loc="left", wrap=True)
+            # El título va sólo en el PNG exportado: en pantalla lo da STATUS
+            self._title = opts.get("title", "")
+            ax.set_title("")
             if not show_wind:
                 self._static_artists.append(ax.text(
                     0.99, 0.01, "Capa de datos deshabilitada", transform=ax.transAxes,
@@ -1062,8 +1087,16 @@ class WindPlot:
         fa, aa = self.fig.patch.get_alpha(), self.ax.patch.get_alpha()
         self.fig.patch.set_alpha(1.0)
         self.ax.patch.set_alpha(1.0)
+        title = getattr(self, "_title", "")
         try:
+            if title:
+                self.ax.set_title(title, color=self.pal["text"], fontsize=self._fs(10),
+                                  loc="left", wrap=True)
+                self._apply_margins(with_title=True)
             self.fig.savefig(path, dpi=dpi, facecolor=self.pal["bg"])
         finally:
+            if title:
+                self.ax.set_title("")
+                self._apply_margins()
             self.fig.patch.set_alpha(fa)
             self.ax.patch.set_alpha(aa)
