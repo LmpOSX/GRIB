@@ -731,12 +731,15 @@ class MainWindow(QMainWindow):
         if h is not None:
             line2 += f"  +{h:g} h"
         res = prov.get("resolucion_final")
+        lines = [line1, line2]
         if res:
             line2 += f"  ·  {res.replace('p', ',')}°"
+            lines[1] = line2
             if prov.get("regrillado"):
-                line2 += (f" desde {prov.get('resolucion_descargada', '?').replace('p', ',')}° "
-                          f"({prov['regrillado']})")
-        return line1 + "\n" + line2
+                # Tercer renglón corto: el panel tiene ancho fijo y no ajusta texto
+                lines.append(f"  desde {prov.get('resolucion_descargada', '?').replace('p', ',')}° "
+                             f"({prov['regrillado']})")
+        return "\n".join(lines)
 
     def set_projection(self, key: str):
         """Cambia la proyección del mapa (centrada en el dominio del archivo)

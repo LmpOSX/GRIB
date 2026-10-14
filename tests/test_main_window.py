@@ -432,6 +432,7 @@ class TestDialogoDescarga(_Base):
         self.assertIn("corrida 14/10 06Z", txt)
         self.assertIn("+6 h", txt)
         self.assertIn("(GFS)", txt)
-        self.assertIn("1,00° desde 0,25° (promedio)", txt)
+        self.assertIn("1,00°", txt)
+        self.assertIn("desde 0,25° (promedio)", txt)
 
 
