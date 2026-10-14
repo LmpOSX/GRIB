@@ -67,6 +67,13 @@ DEFAULTS = {
     "download_h_from": 6,
     "download_h_to": 12,
     "download_h_step": 3,
+    # Formato WAFS (formato interno único del visor)
+    "wafs_convert": True,               # convertir a WAFS lo que se descarga (fuentes de altura)
+    "wafs_convert_local": True,         # convertir también los archivos locales al abrirlos
+    "wafs_fl_min": 50,                  # rango de FL por defecto (FL050–FL530 = GFS 850–100 hPa)
+    "wafs_fl_max": 530,
+    "wafs_fl_extend": True,             # ampliar el rango si el origen cubre más niveles (hasta FL600)
+    "wafs_extrapolate": False,          # FL fuera del origen: omitir (False) o nivel más cercano
     # Motor de lectura: 'eccodes' (biblioteca Python) o 'wgrib2' (programa externo)
     "engine": "eccodes",
     "wgrib2_path": "",                  # vacío = buscar en el PATH

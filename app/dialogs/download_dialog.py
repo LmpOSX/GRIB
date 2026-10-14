@@ -23,9 +23,10 @@ class _Worker(QThread):
     progress = pyqtSignal(int, int, str, float)
     done = pyqtSignal(list, str)     # rutas escritas, mensaje de error ('' si ok)
 
-    def __init__(self, source, job, cache, parent=None):
+    def __init__(self, source, job, cache, parent=None, wafs=None):
         super().__init__(parent)
         self._src, self._job, self._cache = source, job, cache
+        self._wafs = wafs
         self._cancel = False
 
     def cancel(self):
@@ -34,7 +35,8 @@ class _Worker(QThread):
     def run(self):
         try:
             paths = self._src.download(self._job, progress_cb=self.progress.emit,
-                                       cancel=lambda: self._cancel, cache=self._cache)
+                                       cancel=lambda: self._cancel, cache=self._cache,
+                                       wafs=self._wafs)
             self.done.emit(paths, "")
         except DownloadCancelled:
             self.done.emit([], "cancelada")
@@ -404,6 +406,7 @@ class DownloadDialog(GlassDialog):
             region=region, dest_dir=self.dest.text().strip() or ".",
             basename=self.name.text().strip() or None, merge=self.chk_merge.isChecked(),
             params=self.params(),
+            suffix="_wafs" if (self._wafs_options() is not None and self.source.kind == "altura") else "",
         )
 
     # ── Descarga ─────────────────────────────────────────────────────────────
@@ -419,6 +422,11 @@ class DownloadDialog(GlassDialog):
             self._refresh_levels()
             self.btn_domain.setEnabled(self._domain_region is not None)
         self.btn_cancel.setText("Cancelar" if busy else "Cerrar")
+
+    def _wafs_options(self):
+        """Conversión a WAFS según Preferencias (None = desactivada)."""
+        from ..wafs_format import options_from_config
+        return options_from_config(self._cfg)
 
     def _cache(self):
         return DownloadCache(max_mb=float(self._cfg.get("cache_max_mb", 500)),
@@ -443,7 +451,7 @@ class DownloadDialog(GlassDialog):
         self._set_busy(True)
         self.progress.setValue(0)
         self.lbl_status.setText(f"Conectando con {self.source.name}…")
-        self._worker = _Worker(self.source, job, self._cache(), self)
+        self._worker = _Worker(self.source, job, self._cache(), self, wafs=self._wafs_options())
         self._worker.progress.connect(self._on_progress)
         self._worker.done.connect(self._on_done)
         self._worker.start()

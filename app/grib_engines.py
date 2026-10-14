@@ -216,6 +216,14 @@ class EccodesBackend:
                     msg.units = self._get(gid, "units", "", "str")
                     msg.type_of_level = self._get(gid, "typeOfLevel", "?", "str")
                     msg.level = self._get(gid, "level", None, "double")
+                    if msg.type_of_level in ("isobaricInhPa", "isobaricInPa"):
+                        # 'level' trunca a entero (843 para 84310 Pa): los niveles
+                        # WAFS (presión ISA de cada FL) necesitan el valor exacto
+                        scaled = self._get(gid, "scaledValueOfFirstFixedSurface", None, "long")
+                        factor = self._get(gid, "scaleFactorOfFirstFixedSurface", None, "long")
+                        if scaled is not None and factor is not None:
+                            pa = float(scaled) * 10.0 ** (-int(factor))
+                            msg.level = pa / 100.0 if msg.type_of_level == "isobaricInhPa" else pa
                     msg.step_range = str(self._get(gid, "stepRange", "0", "str"))
                     msg.end_step = self._get(gid, "endStep", None, "long")
                     msg.data_date = self._get(gid, "dataDate", None, "long")

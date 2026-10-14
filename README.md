@@ -8,6 +8,12 @@ Advanced), nivel de vuelo (F050…F530 convertido a presión ISA e interpolado
 en ln p), barbas coloreadas por velocidad, contornos de temperatura, "Extra
 Info", grilla, zoom/pan y exportación a PNG/CSV.
 
+El **formato interno único es el WAFS** (producto OACI de viento y
+temperatura en altura: niveles de vuelo cada 1000 ft codificados como la
+presión ISA en Pa). Todo lo que se descarga de una fuente de altura y todo
+archivo local en niveles de presión se convierte a ese formato antes de
+mostrarse, y lo cargado se puede exportar como WAFS (ver «Formato WAFS»).
+
 La interfaz usa la base gráfica compartida con otras apps del autor: ventana
 translúcida con desenfoque nativo en macOS (opaca en Windows/Linux), tema
 generado a partir de un color de acento, diálogos "glass", configuración
@@ -19,12 +25,14 @@ persistente, hoja de atajos, zoom de fuente y captura de errores a log.
 main.py                     arranque (QApplication, FileOpen de macOS, argv)
 app/
   grib_reader.py            lectura GRIB2 (ecCodes), inventario, cache, ISA, ln(p)
+  wafs_format.py            formato WAFS: tabla FL↔Pa, conversión, detección, validador, .idx, exportación, CLI
   wind_plot.py              mapa matplotlib (QtAgg) + cartopy opcional
   main_window.py            ventana principal: mapa, panel, menús, atajos
   config.py, theme.py, platform_blur.py, crash_guard.py, utils.py
   widgets/                  control_panel, inventory_panel, welcome_widget
-  dialogs/                  glass_dialog, settings_dialog, shortcuts_dialog, about_dialog
-tests/                      unittest (lector, ventana y mapa en offscreen)
+  dialogs/                  glass_dialog, settings_dialog, shortcuts_dialog, about_dialog, export_wafs_dialog
+tests/                      unittest (lector, ventana y mapa en offscreen); tests/data: caso de referencia WAFS
+docs/referencia/            make_wafs_like.py, conversor de referencia del formato WAFS
 docs/PLAN_PRUEBAS_2_0_0.md  plan de pruebas manual
 scripts/build.sh, setup.py  .app + DMG con py2app (macOS)
 ```
@@ -125,6 +133,14 @@ anterior; un 401/403 avisa que revises las credenciales). Lo bajado queda en
 una **caché local** (`~/Library/Caches/Visor GRIB/descargas` en macOS) y no
 se vuelve a pedir; el tamaño máximo y los días a conservar se fijan en
 Preferencias ▸ Descarga, donde también se vacía.
+
+Toda fuente **de altura** (GFS, ECMWF, ICON, genérica) pasa por el
+**conversor WAFS** después de bajar cada plazo y antes de escribir el
+archivo: el nombre lleva el sufijo `_wafs` y la procedencia anota el rango
+de FL, los niveles de origen y los FL omitidos o extrapolados. Lo que ya
+viene en WAFS (WIFS, un WAFS real) se detecta y no se reconvierte; las
+fuentes de superficie (SMN) no se tocan. Se desactiva en Preferencias ▸
+WAFS.
 
 Junto a cada archivo se escribe `archivo.grib2.json` con la **procedencia**
 (fuente, modelo, corrida, plazos, parámetros, resolución efectiva). Al
@@ -244,9 +260,10 @@ reordenan de sur a norte si el archivo viene de norte a sur.
 | Acción | macOS | Windows / Linux |
 |---|---|---|
 | Abrir GRIB… | ⌘ O | Ctrl O |
-| Descargar GFS… | ⌘ ⇧ D | Ctrl Shift D |
+| Obtener datos… | ⌘ ⇧ D | Ctrl Shift D |
 | Exportar PNG… | ⌘ E | Ctrl E |
 | Exportar CSV… | ⌘ ⇧ E | Ctrl Shift E |
+| Exportar a WAFS… | ⌘ ⇧ W | Ctrl Shift W |
 | Cerrar archivo | ⌘ W | Ctrl W |
 | Salir | ⌘ Q | Ctrl Q |
 | Todo el dominio | ⌘ ⇧ 0 | Ctrl Shift 0 |
@@ -270,10 +287,138 @@ recientes) se guarda en `config.json` junto al código en desarrollo y en
 (Windows) o `~/.config/Visor GRIB` (Linux) cuando está empaquetada. Los
 errores no controlados se registran en `errores.log` en la misma carpeta.
 
+## Formato WAFS
+
+El WAFS (World Area Forecast System) es el producto OACI de viento y
+temperatura en altura que producen los centros WAFC de Washington y Londres.
+El visor lo adopta como **formato interno único**: lee sólo WAFS, convierte
+a WAFS lo que baja y lo que abre, y exporta WAFS. Referencia: el código con
+el que NOAA produce el producto operativo,
+<https://github.com/NOAA-EMC/wafs> (`scripts/exwafs_grib2_0p25.sh` y las
+tablas en `fix/wafs/`).
+
+**Qué es un archivo WAFS**
+
+* GRIB2 en grilla regular lat/lon. El operativo es global a 0,25°
+  (1440×721, 90N→90S, 0→359,75); el formato admite cualquier recorte
+  regular, que es nuestro uso.
+* Variables UGRD, VGRD, TMP (obligatorias), HGT y RH (RH sólo FL050–FL180),
+  más campos 2D opcionales (viento máximo y tropopausa). Unidades K, m/s,
+  gpm y %. Viento referido al norte/este geográfico.
+* Niveles: **niveles de vuelo cada 1000 ft, FL050–FL600**, codificados como
+  superficie isobárica (tipo 100) a la **presión ISA del FL en Pa redondeada
+  a 0,1 hPa**. Por eso `wgrib2 -s` los lista como `843.1 mb`, `812 mb`,
+  `781.9 mb`…, y ecCodes muestra `level` truncado (843): el lector usa el
+  valor escalado exacto.
+* Plazos operativos: +6…+24 cada 1 h, +27…+48 cada 3 h, +54…+120 cada 6 h;
+  corridas 00/06/12/18. Nombre del producto: `gfs.tHHz.wafs_0p25.fFFF.grib2`.
+
+**Fórmula ISA** (la del conversor de referencia; reproduce exactamente los
+valores que figuran en las tablas de NCEP):
+
+```
+h = FL × 100 × 0,3048                              (m)
+h ≤ 11 000 m:  p = 101 325 · (1 − 2,25577e-5 · h)^5,25588        (troposfera)
+h > 11 000 m:  p = 22 632,06 · exp(−(h − 11 000) / 6 341,62)      (estratosfera isotérmica)
+Pa del nivel = round(p / 10) · 10
+```
+
+**Tabla FL ↔ Pa** (completa, FL000–FL600; en negrita los que NCEP lista
+literalmente):
+
+| FL | Pa | FL | Pa | FL | Pa | FL | Pa |
+|---|---|---|---|---|---|---|---|
+| FL000 | 101320 | FL160 | 54920 | FL320 | 27450 | **FL480** | **12770** |
+| FL010 | 97720 | FL170 | 52720 | FL330 | 26200 | FL490 | 12170 |
+| FL020 | 94210 | **FL180** | **50600** | **FL340** | **25000** | FL500 | 11600 |
+| FL030 | 90810 | FL190 | 48550 | FL350 | 23840 | FL510 | 11050 |
+| FL040 | 87510 | FL200 | 46560 | **FL360** | **22730** | FL520 | 10530 |
+| **FL050** | **84310** | FL210 | 44650 | FL370 | 21660 | **FL530** | **10040** |
+| FL060 | 81200 | FL220 | 42790 | FL380 | 20650 | FL540 | 9570 |
+| FL070 | 78190 | FL230 | 41000 | **FL390** | **19680** | FL550 | 9120 |
+| FL080 | 75260 | **FL240** | **39270** | FL400 | 18750 | FL560 | 8690 |
+| FL090 | 72430 | FL250 | 37600 | **FL410** | **17870** | FL570 | 8280 |
+| **FL100** | **69680** | FL260 | 35990 | FL420 | 17040 | FL580 | 7900 |
+| FL110 | 67020 | FL270 | 34430 | FL430 | 16240 | FL590 | 7520 |
+| FL120 | 64440 | FL280 | 32930 | FL440 | 15470 | FL600 | 7170 |
+| FL130 | 61940 | FL290 | 31480 | **FL450** | **14750** |  |  |
+| FL140 | 59520 | **FL300** | **30090** | FL460 | 14060 |  |  |
+| FL150 | 57180 | FL310 | 28740 | FL470 | 13400 |  |  |
+
+**Conversión** (`app/wafs_format.py`, sin interfaz; reestructura el
+conversor de referencia `docs/referencia/make_wafs_like.py` sin cambiar su
+aritmética: con las opciones por defecto reproduce byte a byte su salida):
+
+* Para cada plazo y variable se apilan los niveles de presión del origen y
+  se interpola **linealmente en ln(p)** a la presión ISA de cada FL.
+* FL fuera del rango de niveles del origen: se **omiten** (no se
+  extrapola); con «extrapolar» se usa el nivel más cercano y queda anotado
+  en la procedencia (`wafs.extrapolados`) y en el log de la descarga.
+* Rango configurable (Preferencias ▸ WAFS): por defecto FL050–FL530, lo que
+  cubre el GFS entre 850 y 100 hPa; «ampliar» lo extiende hacia abajo si el
+  origen trae niveles por debajo de 850 hPa y hacia arriba (hasta FL600) si
+  trae niveles por encima de 100 hPa. RH se limita a FL180.
+* Se conservan corrida, plazo, grilla, empaquetado y centro del origen
+  (cada mensaje es un clon del original con el nivel cambiado); la
+  procedencia (`.json` junto al archivo) registra fuente, modelo y archivo
+  original. Los mensajes que no están en niveles de presión se descartan,
+  salvo los campos 2D del WAFS, que pasan tal cual.
+* Un archivo que ya está en WAFS (todos sus niveles isobáricos son
+  presiones ISA de FL enteros, tolerancia 10 Pa) se detecta y no se toca.
+* Dónde actúa: en la descarga (cada plazo, antes de escribir; sufijo
+  `_wafs`), al **abrir un archivo local** en niveles de presión (se escribe
+  `<nombre>_wafs.grib2` con su `.json` y `.idx` junto al original, o en la
+  caché si la carpeta no es escribible, y se abre ese), en la exportación si
+  lo cargado todavía no es WAFS, y por línea de comandos:
+
+```bash
+python -m app.wafs_format entrada.grib2 salida.grib2 [--fl-min 50 --fl-max 530] \
+    [--sin-extender] [--extrapolar] [--tabla 25] [--centro N] [--sin-idx]
+python -m app.wafs_format --validar archivo.grib2
+```
+
+En el visor, con un WAFS abierto cada botón de FL cae en un **nivel exacto
+del archivo** (STATUS: `LEVEL: F300 = 30090 Pa (WAFS, nivel exacto)`), el
+combo «Nivel de presión» lista los 49 niveles como `FL300 · 300.9 hPa`, el
+inventario dice `FORMATO: WAFS …` y FUENTE agrega `WAFS FL050–FL530
+(convertido)`.
+
+**Exportar a WAFS…** (Archivo, ⌘⇧W) toma lo cargado y escribe GRIB2 WAFS:
+todos los plazos y niveles o una selección (plazos, rango de FL), sólo
+UGRD/VGRD/TMP o todas las variables, recorte geográfico opcional (el
+recuadro visible como valor inicial), regrillado bilineal a 0,25° (como el
+operativo) o a 1,00° (para el FDP), un archivo por plazo con el nombre
+`gfs.tHHz.wafs_0p25.fFFF.grib2` (prefijo del modelo editable) o un único
+archivo multi-plazo, `tablesVersion 25` en los mensajes y el inventario
+`.idx` (formato `wgrib2 -s`: `1:0:d=2026101318:TMP:843.1 mb:6 hour fcst:`)
+junto a cada archivo. Al terminar **reabre lo escrito** y comprueba cantidad
+de mensajes, niveles y que los valores coincidan con lo que había en
+memoria dentro de la precisión del empaquetado; el resultado se muestra
+junto con los avisos del validador.
+
+**Validador** (`validate_wafs`, usado por la conversión, la exportación y
+`--validar`): niveles = presión ISA de FL enteros (tolerancia 10 Pa),
+variables y unidades esperadas, RH sólo hasta FL180, grilla regular lat/lon
+única, viento en componentes geográficas (`uvRelativeToGrid = 0`),
+UGRD/VGRD/TMP presentes en cada plazo. **Avisa, no bloquea.**
+
+**Qué reproduce y qué no respecto del producto oficial.** El WAFS operativo
+sale de los niveles del modelo (híbridos) vía UPP, con interpolación
+vertical propia y regrillado bilineal a 0,25°; el nuestro sale de los
+niveles de presión publicados (GFS 850–100 hPa cada 50 hPa, o cada 25 con
+los intermedios), así que habrá pequeñas diferencias de interpolación
+vertical, mayores donde el perfil es curvo entre niveles (chorro,
+tropopausa). Coinciden la codificación de niveles (tipo 100, Pa redondeados
+a 0,1 hPa, mismos valores de la tabla), las variables y unidades, la grilla
+regular y el nombre de archivo. No se generan los campos 2D de viento
+máximo y tropopausa ni ICAHT, y el centro/subcentro queda el del origen
+(NCEP en los GFS) salvo que se indique otro (`--centro`); `tablesVersion`
+se pone en 25 al exportar.
+
 ## Preferencias
 
 `⚙` en la barra de acciones o Vista ▸ Preferencias… (⌘,) abre un diálogo
-con cuatro pestañas:
+con seis pestañas:
 
 * **Apariencia**: color de acento (presets o personalizado, con vista previa
   en vivo) y transparencia de la ventana.
@@ -289,6 +434,10 @@ con cuatro pestañas:
 * **Descarga**: plazos, unir plazos y abrir al terminar como valores
   iniciales de `Obtener datos…`; tamaño y antigüedad máximos de la caché y
   `Vaciar caché`.
+* **WAFS**: convertir a WAFS al descargar y al abrir archivos locales,
+  rango de FL (por defecto FL050–FL530), ampliar el rango si la fuente trae
+  niveles por debajo de 850 o por encima de 100 hPa, y extrapolar con el
+  nivel más cercano en vez de omitir (ver «Formato WAFS»).
 * **Motor**: cómo se leen los GRIB2. `ecCodes` usa la biblioteca Python
   incluida en `requirements.txt`; `wgrib2` ejecuta el programa de NOAA como
   proceso externo (inventario con `-s -T -VT -nxny`, grilla con `-grid` y
@@ -320,8 +469,15 @@ llavero en memoria, formulario y diálogos de fuente), cada fuente con
 servidores simulados (WAFS con ítems JSON y plazos agrupados, ECMWF con un
 cliente falso, SMN con un NetCDF sintético convertido a GRIB2, ICON con
 pesos sintéticos, la genérica contra un servidor HTTP local con
-autenticación básica), la descarga con niveles intermedios, la ventana y
-los diálogos en offscreen, y
+autenticación básica), la descarga con niveles intermedios, el formato
+WAFS (`tests/test_wafs.py`: la tabla FL↔Pa contra los valores de NCEP;
+convertir `tests/data/FDP_MULTI.grib2` reproduce byte a byte
+`tests/data/WAFS_like_test.grib2`, generado por el conversor de referencia;
+ida y vuelta exportar → reabrir sin pérdida; un origen con niveles por
+debajo de 850 o por encima de 100 hPa amplía el rango de FL; un archivo ya
+en WAFS pasa sin cambios; extrapolación, validador, `.idx`, regrillado
+bilineal, recorte, CLI, lector con niveles exactos y conversión en la
+descarga), la ventana y los diálogos en offscreen, y
 que cambiar nivel, paso, variable u opción redibuja sobre un lector
 sintético. Si hay un `.grib2` real en la carpeta del proyecto se suma un
 test de inventario, y si hay un `wgrib2` en el PATH (o en la variable

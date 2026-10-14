@@ -436,3 +436,100 @@ class TestDialogoDescarga(_Base):
         self.assertIn("desde 0,25° (promedio)", txt)
 
 
+
+
+class TestVentanaWAFS(_Base):
+    """La ventana convierte a WAFS lo que abre y ofrece «Exportar a WAFS…»."""
+
+    DATA = os.path.join(os.path.dirname(os.path.abspath(__file__)), "data")
+
+    def test_abre_archivo_local_convertido(self):
+        import shutil
+        from app.main_window import MainWindow
+        from app import wafs_format as wf
+        src = os.path.join(self.DATA, "FDP_MULTI.grib2")
+        if not os.path.isfile(src) or wf.ec is None:
+            self.skipTest("sin datos de prueba o eccodes")
+        local = os.path.join(self._tmp.name, "FDP_MULTI.grib2")
+        shutil.copy(src, local)
+        self.w = MainWindow()
+        self.w.show()
+        _app.processEvents()
+        self.assertEqual(self.w._act_export_wafs.shortcut().toString(), "Ctrl+Shift+W")
+        self.assertFalse(self.w._act_export_wafs.isEnabled())
+        self.w.open_file(local)
+        _app.processEvents()
+        self.assertTrue(self.w._path.endswith("FDP_MULTI_wafs.grib2"))
+        self.assertTrue(os.path.exists(self.w._path + ".json"))
+        self.assertTrue(os.path.exists(self.w._path + ".idx"))
+        self.assertTrue(self.w._reader.is_wafs)
+        self.assertEqual(len(self.w._reader.levels), 49)
+        self.assertIn("WAFS FL050–FL530 (convertido)", self.w.panel.lbl_source.text())
+        self.assertIn("corrida 13/10 18Z", self.w.panel.lbl_source.text())
+        self.assertIn("(WAFS, nivel exacto)", self.w.panel.lbl_level.text())
+        self.assertEqual(self.w._current["info"]["mode"], "wafs")
+        self.assertTrue(self.w._act_export_wafs.isEnabled())
+        self.assertIn("FL050 · 843.1 hPa", self.w.panel.cb_press.itemText(1))
+        # Un WAFS ya convertido se abre tal cual (no se vuelve a convertir)
+        self.w.open_file(self.w._path)
+        self.assertTrue(self.w._path.endswith("FDP_MULTI_wafs.grib2"))
+        self.assertFalse(os.path.exists(os.path.join(self._tmp.name, "FDP_MULTI_wafs_wafs.grib2")))
+        # Sin conversión de archivos locales se abre el original e interpola
+        self.w._cfg["wafs_convert_local"] = False
+        self.w.open_file(local)
+        self.assertEqual(self.w._path, local)
+        self.assertEqual(self.w._current["info"]["mode"], "interp")
+
+    def test_dialogo_exportar_desde_la_ventana(self):
+        import shutil
+        from app.main_window import MainWindow
+        from app.dialogs.export_wafs_dialog import ExportWafsDialog
+        from app import wafs_format as wf
+        src = os.path.join(self.DATA, "WAFS_like_test.grib2")
+        if not os.path.isfile(src) or wf.ec is None:
+            self.skipTest("sin datos de prueba o eccodes")
+        local = os.path.join(self._tmp.name, "w.grib2")
+        shutil.copy(src, local)
+        self.w = MainWindow()
+        self.w.show()
+        self.w.open_file(local)
+        _app.processEvents()
+        out = os.path.join(self._tmp.name, "salida")
+        dlg = ExportWafsDialog(self.w, reader=self.w._reader, cfg=self.w._cfg, dest_dir=out,
+                               provenance=self.w._provenance)
+        dlg.rb_sel_steps.setChecked(True)
+        for c in dlg.step_checks[1:]:
+            c.setChecked(False)
+        dlg.rb_range_fl.setChecked(True)
+        dlg.fl_min.setValue(300)
+        dlg.fl_max.setValue(340)
+        opts = dlg.options()
+        self.assertEqual(opts["steps"], [6.0])
+        self.assertEqual(opts["fls"], [300, 310, 320, 330, 340])
+        self.assertEqual(opts["model"], "gfs")
+        dlg._start()
+        for _ in range(400):
+            _app.processEvents()
+            if dlg._worker is not None and not dlg._worker.isRunning() and dlg.result:
+                break
+            dlg._worker.wait(50)
+        _app.processEvents()
+        self.assertIsNotNone(dlg.result)
+        self.assertEqual([os.path.basename(p) for p in dlg.result["archivos"]],
+                         ["gfs.t18z.wafs_1p00.f006.grib2"])
+        self.assertTrue(dlg.result["verificacion"][0]["ok"])
+        self.assertEqual(dlg.result["verificacion"][0]["mensajes"], 15)
+        self.assertIn("Verificación OK", ExportWafsDialog.summary(dlg.result))
+        dlg.close()
+        dlg.deleteLater()
+
+    def test_preferencias_wafs(self):
+        from app.dialogs.settings_dialog import SettingsDialog
+        self.w = SettingsDialog(None, cfg={"wafs_fl_max": 600, "wafs_extrapolate": True})
+        self.w.show()
+        _app.processEvents()
+        self.assertIn("WAFS", [self.w.tabs.tabText(i) for i in range(self.w.tabs.count())])
+        v = self.w.values()
+        self.assertTrue(v["wafs_convert"])
+        self.assertEqual(v["wafs_fl_max"], 600)
+        self.assertTrue(v["wafs_extrapolate"])

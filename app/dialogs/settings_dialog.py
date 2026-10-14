@@ -64,7 +64,7 @@ class SettingsDialog(GlassDialog):
         ("#8A3A5F", "Bordo"),
     ]
 
-    TABS = ("Apariencia", "Mapa", "Fuentes", "Descarga", "Motor")
+    TABS = ("Apariencia", "Mapa", "Fuentes", "Descarga", "WAFS", "Motor")
 
     def __init__(self, parent=None, cfg: dict = None):
         super().__init__(parent)
@@ -99,7 +99,8 @@ class SettingsDialog(GlassDialog):
         self.tabs.addTab(self._tab_mapa(), self.TABS[1])
         self.tabs.addTab(self._tab_fuentes(), self.TABS[2])
         self.tabs.addTab(self._tab_descarga(), self.TABS[3])
-        self.tabs.addTab(self._tab_motor(), self.TABS[4])
+        self.tabs.addTab(self._tab_wafs(), self.TABS[4])
+        self.tabs.addTab(self._tab_motor(), self.TABS[5])
         lay.addWidget(self.tabs, 1)
 
         btn_row = QHBoxLayout()
@@ -332,6 +333,49 @@ class SettingsDialog(GlassDialog):
         self._cache().clear()
         self._refresh_cache_label()
 
+    # ── WAFS ──
+    def _tab_wafs(self):
+        w, lay = self._page()
+        self._sub(lay, "Formato interno único: WAFS (viento y temperatura OACI por nivel de vuelo)")
+        self._hint(lay, "Lo que se descarga de una fuente de altura (GFS, ECMWF, ICON, genérica) y "
+                        "los archivos locales en niveles de presión se convierten al formato WAFS "
+                        "antes de mostrarse: cada FL cada 1000 ft codificado como la presión ISA en "
+                        "Pa (FL530 = 10040 Pa), interpolando linealmente en ln(p). Lo que ya viene "
+                        "en WAFS no se toca.")
+        self.chk_wafs = QCheckBox("Convertir a WAFS al descargar")
+        self.chk_wafs.setChecked(bool(self._cfg.get("wafs_convert", True)))
+        lay.addWidget(self.chk_wafs)
+        self.chk_wafs_local = QCheckBox("Convertir también los archivos locales al abrirlos "
+                                        "(se escribe <nombre>_wafs.grib2 junto al original)")
+        self.chk_wafs_local.setChecked(bool(self._cfg.get("wafs_convert_local", True)))
+        lay.addWidget(self.chk_wafs_local)
+        g = QGridLayout()
+        g.setHorizontalSpacing(8)
+        g.addWidget(QLabel("Rango de niveles: FL"), 0, 0)
+        self.wafs_fl_min = QSpinBox(); self.wafs_fl_min.setRange(0, 600); self.wafs_fl_min.setSingleStep(10)
+        self.wafs_fl_min.setValue(int(self._cfg.get("wafs_fl_min", 50)))
+        g.addWidget(self.wafs_fl_min, 0, 1)
+        g.addWidget(QLabel("a FL"), 0, 2)
+        self.wafs_fl_max = QSpinBox(); self.wafs_fl_max.setRange(0, 600); self.wafs_fl_max.setSingleStep(10)
+        self.wafs_fl_max.setValue(int(self._cfg.get("wafs_fl_max", 530)))
+        g.addWidget(self.wafs_fl_max, 0, 3)
+        g.setColumnStretch(4, 1)
+        lay.addLayout(g)
+        self.chk_wafs_extend = QCheckBox("Ampliar el rango si la fuente trae niveles por debajo de "
+                                         "850 hPa o por encima de 100 hPa (hasta FL600)")
+        self.chk_wafs_extend.setChecked(bool(self._cfg.get("wafs_fl_extend", True)))
+        lay.addWidget(self.chk_wafs_extend)
+        self.chk_wafs_extrap = QCheckBox("FL fuera de los niveles de la fuente: usar el nivel más "
+                                         "cercano (extrapolar) en vez de omitirlos")
+        self.chk_wafs_extrap.setChecked(bool(self._cfg.get("wafs_extrapolate", False)))
+        lay.addWidget(self.chk_wafs_extrap)
+        self._hint(lay, "Por defecto FL050–FL530, lo que cubre el GFS entre 850 y 100 hPa. Los FL "
+                        "extrapolados quedan anotados en la procedencia (archivo .json) del "
+                        "convertido. La exportación (Archivo ▸ Exportar a WAFS…) usa estas mismas "
+                        "opciones cuando lo cargado todavía no está en WAFS.")
+        lay.addStretch()
+        return w
+
     # ── Motor ──
     def _tab_motor(self):
         w, lay = self._page()
@@ -453,6 +497,12 @@ class SettingsDialog(GlassDialog):
             "download_h_from": int(self.h_from.value()),
             "download_h_to": int(self.h_to.value()),
             "download_h_step": int(self.h_step.value()),
+            "wafs_convert": self.chk_wafs.isChecked(),
+            "wafs_convert_local": self.chk_wafs_local.isChecked(),
+            "wafs_fl_min": int(self.wafs_fl_min.value()),
+            "wafs_fl_max": int(self.wafs_fl_max.value()),
+            "wafs_fl_extend": self.chk_wafs_extend.isChecked(),
+            "wafs_extrapolate": self.chk_wafs_extrap.isChecked(),
             "engine": self.selected_engine(),
             "wgrib2_path": self.ed_wgrib2.text().strip(),
         }

@@ -266,7 +266,9 @@ class ControlPanel(QWidget):
             self._levels = list(reader.levels)
             self.cb_press.clear()
             self.cb_press.addItem(self.P_COMBO_NONE)
-            self.cb_press.addItems([f"{lv:g} hPa" for lv in self._levels])
+            label = getattr(reader, "level_label", None) or (lambda lv: f"{lv:g} hPa")
+            self.cb_press.addItems([label(lv) for lv in self._levels])
+            self.wafs = bool(getattr(reader, "is_wafs", False))
             self.cb_press.setCurrentIndex(0)
             # Fuentes de superficie (viento 10 m / T 2 m): sin selector de nivel
             self.surface = getattr(reader, "kind", "altura") == "superficie"
@@ -360,7 +362,10 @@ class ControlPanel(QWidget):
         if self.level_mode == "sfc":
             self.lbl_fl_p.setText("Superficie: viento 10 m, temperatura 2 m")
         elif self.level_mode == "fl":
-            self.lbl_fl_p.setText(f"F{self.sel_fl:03d} ≈ {fl_to_hpa(self.sel_fl):.1f} hPa (ISA)")
+            if getattr(self, "wafs", False):
+                self.lbl_fl_p.setText(f"F{self.sel_fl:03d} = {fl_to_hpa(self.sel_fl):.1f} hPa (nivel WAFS)")
+            else:
+                self.lbl_fl_p.setText(f"F{self.sel_fl:03d} ≈ {fl_to_hpa(self.sel_fl):.1f} hPa (ISA)")
         else:
             self.lbl_fl_p.setText(f"Nivel del archivo: {self.sel_p:g} hPa (sin interpolar)")
 

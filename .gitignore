@@ -49,3 +49,6 @@ errores.log
 # Iconos generados por scripts/make_icon.py (los crea build.sh)
 *.icns
 resources/doc_icon.png
+
+# Datos de prueba del formato WAFS (caso de referencia)
+!tests/data/*.grib2

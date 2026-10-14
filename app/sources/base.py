@@ -80,8 +80,9 @@ class DownloadJob:
     """Qué bajar de una fuente."""
 
     def __init__(self, run_date, cycle, steps, variables=None, levels=None, region=None,
-                 dest_dir=".", basename=None, merge=True, params=None):
+                 dest_dir=".", basename=None, merge=True, params=None, suffix=""):
         self.run_date = run_date              # datetime.date UTC
+        self.suffix = suffix                  # p. ej. '_wafs' cuando se convierte al bajar
         self.cycle = int(cycle)
         self.steps = sorted({int(s) for s in steps})
         self.variables = list(variables or [])
@@ -98,7 +99,7 @@ class DownloadJob:
                            self.cycle, tzinfo=dt.timezone.utc)
 
     def file_paths(self, source):
-        base = self.basename or source.default_basename(self)
+        base = (self.basename or source.default_basename(self)) + (self.suffix or "")
         if self.merge:
             return [os.path.join(self.dest_dir, base + source.file_ext)]
         return [os.path.join(self.dest_dir, f"{base}_f{h:03d}{source.file_ext}") for h in self.steps]
@@ -311,12 +312,20 @@ class Source:
     # ── Descarga genérica ────────────────────────────────────────────────────
 
     def download(self, job, progress_cb=None, cancel=None, fetch_fn=None, cache=None,
-                 retry_wait=1.5, write_provenance=True, credentials=None):
+                 retry_wait=1.5, write_provenance=True, credentials=None, wafs=None):
         """Baja todos los plazos del trabajo con caché, reintentos y
         validación; escribe los archivos y su procedencia. Devuelve las
-        rutas escritas. Lanza DownloadError / DownloadCancelled."""
+        rutas escritas. Lanza DownloadError / DownloadCancelled.
+
+        `wafs`: opciones de `wafs_format.convert_to_wafs` (fl_min, fl_max,
+        extend, extrapolate) para convertir cada plazo al formato WAFS antes
+        de escribirlo (sólo fuentes de altura; lo que ya viene en WAFS no se
+        toca). None = sin conversión."""
         from .. import gfs_download
         fetch_fn = fetch_fn or gfs_download.fetch
+        convert = wafs is not None and self.kind == "altura"
+        if convert and not job.suffix:
+            job.suffix = "_wafs"
         self._creds = credentials or None
         err = self.validate(job)
         if err:
@@ -394,6 +403,11 @@ class Source:
                     raise DownloadError(f"{self.name}: no se pudo procesar el plazo +{step} h: "
                                         f"{type(exc).__name__}: {exc}") from exc
                 effective.update(eff)
+                if convert:
+                    if progress_cb:
+                        progress_cb(i, n, f"{msg}: convirtiendo a WAFS…", (i + 1) / n)
+                    data, winfo = self._to_wafs(data, wafs, step)
+                    effective.setdefault("wafs", {}).update(winfo)
                 if job.merge:
                     out.write(data)
                 else:
@@ -430,6 +444,30 @@ class Source:
         if isinstance(res, tuple):
             return res
         return res, {}
+
+    def _to_wafs(self, data, opts, step=None):
+        """Convierte los bytes de un plazo al formato WAFS (si hace falta).
+        Devuelve (bytes, info resumida para la procedencia)."""
+        from .. import wafs_format
+        notes = []
+        try:
+            out, info = wafs_format.convert_if_needed(data, log=notes.append, **dict(opts))
+        except Exception as exc:
+            raise DownloadError(f"{self.name}: no se pudo convertir a WAFS el plazo +{step} h: "
+                                f"{type(exc).__name__}: {exc}") from exc
+        summary = {"formato": info.get("formato", "WAFS"), "convertido": bool(info.get("convertido")),
+                   "fl_rango": info.get("fl_rango", "")}
+        if info.get("convertido"):
+            summary["niveles_origen_hpa"] = info.get("niveles_origen_hpa")
+            if info.get("extrapolados"):
+                summary["extrapolados"] = len(info["extrapolados"])
+            if info.get("fl_omitidos"):
+                summary["fl_omitidos"] = info["fl_omitidos"]
+            if info.get("descartados"):
+                summary["descartados"] = info["descartados"]
+        if notes:
+            summary["notas"] = notes[:20]
+        return out, summary
 
 
 def read_provenance(path):

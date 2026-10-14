@@ -231,3 +231,99 @@ def filter_grib(data, keep_levels_hpa=None, keep_vars=None, tol=0.6):
             pos += total
             ec.codes_release(gid)
     return bytes(out)
+
+
+def _interp_axis(values, x_src, x_dst, axis):
+    """Interpolación lineal 1D a lo largo de `axis` (x_src ascendente); los
+    puntos destino fuera del rango toman el valor del borde. NaN se propaga."""
+    x_src = np.asarray(x_src, dtype=float)
+    x_dst = np.asarray(x_dst, dtype=float)
+    if len(x_src) == 1:
+        shape = list(values.shape)
+        shape[axis] = len(x_dst)
+        return np.broadcast_to(np.take(values, [0] * len(x_dst), axis=axis), shape).copy()
+    j = np.clip(np.searchsorted(x_src, x_dst), 1, len(x_src) - 1)
+    x0, x1 = x_src[j - 1], x_src[j]
+    w = np.clip((x_dst - x0) / (x1 - x0), 0.0, 1.0)
+    a = np.take(values, j - 1, axis=axis)
+    b = np.take(values, j, axis=axis)
+    shape = [1] * values.ndim
+    shape[axis] = len(x_dst)
+    w = w.reshape(shape)
+    return (1.0 - w) * a + w * b
+
+
+def bilinear_regrid(values2d, lat1d, lon1d, lat_out, lon_out):
+    """Regrillado bilineal de un campo (nj, ni) con ejes `lat1d`/`lon1d` (en
+    cualquier sentido) a los ejes `lat_out`/`lon_out`."""
+    lat1d = np.asarray(lat1d, dtype=float)
+    lon1d = np.asarray(lon1d, dtype=float)
+    vals = np.asarray(values2d, dtype=float)
+    if len(lat1d) > 1 and lat1d[0] > lat1d[-1]:
+        lat1d, vals = lat1d[::-1], vals[::-1, :]
+    if len(lon1d) > 1 and lon1d[0] > lon1d[-1]:
+        lon1d, vals = lon1d[::-1], vals[:, ::-1]
+    tmp = _interp_axis(vals, lon1d, lon_out, axis=1)
+    return _interp_axis(tmp, lat1d, lat_out, axis=0)
+
+
+def target_axis(axis, res):
+    """Múltiplos de `res` dentro del rango del eje, en el sentido del eje."""
+    lo, hi = float(np.min(axis)), float(np.max(axis))
+    start = np.ceil(lo / res - 1e-9) * res
+    out = np.round(np.arange(start, hi + 1e-9, res), 6)
+    if len(axis) > 1 and axis[0] > axis[-1]:
+        out = out[::-1]
+    return out
+
+
+def regrid_bilinear_grib(data, res_deg):
+    """Regrilla cada mensaje (grilla lat/lon regular) a una grilla de
+    `res_deg` grados con puntos en múltiplos de esa resolución, por
+    interpolación bilineal (como el producto WAFS operativo). Si la grilla ya
+    coincide, el mensaje pasa sin cambios."""
+    if ec is None:
+        raise RuntimeError("regrillar requiere eccodes")
+    out = bytearray()
+    pos = 0
+    while pos < len(data):
+        gid = ec.codes_new_from_message(data[pos:])
+        if gid is None:
+            break
+        try:
+            total = ec.codes_get_message_size(gid)
+            if ec.codes_get(gid, "gridType") != "regular_ll":
+                out += data[pos:pos + total]
+                continue
+            ni, nj = ec.codes_get(gid, "Ni"), ec.codes_get(gid, "Nj")
+            lat1d, lon1d = grid_axes(gid)
+            lat_out, lon_out = target_axis(lat1d, res_deg), target_axis(lon1d, res_deg)
+            if len(lat_out) == 0 or len(lon_out) == 0:
+                raise ValueError(f"La grilla no contiene puntos múltiplos de {res_deg:g}°.")
+            same = (len(lat_out) == nj and len(lon_out) == ni
+                    and np.allclose(lat_out, lat1d, atol=1e-6) and np.allclose(lon_out, lon1d, atol=1e-6))
+            if same:
+                out += data[pos:pos + total]
+                continue
+            vals = np.asarray(ec.codes_get_double_array(gid, "values"), dtype=float).reshape(nj, ni)
+            if ec.codes_get(gid, "bitmapPresent"):
+                vals = np.where(vals == ec.codes_get(gid, "missingValue"), np.nan, vals)
+            new = bilinear_regrid(vals, lat1d, lon1d, lat_out, lon_out)
+            ec.codes_set(gid, "Ni", len(lon_out))
+            ec.codes_set(gid, "Nj", len(lat_out))
+            ec.codes_set(gid, "latitudeOfFirstGridPointInDegrees", float(lat_out[0]))
+            ec.codes_set(gid, "latitudeOfLastGridPointInDegrees", float(lat_out[-1]))
+            ec.codes_set(gid, "longitudeOfFirstGridPointInDegrees", float(lon_out[0] % 360))
+            ec.codes_set(gid, "longitudeOfLastGridPointInDegrees", float(lon_out[-1] % 360))
+            ec.codes_set(gid, "iDirectionIncrementInDegrees", float(res_deg))
+            ec.codes_set(gid, "jDirectionIncrementInDegrees", float(res_deg))
+            if np.isnan(new).any():
+                ec.codes_set(gid, "missingValue", 9999.0)
+                ec.codes_set(gid, "bitmapPresent", 1)
+                new = np.where(np.isnan(new), 9999.0, new)
+            ec.codes_set_values(gid, new.ravel())
+            out += ec.codes_get_message(gid)
+        finally:
+            pos += total
+            ec.codes_release(gid)
+    return bytes(out)

@@ -383,6 +383,8 @@ class MainWindow(QMainWindow):
             archivo, "Exportar PNG…", self.export_png, "Ctrl+E")
         self._act_export_csv = self._add_action(
             archivo, "Exportar CSV…", self.export_csv, "Ctrl+Shift+E")
+        self._act_export_wafs = self._add_action(
+            archivo, "Exportar a WAFS…", self.export_wafs, "Ctrl+Shift+W")
         archivo.addSeparator()
         self._act_close = self._add_action(archivo, "Cerrar archivo", self._file_close, "Ctrl+W")
         archivo.addSeparator()
@@ -478,8 +480,8 @@ class MainWindow(QMainWindow):
         self._welcome.setVisible(empty)
         self._main_area.setVisible(not empty)
         self._bar_file_area.setVisible(not empty)
-        for act in (self._act_export_png, self._act_export_csv, self._act_close,
-                    self._act_full, self._act_update, self._act_layer):
+        for act in (self._act_export_png, self._act_export_csv, self._act_export_wafs,
+                    self._act_close, self._act_full, self._act_update, self._act_layer):
             act.setEnabled(not empty)
         if empty:
             self._welcome.set_recent_files(self._cfg.get("recent_files") or [])
@@ -504,7 +506,8 @@ class MainWindow(QMainWindow):
             self.open_file(path)
 
     def open_file(self, path: str):
-        """Abre un GRIB2 (también desde el Finder o la línea de comandos)."""
+        """Abre un GRIB2 (también desde el Finder o la línea de comandos). Si
+        no está en formato WAFS se convierte antes de mostrarlo."""
         from .grib_reader import GribReader, EngineUnavailable, ec
         engine = self._cfg.get("engine", "eccodes")
         self.set_status(f"Leyendo {os.path.basename(path)} ({engine}) …")
@@ -531,11 +534,56 @@ class MainWindow(QMainWindow):
             return
         if not self._accept_reader(reader):
             return
+        reader, path, converted = self._ensure_wafs(reader, path)
         self.load_reader(reader, path, read_provenance(path))
+        if converted:
+            self.set_status(f"Convertido a WAFS: {path}")
         push_recent_file(self._cfg, path)
         save_config(self._cfg)
         self._refresh_recent_menu()
         self.set_status(f"Archivo cargado: {path}")
+
+    def _ensure_wafs(self, reader, path: str):
+        """El visor lee sólo WAFS: un archivo local en niveles de presión se
+        convierte (junto al original, o en la caché si la carpeta no se
+        puede escribir) y se abre el convertido. Devuelve (reader, path,
+        convertido)."""
+        from . import wafs_format as wf
+        from .grib_reader import GribReader, ec
+        if (not self._cfg.get("wafs_convert_local", True) or ec is None
+                or getattr(reader, "kind", "altura") != "altura" or getattr(reader, "is_wafs", False)):
+            return reader, path, False
+        self.set_status(f"Convirtiendo {os.path.basename(path)} al formato WAFS…")
+        QApplication.processEvents()
+        dst = wf.converted_path_for(path)
+        try:
+            try:
+                _dst, info = wf.convert_file(path, dst, provenance=read_provenance(path) or {},
+                                             **(wf.options_from_config(self._cfg) or {}))
+            except PermissionError:
+                from .sources.cache import default_cache_dir
+                folder = os.path.join(default_cache_dir(), "..", "wafs")
+                os.makedirs(folder, exist_ok=True)
+                dst = os.path.join(folder, os.path.basename(dst))
+                _dst, info = wf.convert_file(path, dst, provenance=read_provenance(path) or {},
+                                             **(wf.options_from_config(self._cfg) or {}))
+        except Exception as exc:
+            traceback.print_exc()
+            QMessageBox.warning(self, "Conversión a WAFS",
+                                f"No se pudo convertir el archivo al formato WAFS; se abre tal "
+                                f"cual.\n{exc}")
+            return reader, path, False
+        if not info.get("convertido"):
+            return reader, path, False
+        try:
+            new_reader = GribReader(dst, engine=reader.engine,
+                                    wgrib2_path=self._cfg.get("wgrib2_path", ""))
+        except Exception as exc:
+            traceback.print_exc()
+            QMessageBox.warning(self, "Conversión a WAFS",
+                                f"El archivo convertido no se pudo releer; se abre el original.\n{exc}")
+            return reader, path, False
+        return new_reader, dst, True
 
     def get_data(self):
         """Diálogo «Obtener datos…» para la fuente elegida. Si el usuario lo
@@ -630,6 +678,8 @@ class MainWindow(QMainWindow):
                 u, v, t, info = r.get_surface_fields(step_idx)
             elif panel.level_mode == "p" and panel.sel_p is not None:
                 u, v, t, info = r.get_level_fields(step_idx, panel.sel_p)
+            elif hasattr(r, "fields_for_fl"):
+                u, v, t, info = r.fields_for_fl(step_idx, panel.sel_fl)
             else:
                 u, v, t, info = r.interp_to_pressure(step_idx, fl_to_hpa(panel.sel_fl))
         except Exception as exc:
@@ -652,6 +702,8 @@ class MainWindow(QMainWindow):
             lvl_txt = "Superficie (viento 10 m, T 2 m)"
         elif panel.level_mode == "p":
             lvl_txt = f"{info['p']:g} hPa"
+        elif info.get("mode") == "wafs":
+            lvl_txt = f"F{panel.sel_fl:03d} ({info['p']:g} hPa, nivel WAFS)"
         else:
             lvl_txt = f"F{panel.sel_fl:03d} ({info['p']:.0f} hPa)"
             if info["extrapolated"]:
@@ -701,6 +753,8 @@ class MainWindow(QMainWindow):
             lvl = "LEVEL: superficie (viento 10 m / T 2 m)"
         elif panel.level_mode == "p":
             lvl = f"LEVEL: {info['p']:g} hPa (nivel del archivo)"
+        elif info.get("mode") == "wafs":
+            lvl = f"LEVEL: F{panel.sel_fl:03d} = {info['p'] * 100:.0f} Pa (WAFS, nivel exacto)"
         else:
             lvl = f"LEVEL: F{panel.sel_fl:03d} = {info['p']:.1f} hPa (ISA)"
             if info["extrapolated"]:
@@ -721,17 +775,20 @@ class MainWindow(QMainWindow):
         plazo y resolución según la procedencia guardada por la descarga. Sin
         procedencia, archivo local."""
         prov = self._provenance
+        fmt_line = self._format_line()
         if not prov:
-            return "FUENTE: archivo local (sin procedencia)"
+            return "FUENTE: archivo local (sin procedencia)" + (f"\n{fmt_line}" if fmt_line else "")
         src = get_source(prov.get("fuente", ""))
         name = prov.get("nombre") or (src.name if src else prov.get("fuente", "?"))
         if src is not None and src.flight_levels:
             name += " ✓FL"
         model = (prov.get("modelo") or "").split(" vía ")[0].split(" (")[0]
         line1 = f"FUENTE: {name}" + (f"  ({model})" if model and model != name else "")
-        run = prov.get("corrida", "?")
+        run = prov.get("corrida") or ""
+        if not run and self._reader is not None and self._reader.run_time() is not None:
+            run = self._reader.run_time().strftime("%Y-%m-%dT%H:%MZ")
         try:
-            run = f"{run[8:10]}/{run[5:7]} {run[11:13]}Z"      # 2026-10-14T06:00Z → 14/10 06Z
+            run = f"{run[8:10]}/{run[5:7]} {run[11:13]}Z" if run else "?"   # 2026-10-14T06:00Z → 14/10 06Z
         except Exception:
             pass
         line2 = f"  corrida {run}"
@@ -755,7 +812,22 @@ class MainWindow(QMainWindow):
                 lines.append(f"  regrillado: {prov['regrillado']}")
         elif prov.get("niveles"):
             lines.append(f"  niveles {prov['niveles']}")
+        if fmt_line:
+            lines.append(fmt_line)
         return "\n".join(lines)
+
+    def _format_line(self) -> str:
+        """Cuarto renglón de FUENTE: formato WAFS y rango de FL (y si se
+        convirtió de niveles de presión)."""
+        r = self._reader
+        if r is None or not getattr(r, "is_wafs", False):
+            return ""
+        fls = sorted(r.fl_levels)
+        txt = f"  WAFS FL{fls[0]:03d}–FL{fls[-1]:03d}"
+        w = (self._provenance or {}).get("wafs") or {}
+        if w.get("convertido"):
+            txt += " (convertido)"
+        return txt
 
     def set_projection(self, key: str):
         """Cambia la proyección del mapa (centrada en el dominio del archivo)
@@ -895,6 +967,35 @@ class MainWindow(QMainWindow):
             self.set_status(f"CSV guardado: {path}")
         except Exception as exc:
             QMessageBox.critical(self, "Exportar CSV", f"No se pudo guardar:\n{exc}")
+
+    def export_wafs(self):
+        """«Exportar a WAFS…»: lo cargado (todos los plazos y niveles, o una
+        selección) como GRIB2 WAFS con .idx y verificación."""
+        if self._reader is None:
+            QMessageBox.information(self, "Exportar a WAFS", "No hay datos cargados.")
+            return
+        if getattr(self._reader, "kind", "altura") != "altura":
+            QMessageBox.information(self, "Exportar a WAFS",
+                                    "El WAFS es un producto de altura: un archivo de superficie "
+                                    "no se puede exportar en ese formato.")
+            return
+        from .dialogs.export_wafs_dialog import ExportWafsDialog
+        region = None
+        try:
+            if self.plot.has_data:
+                region = tuple(float(x) for x in self.plot.get_extent())
+        except Exception:
+            region = None
+        dlg = ExportWafsDialog(self, reader=self._reader, cfg=self._cfg,
+                               dest_dir=working_dir(self._cfg), region=region,
+                               provenance=self._provenance)
+        dlg.exec()
+        if dlg.result:
+            paths = dlg.result["archivos"]
+            if paths:
+                self._cfg["last_directory"] = os.path.dirname(paths[0])
+                save_config(self._cfg)
+            self.set_status("WAFS exportado: " + ", ".join(os.path.basename(p) for p in paths))
 
     def write_csv(self, path: str):
         """lat, lon, u, v, velocidad kt, dirección, T °C del nivel y paso actuales."""

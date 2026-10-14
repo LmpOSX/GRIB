@@ -24,6 +24,7 @@ from .grib_engines import (  # noqa: F401 - reexportados para quien importe de a
     ec, ECCODES_ERROR, ECCODES_HELP, WGRIB2_HELP, ENGINES, EngineUnavailable,
     GribMessage, make_backend, find_wgrib2, wgrib2_version, SURFACE_LEVEL,
 )
+from .wafs_format import fl_from_hpa
 
 # ---------------------------------------------------------------------------
 # Constantes de dominio
@@ -233,6 +234,15 @@ class GribReader:
         self.has_surface = SURFACE_LEVEL in levels
         # 'altura' si hay niveles de presión; 'superficie' si sólo hay viento 10 m / T 2 m
         self.kind = "altura" if self.levels else "superficie"
+        # Formato WAFS: niveles = presión ISA de FL enteros → el FL del panel
+        # cae en un nivel exacto del archivo, sin interpolar
+        self.fl_levels = {}
+        for lv in self.levels:
+            fl = fl_from_hpa(lv)
+            if fl is not None and fl not in self.fl_levels:
+                self.fl_levels[fl] = lv
+        self.is_wafs = bool(self.levels) and len(self.fl_levels) == len(self.levels) \
+            and set(self.fl_levels) != {340}
         self.variables = [v for v in ("u", "v", "t") if v in variables]
         if not self.index:
             raise ValueError(
@@ -305,6 +315,25 @@ class GribReader:
         info["mode"] = "superficie"
         return u, v, t, info
 
+    def level_label(self, level_hpa):
+        """Texto de un nivel para el panel: 'FL300 · 300,9 hPa' en archivos
+        WAFS, '300 hPa' en los demás."""
+        for fl, lv in getattr(self, "fl_levels", {}).items():
+            if lv == level_hpa:
+                return f"FL{fl:03d} · {lv:g} hPa"
+        return f"{level_hpa:g} hPa"
+
+    def fields_for_fl(self, step_idx, fl):
+        """u, v, t para un nivel de vuelo: en un archivo WAFS el nivel exacto
+        del FL (modo 'wafs'); si no, interpolación en ln(p) a la presión ISA."""
+        lv = getattr(self, "fl_levels", {}).get(int(fl))
+        if lv is not None and any((step_idx, var, lv) in self.index for var in ("u", "v", "t")):
+            u, v, t, info = self.get_level_fields(step_idx, lv)
+            info["mode"] = "wafs"
+            info["fl"] = int(fl)
+            return u, v, t, info
+        return self.interp_to_pressure(step_idx, fl_to_hpa(fl))
+
     def interp_to_pressure(self, step_idx, p_target):
         """Interpola u, v, t linealmente en ln(p) al nivel p_target (hPa).
         Si p_target cae fuera del rango de niveles disponibles se usa el
@@ -372,6 +401,10 @@ class GribReader:
         lines.append("NIVELES (hPa): " + ", ".join(f"{lv:g}" for lv in self.levels)
                      + ("  + superficie (viento 10 m / T 2 m)"
                         if getattr(self, "has_surface", False) else ""))
+        if getattr(self, "is_wafs", False):
+            fls = sorted(self.fl_levels)
+            lines.append(f"FORMATO: WAFS (niveles por FL, presión ISA en Pa): FL{fls[0]:03d}–FL{fls[-1]:03d}, "
+                         f"{len(fls)} niveles")
         lines.append("")
         lines.append("GRILLA:")
         lines.append(f"  tipo: {g.get('grid_type')}   Ni={g.get('ni')}  Nj={g.get('nj')}")

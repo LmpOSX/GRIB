@@ -9,7 +9,8 @@ QT_QPA_PLATFORM=offscreen python -m unittest discover -s tests -p "test_*.py"   
 ```
 
 Archivo de prueba: un GRIB2 de GFS con 3 pasos, u/v/t y niveles de presión
-(por ejemplo `FDP_MULTI.grib2`). Marcar cada caso como OK / FALLA y anotar el
+(por ejemplo `tests/data/FDP_MULTI.grib2`; al abrirlo el visor lo convierte a
+WAFS, ver sección O). Marcar cada caso como OK / FALLA y anotar el
 detalle.
 
 ## A. Arranque y ventana
@@ -107,6 +108,23 @@ detalle.
 | H2 | CSV | ⌘⇧E | `archivo_pasoN_F300.csv` con cabeceras de comentario y columnas lat, lon, u_ms, v_ms, velocidad_kt, direccion_deg, t_c; una fila por punto de grilla. |
 | H3 | CSV con nivel directo | Combo 700 hPa, exportar | Nombre `…_700hPa.csv` y "modo, nivel exacto" en la cabecera. |
 | H4 | Sin archivo | Bienvenida, ⌘E | Las acciones de exportar están deshabilitadas. |
+| H5 | Exportar a WAFS, un archivo por plazo | Con un archivo abierto, Archivo ▸ Exportar a WAFS… (⌘⇧W), Todos, Exportar | Un `gfs.tHHz.wafs_RES.fFFF.grib2` por plazo en la carpeta elegida, cada uno con su `.idx`; el mensaje final dice «Verificación OK», mensajes = variables × 49 niveles, sin avisos del validador. |
+| H6 | Exportar selección y recorte | Sólo +6 h, rango FL300–FL340, Recortar a la zona, un único archivo | Un solo archivo con 3 variables × 5 niveles; `wgrib2 -s` muestra sólo `30090…25000 Pa`; la grilla es el recuadro pedido. |
+| H7 | Exportar regrillando | Regrillar a 0,25° bilineal | Archivo `…wafs_0p25…` con incremento 0,25°; verificación OK (los puntos originales se conservan). |
+| H8 | Exportar desde superficie | Abrir un archivo del SMN, ⌘⇧W | Aviso «El WAFS es un producto de altura…», no se exporta. |
+
+## O. Formato WAFS
+
+| # | Caso | Pasos | Resultado esperado |
+|---|---|---|---|
+| O1 | Descarga convertida | Obtener datos… con el GFS (Preferencias ▸ WAFS con «Convertir al descargar» marcado) | El archivo termina en `_wafs.grib2`; `wgrib2 -s` lista niveles `843.1 mb, 812 mb, … 100.4 mb` (49 por variable y plazo); el `.json` tiene `wafs.convertido: true` y `fl_rango FL050–FL530`. |
+| O2 | Visor con WAFS | Abrir el archivo de O1 | STATUS: `FUENTE … / WAFS FL050–FL530 (convertido)`; `LEVEL: F300 = 30090 Pa (WAFS, nivel exacto)`; el combo «Nivel de presión» lista `FL050 · 843.1 hPa …`; el inventario dice `FORMATO: WAFS`. Cambiar de FL redibuja sin «interpolado entre». |
+| O3 | Archivo local convertido | Abrir un GFS en niveles de presión (por ejemplo `tests/data/FDP_MULTI.grib2` copiado a otra carpeta) | Barra de estado «Convertido a WAFS: …_wafs.grib2»; junto al original aparecen `<nombre>_wafs.grib2`, `.json` e `.idx`; el visor muestra el convertido. Con «Convertir también los archivos locales» desmarcado, se abre el original e interpola como antes. |
+| O4 | Rango ampliado | Bajar ECMWF o ICON con niveles 1000 y 50 hPa, convertir | El rango llega a FL010–FL600 (con «ampliar» marcado); sin marcarlo, FL050–FL530. |
+| O5 | Extrapolar | Bajar sólo 700–300 hPa con «extrapolar» marcado | Hay 49 niveles; el `.json` lista `extrapolados`; sin marcar, sólo FL100–FL300 y `fl_omitidos`. |
+| O6 | Ya en WAFS | Abrir `tests/data/WAFS_like_test.grib2` | No se crea ningún `_wafs.grib2`; se abre tal cual con FUENTE «archivo local» y `WAFS FL050–FL530`. |
+| O7 | Línea de comandos | `python -m app.wafs_format tests/data/FDP_MULTI.grib2 /tmp/w.grib2` y `--validar` | «441 mensajes escritos …; FL050–FL530», `/tmp/w.grib2.idx` creado, `cmp /tmp/w.grib2 tests/data/WAFS_like_test.grib2` sin diferencias; `--validar` responde OK. |
+| O8 | Validador avisa | `python -m app.wafs_format --validar tests/data/FDP_MULTI.grib2` | Avisos «nivel 10000 Pa no es la presión ISA de un FL…» y no bloquea. |
 
 ## I. Tema y preferencias
 
@@ -121,7 +139,7 @@ detalle.
 | I8 | Casillas y radios | Marcar Extra Info y cambiar de variable | El indicador se pinta con el acento y además muestra el tilde (casillas) o el punto (radios). |
 | I9 | Botón verde (macOS) | Clic en el botón verde de la ventana | La ventana se maximiza sobre el escritorio (no entra al Space de pantalla completa) y conserva el desenfoque y la transparencia. |
 | I6 | Diálogos glass | Abrir Preferencias, Atajos y Acerca de | Fondo translúcido con desenfoque, barra de título nativa, contenido sin aplastar; Esc / Cerrar los cierran. |
-| I10 | Pestañas | `⚙` | Cuatro pestañas: Apariencia, Mapa, Descarga, Motor; se ven con el tema (pestaña activa resaltada con el acento). |
+| I10 | Pestañas | `⚙` | Seis pestañas: Apariencia, Mapa, Fuentes, Descarga, WAFS, Motor; se ven con el tema (pestaña activa resaltada con el acento). |
 | I11 | Mapa | Pestaña Mapa ▸ proyección Mercator, Grilla marcada, densidad 2 ▸ Aplicar, con archivo abierto | El mapa pasa a Mercator con grilla y barbas cada 2 puntos; el panel CONFIG refleja los valores; se conservan al reiniciar. |
 | I12 | CONFIG persiste | Marcar Extra Info en el panel, cerrar y reabrir la app | Extra Info arranca marcado; Preferencias ▸ Mapa lo muestra marcado. |
 | I13 | Descarga | Pestaña Descarga ▸ 0,50°, intermedios, horas 0–24 cada 6 ▸ Aplicar ▸ `Descargar GFS…` | El diálogo abre con esos valores. |
