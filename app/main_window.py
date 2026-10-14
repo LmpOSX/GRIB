@@ -18,7 +18,7 @@ from PyQt6.QtWidgets import (
     QLabel, QComboBox,
 )
 from PyQt6.QtCore import Qt
-from PyQt6.QtGui import QKeySequence, QShortcut, QAction
+from PyQt6.QtGui import QKeySequence, QShortcut, QAction, QActionGroup
 
 from .config import (
     load_config, save_config, FONT_SIZE_MIN, FONT_SIZE_MAX,
@@ -29,6 +29,7 @@ from .grib_reader import KELVIN, fl_to_hpa, fmt_dt, speed_dir_from_uv
 from .dialogs.settings_dialog import SettingsDialog
 from .widgets.welcome_widget import WelcomeWidget
 from .widgets.control_panel import ControlPanel
+from .wind_plot import PROJECTIONS, WIND_STYLES
 from .widgets.inventory_panel import InventoryPanel
 from .sources import enabled_sources, all_sources, get_source, source_label, read_provenance
 
@@ -148,6 +149,11 @@ class MainWindow(QMainWindow):
         root_lay.setContentsMargins(0, 0, 0, 0)
         root_lay.setSpacing(0)
 
+        # ── Panel de controles (menús, barra de acciones y mapa usan partes suyas) ──
+        self.panel = ControlPanel()
+        self.panel.set_projection(self._cfg.get("projection", "platecarree"))
+        self.panel.set_options(self._map_options_from_cfg())
+
         self._menubar = QMenuBar()
         self._menubar.setObjectName("AppMenuBar")
         root_lay.addWidget(self._menubar)
@@ -197,6 +203,9 @@ class MainWindow(QMainWindow):
         map_frame.setObjectName("GlassPanel")
         map_lay = QVBoxLayout(map_frame)
         map_lay.setContentsMargins(6, 6, 6, 6)
+        map_lay.setSpacing(6)
+        # STATUS pegado al mapa: describe lo que se ve
+        map_lay.addWidget(self.panel.status)
         self.plot = WindPlot(map_frame)
         self.plot.canvas.setFocusPolicy(Qt.FocusPolicy.ClickFocus)
         map_lay.addWidget(self.plot.canvas, 1)
@@ -227,12 +236,10 @@ class MainWindow(QMainWindow):
         scroll.setAttribute(Qt.WidgetAttribute.WA_TranslucentBackground)
         side = QWidget()
         side.setAutoFillBackground(False)
+        side.setMinimumWidth(0)
         side_lay = QVBoxLayout(side)
         side_lay.setContentsMargins(0, 0, 4, 0)
-        side_lay.setSpacing(8)
-        self.panel = ControlPanel()
-        self.panel.set_projection(self._cfg.get("projection", "platecarree"))
-        self.panel.set_options(self._map_options_from_cfg())
+        side_lay.setSpacing(10)
         self.plot.set_projection(self.panel.projection())
         side_lay.addWidget(self.panel)
         inv_frame = QFrame()
@@ -274,11 +281,12 @@ class MainWindow(QMainWindow):
                 "fill": c.get("map_fill", False), "stride": c.get("map_stride", 1)}
 
     def _on_panel_options_changed(self):
-        """CONFIG del panel: se guarda como valor inicial y se redibuja."""
+        """VIENTO / MAPA del panel: se guarda como valor inicial y se redibuja."""
         o = self.panel.options()
         self._cfg.update({"map_wind_style": o["wind_style"], "map_extra_info": o["extra_info"],
                           "map_grid": o["grid"], "map_fill": o["fill"], "map_stride": o["stride"]})
         save_config(self._cfg)
+        self._sync_view_menu()
         self.redraw()
 
     def _build_action_bar(self) -> QWidget:
@@ -363,6 +371,8 @@ class MainWindow(QMainWindow):
         self._btn_png.setToolTip("Exportar la vista actual a PNG (Ctrl+E)")
         self._btn_png.clicked.connect(self.export_png)
         lay.addWidget(self._btn_home)
+        lay.addWidget(self.panel.btn_update)
+        lay.addWidget(self.panel.btn_disable)
         lay.addWidget(self._action_sep())
         lay.addWidget(self._btn_png)
 
@@ -403,8 +413,69 @@ class MainWindow(QMainWindow):
         self._act_layer.setCheckable(True)
         self._act_layer.setChecked(True)
         vista.addSeparator()
+        # Mismas opciones que el panel (VIENTO / MAPA), sincronizadas
+        self._menu_proj = vista.addMenu("Proyección")
+        self._proj_actions = {}
+        grp = QActionGroup(self)
+        grp.setExclusive(True)
+        for key, name in PROJECTIONS:
+            act = QAction(name, self)
+            act.setCheckable(True)
+            act.setData(key)
+            act.triggered.connect(lambda _c, k=key: self._menu_set_projection(k))
+            grp.addAction(act)
+            self._menu_proj.addAction(act)
+            self._proj_actions[key] = act
+        self._menu_style = vista.addMenu("Viento")
+        self._style_actions = {}
+        grp = QActionGroup(self)
+        grp.setExclusive(True)
+        for key, name in WIND_STYLES:
+            act = QAction(name, self)
+            act.setCheckable(True)
+            act.setData(key)
+            act.triggered.connect(lambda _c, k=key: self._menu_set_option("wind_style", k))
+            grp.addAction(act)
+            self._menu_style.addAction(act)
+            self._style_actions[key] = act
+        self._act_extra = self._add_action(vista, "Extra Info",
+                                           lambda c: self._menu_set_option("extra_info", c))
+        self._act_fill = self._add_action(vista, "Fondo de velocidad",
+                                          lambda c: self._menu_set_option("fill", c))
+        self._act_grid = self._add_action(vista, "Grilla lat/lon del archivo",
+                                          lambda c: self._menu_set_option("grid", c))
+        for act in (self._act_extra, self._act_fill, self._act_grid):
+            act.setCheckable(True)
+        self._sync_view_menu()
+        vista.addSeparator()
         act_prefs = self._add_action(vista, "Preferencias…", self._open_settings, "Ctrl+,")
         act_prefs.setMenuRole(QAction.MenuRole.PreferencesRole)
+
+    def _sync_view_menu(self):
+        """Refleja en el menú Vista lo que muestra el panel."""
+        o = self.panel.options()
+        pairs = [(self._act_extra, o["extra_info"]), (self._act_fill, o["fill"]),
+                 (self._act_grid, o["grid"])]
+        for act, val in pairs:
+            act.blockSignals(True)
+            act.setChecked(bool(val))
+            act.blockSignals(False)
+        act = self._style_actions.get(o["wind_style"])
+        if act is not None:
+            act.setChecked(True)
+        act = self._proj_actions.get(self.panel.projection())
+        if act is not None:
+            act.setChecked(True)
+
+    def _menu_set_option(self, key, value):
+        """Opción de VIENTO / MAPA elegida desde el menú: se refleja en el
+        panel, se guarda y se redibuja."""
+        self.panel.set_options({key: value})
+        self._on_panel_options_changed()
+
+    def _menu_set_projection(self, key):
+        self.panel.set_projection(key)
+        self.set_projection(key)
 
     def _setup_help_menu(self):
         ayuda = self._menubar.addMenu("Ayuda")
@@ -843,6 +914,7 @@ class MainWindow(QMainWindow):
         self.plot.set_projection(key, lons, lats)
         self._cfg["projection"] = key
         save_config(self._cfg)
+        self._sync_view_menu()
         if r is not None:
             self.redraw(keep_extent=False)
         else:
@@ -1051,6 +1123,7 @@ class MainWindow(QMainWindow):
         self._cfg.update(values)
         self._apply_theme(values.get("accent_color"), opacity=values.get("opacity"))
         self.panel.set_options(self._map_options_from_cfg())
+        self._sync_view_menu()
         self._refresh_sources_combo()
         if values.get("projection", old_proj) != old_proj:
             self.panel.set_projection(values["projection"])

@@ -54,7 +54,7 @@ class ControlPanel(QWidget):
         frame.setObjectName("GlassPanel")
         lay = QVBoxLayout(frame)
         lay.setContentsMargins(12, 8, 12, 10)
-        lay.setSpacing(4)
+        lay.setSpacing(5)
         lbl = QLabel(title)
         lbl.setObjectName("PanelTitle")
         lay.addWidget(lbl)
@@ -64,25 +64,69 @@ class ControlPanel(QWidget):
         self._sections[title] = frame
         return lay
 
-    def _build(self):
-        self._root = QVBoxLayout(self)
-        self._root.setContentsMargins(0, 0, 0, 0)
-        self._root.setSpacing(8)
+    @staticmethod
+    def _sep(lay):
+        """Línea fina entre grupos de una misma sección."""
+        f = QFrame()
+        f.setObjectName("PanelSep")
+        f.setFixedHeight(1)
+        lay.addSpacing(3)
+        lay.addWidget(f)
+        lay.addSpacing(3)
 
-        # ── STATUS ──
-        lay = self._section("STATUS")
+    @staticmethod
+    def _sub(lay, text):
+        lbl = QLabel(text)
+        lbl.setObjectName("SubHeading")
+        lay.addWidget(lbl)
+
+    @staticmethod
+    def _compact(cb):
+        """El combo no impone su ancho al panel: el texto largo se recorta y
+        el desplegable muestra las opciones completas."""
+        cb.setSizeAdjustPolicy(QComboBox.SizeAdjustPolicy.AdjustToMinimumContentsLengthWithIcon)
+        cb.setMinimumContentsLength(8)
+        cb.setSizePolicy(QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Fixed)
+        return cb
+
+    def _build_status(self):
+        """Franja STATUS: la ventana la coloca pegada al mapa (no va dentro
+        del panel de controles)."""
+        self.status = QFrame()
+        self.status.setObjectName("StatusStrip")
+        grid = QGridLayout(self.status)
+        grid.setContentsMargins(10, 6, 10, 6)
+        grid.setHorizontalSpacing(18)
+        grid.setVerticalSpacing(1)
         self.lbl_source = QLabel("FUENTE: --")
         self.lbl_run = QLabel("RUN: --")
         self.lbl_step = QLabel("STEP: --")
         self.lbl_valid_utc = QLabel("VALIDITY [--:-- – --:--] UTC")
         self.lbl_valid_loc = QLabel("LOCAL    [--:-- – --:--]")
         self.lbl_level = QLabel("LEVEL: --")
-        self.lbl_level.setWordWrap(True)
         for w in (self.lbl_source, self.lbl_run, self.lbl_step, self.lbl_valid_utc,
                   self.lbl_valid_loc, self.lbl_level):
             w.setObjectName("StatusMono")
             w.setTextInteractionFlags(Qt.TextInteractionFlag.TextSelectableByMouse)
-            lay.addWidget(w)
+        self.lbl_source.setWordWrap(False)
+        self.lbl_level.setWordWrap(True)
+        # Columna 1: fuente (hasta tres renglones); columna 2: corrida y paso;
+        # columna 3: validez; la última fila, el nivel, cruza las tres.
+        grid.addWidget(self.lbl_source, 0, 0, 2, 1, Qt.AlignmentFlag.AlignTop)
+        grid.addWidget(self.lbl_run, 0, 1)
+        grid.addWidget(self.lbl_step, 1, 1)
+        grid.addWidget(self.lbl_valid_utc, 0, 2)
+        grid.addWidget(self.lbl_valid_loc, 1, 2)
+        grid.addWidget(self.lbl_level, 2, 0, 1, 3)
+        grid.setColumnStretch(0, 3)
+        grid.setColumnStretch(1, 2)
+        grid.setColumnStretch(2, 2)
+
+    def _build(self):
+        self._root = QVBoxLayout(self)
+        self._root.setContentsMargins(0, 0, 0, 0)
+        self._root.setSpacing(10)
+        self._build_status()
 
         # ── TIME ──
         lay = self._section("TIME")
@@ -108,8 +152,7 @@ class ControlPanel(QWidget):
         row = QHBoxLayout(self._steps_row)
         row.setContentsMargins(0, 2, 0, 0)
         row.addWidget(QLabel("Todos los pasos:"))
-        self.cb_steps = QComboBox()
-        self.cb_steps.setSizePolicy(QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Fixed)
+        self.cb_steps = self._compact(QComboBox())
         self.cb_steps.currentIndexChanged.connect(self._on_step_combo)
         row.addWidget(self.cb_steps, 1)
         lay.addWidget(self._steps_row)
@@ -126,6 +169,8 @@ class ControlPanel(QWidget):
             b = QPushButton(f"F{fl:03d}")
             b.setObjectName("FLBtn")
             b.setCheckable(True)
+            b.setMinimumWidth(0)
+            b.setSizePolicy(QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Fixed)
             b.setCursor(Qt.CursorShape.PointingHandCursor)
             self._fl_group.addButton(b, fl)
             grid.addWidget(b, k // 4, k % 4)
@@ -135,18 +180,18 @@ class ControlPanel(QWidget):
         self._fl_buttons[self.sel_fl].setChecked(True)
         self._fl_group.idClicked.connect(self._on_fl_clicked)
         lay.addLayout(grid)
+        self._sep(lay)
         row = QHBoxLayout()
-        row.setContentsMargins(0, 4, 0, 0)
         self.lbl_press = QLabel(self.P_LABEL)
         row.addWidget(self.lbl_press)
-        self.cb_press = QComboBox()
+        self.cb_press = self._compact(QComboBox())
         self.cb_press.addItem(self.P_COMBO_NONE)
-        self.cb_press.setSizePolicy(QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Fixed)
         self.cb_press.currentIndexChanged.connect(self._on_press_combo)
         row.addWidget(self.cb_press, 1)
         lay.addLayout(row)
         self.lbl_fl_p = QLabel("")
         self.lbl_fl_p.setObjectName("SubHeading")
+        self.lbl_fl_p.setWordWrap(True)
         lay.addWidget(self.lbl_fl_p)
 
         # ── VARIABLE ──
@@ -160,19 +205,51 @@ class ControlPanel(QWidget):
             self._var_group.addButton(rb, i)
             row.addWidget(rb)
             self.rb_var.append(rb)
+        row.addStretch()
         self.rb_var[0].setChecked(True)
         self._var_group.idClicked.connect(
             lambda i: self._emit_if_live(self.variable_changed, self._var_values[i]))
         lay.addLayout(row)
 
-        # ── CONFIG ──
-        lay = self._section("CONFIG")
+        # ── VIENTO: cómo se dibuja la capa de datos ──
+        lay = self._section("VIENTO")
+        row = QHBoxLayout()
+        row.addWidget(QLabel("Estilo:"))
+        self.cb_style = self._compact(QComboBox())
+        for key, name in WIND_STYLES:
+            self.cb_style.addItem(name, key)
+        self.cb_style.setToolTip("Representación del viento: barbas, flechas (sólo dirección, "
+                                 "color por velocidad) o curvas (líneas de corriente)")
+        self.cb_style.currentIndexChanged.connect(lambda _i: self._emit_if_live(self.options_changed))
+        row.addWidget(self.cb_style, 1)
+        lay.addLayout(row)
+        row = QHBoxLayout()
+        row.addWidget(QLabel("Densidad: cada"))
+        self.spin_stride = QSpinBox()
+        self.spin_stride.setRange(1, 10)
+        self.spin_stride.setValue(1)
+        self.spin_stride.setToolTip("Dibujar un punto de grilla cada N (en curvas baja la "
+                                    "densidad de líneas)")
+        self.spin_stride.valueChanged.connect(lambda _=0: self._emit_if_live(self.options_changed))
+        row.addWidget(self.spin_stride)
+        row.addWidget(QLabel("puntos"))
+        row.addStretch()
+        lay.addLayout(row)
+        self._sep(lay)
+        self._sub(lay, "Capas adicionales")
+        self.chk_extra = QCheckBox("Extra Info (kt / °C junto a cada punto)")
+        self.chk_fill = QCheckBox("Fondo de velocidad (contornos rellenos)")
+        for c in (self.chk_extra, self.chk_fill):
+            c.toggled.connect(lambda _=False: self._emit_if_live(self.options_changed))
+            lay.addWidget(c)
+
+        # ── MAPA: proyección, grilla y recuadro ──
+        lay = self._section("MAPA")
         row = QHBoxLayout()
         row.addWidget(QLabel("Proyección:"))
-        self.cb_proj = QComboBox()
+        self.cb_proj = self._compact(QComboBox())
         for key, name in PROJECTIONS:
             self.cb_proj.addItem(name, key)
-        self.cb_proj.setSizePolicy(QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Fixed)
         if not HAVE_CARTOPY:
             self.cb_proj.setEnabled(False)
             self.cb_proj.setToolTip("Las proyecciones requieren cartopy")
@@ -180,46 +257,11 @@ class ControlPanel(QWidget):
             lambda i: self._emit_if_live(self.projection_changed, self.cb_proj.itemData(i)))
         row.addWidget(self.cb_proj, 1)
         lay.addLayout(row)
-        row = QHBoxLayout()
-        row.addWidget(QLabel("Viento"))
-        self.cb_style = QComboBox()
-        for key, name in WIND_STYLES:
-            self.cb_style.addItem(name, key)
-        self.cb_style.setToolTip("Representación del viento: barbas, flechas (vectores con largo "
-                                 "proporcional a la velocidad) o curvas (líneas de corriente)")
-        self.cb_style.setSizePolicy(QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Fixed)
-        self.cb_style.currentIndexChanged.connect(lambda _i: self._emit_if_live(self.options_changed))
-        row.addWidget(self.cb_style, 1)
-        lay.addLayout(row)
-        self.chk_extra = QCheckBox("Extra Info (kt / °C junto a cada punto)")
         self.chk_grid = QCheckBox("Grilla lat/lon del archivo")
-        self.chk_fill = QCheckBox("Fondo de velocidad (contornos rellenos)")
-        for c in (self.chk_extra, self.chk_grid, self.chk_fill):
-            c.toggled.connect(lambda _=False: self._emit_if_live(self.options_changed))
-            lay.addWidget(c)
-        row = QHBoxLayout()
-        row.addWidget(QLabel("Densidad: cada N puntos"))
-        self.spin_stride = QSpinBox()
-        self.spin_stride.setRange(1, 10)
-        self.spin_stride.setValue(1)
-        self.spin_stride.valueChanged.connect(lambda _=0: self._emit_if_live(self.options_changed))
-        row.addWidget(self.spin_stride)
-        row.addStretch()
-        lay.addLayout(row)
-        row = QHBoxLayout()
-        self.btn_update = QPushButton("Update")
-        self.btn_update.setToolTip("Redibujar el mapa (F5)")
-        self.btn_update.clicked.connect(self.update_clicked.emit)
-        self.btn_disable = QPushButton("Disable")
-        self.btn_disable.setToolTip("Ocultar / mostrar la capa de datos (Ctrl+D)")
-        self.btn_disable.clicked.connect(self.layer_toggled.emit)
-        row.addWidget(self.btn_update)
-        row.addWidget(self.btn_disable)
-        row.addStretch()
-        lay.addLayout(row)
-
-        # ── RECUADRO ──
-        lay = self._section("RECUADRO (lat/lon)")
+        self.chk_grid.toggled.connect(lambda _=False: self._emit_if_live(self.options_changed))
+        lay.addWidget(self.chk_grid)
+        self._sep(lay)
+        self._sub(lay, "Recuadro (lat/lon, Enter aplica)")
         grid = QGridLayout()
         grid.setHorizontalSpacing(6)
         grid.setVerticalSpacing(4)
@@ -239,6 +281,14 @@ class ControlPanel(QWidget):
         row.addStretch()
         lay.addLayout(row)
 
+        # Acciones globales: la ventana las coloca en la barra de acciones
+        self.btn_update = QPushButton("Actualizar")
+        self.btn_update.setToolTip("Redibujar el mapa (F5)")
+        self.btn_update.clicked.connect(self.update_clicked.emit)
+        self.btn_disable = QPushButton("Ocultar capa")
+        self.btn_disable.setToolTip("Ocultar / mostrar la capa de datos (Ctrl+D)")
+        self.btn_disable.clicked.connect(self.layer_toggled.emit)
+
         self._root.addStretch(1)
         self._update_level_hint()
 
@@ -249,6 +299,7 @@ class ControlPanel(QWidget):
         v.setNotation(QDoubleValidator.Notation.StandardNotation)
         e.setValidator(v)
         e.setMaximumWidth(90)
+        e.setMinimumWidth(40)
         e.returnPressed.connect(self._apply_extent)
         grid.addWidget(e, r, c + 1)
         return e
@@ -455,7 +506,7 @@ class ControlPanel(QWidget):
             self._updating = False
 
     def set_layer_enabled(self, enabled: bool):
-        self.btn_disable.setText("Disable" if enabled else "Enable")
+        self.btn_disable.setText("Ocultar capa" if enabled else "Mostrar capa")
 
     # ── STATUS ───────────────────────────────────────────────────────────────
 

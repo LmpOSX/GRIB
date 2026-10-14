@@ -596,6 +596,16 @@ QLabel#PanelTitle {{
     color: {accl};
     letter-spacing: 0.6px;
 }}
+QFrame#PanelSep {{
+    background: {brd};
+    border: none;
+    max-height: 1px;
+}}
+QFrame#StatusStrip {{
+    background: {bg1};
+    border: 1px solid {brd};
+    border-radius: 10px;
+}}
 QLabel#StatusMono {{
     font-family: "Menlo", "Consolas", "DejaVu Sans Mono", monospace;
     font-size: {h2}px;

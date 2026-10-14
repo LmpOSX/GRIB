@@ -63,7 +63,7 @@ detalle.
 | E6 | Combo con WAFS | Abrir un archivo WAFS (cualquier descarga o archivo convertido) | El rótulo dice "Otro FL del archivo" y la primera opción "(el FL del botón elegido)"; elegir FL200 en el combo muestra `F200 = 46.6 hPa (nivel WAFS)` y STATUS `LEVEL: F200 = 46.6 hPa (WAFS, nivel exacto)`; ningún texto dice "interpolar". |
 | E5 | Verificación wgrib2 | README, sección "Verificación con wgrib2" | Valores de u, v, T en 700 mb coinciden con la barra de estado / CSV. |
 
-## F. VARIABLE y CONFIG
+## F. VARIABLE, VIENTO y MAPA
 
 | # | Caso | Pasos | Resultado esperado |
 |---|---|---|---|
@@ -76,11 +76,13 @@ detalle.
 | F6 | Fondo de velocidad | Marcar | Contornos rellenos con la misma escala, semitransparentes. |
 | F7 | Densidad | Poner 2 y 3 | Barbas cada 2 / 3 puntos; redibuja al cambiar. |
 | F7b | Zoom out con barbas | Alejar con la rueda hasta ver todo el continente | Las barbas se achican y afinan antes de ralearse; con curvas, las líneas y sus flechas se afinan. |
-| F8 | Flechas | CONFIG ▸ Viento ▸ Flechas (vectores) | Flechas de largo fijo que apuntan hacia donde sopla el viento, color de la escala fija, sin flecha en calma; se rotan en estereográfica; al alejar primero se acortan y afinan (hasta la mitad) y recién después se ralean; al acercar recuperan el tamaño; Densidad las ralea más; Extra Info sigue rotulando. |
-| F9 | Curvas | CONFIG ▸ Viento ▸ Curvas (líneas de corriente) | Líneas de corriente continuas con varias flechas de sentido por línea, coloreadas por velocidad; al pasar a Barbas o Flechas y volver no queda ninguna flecha suelta; en estereográfica siguen la proyección; Densidad 4 muestra menos líneas; al hacer zoom se recalculan sobre la vista; el PNG las incluye. |
-| F10 | Estilo persistente | Elegir Curvas, reiniciar; Preferencias ▸ Mapa ▸ Viento = Barbas ▸ Aplicar | Arranca en Curvas; Preferencias cambia el panel y el mapa. |
-| F8 | Update | Clic | Redibuja sin cambiar nada (también F5). |
-| F9 | Disable / Enable | Clic en Disable | Sólo mapa base, "Capa de datos deshabilitada" en el mapa y en STATUS; el botón pasa a Enable y Vista ▸ "Capa de datos desactivada"; ⌘D alterna. |
+| F11 | Flechas | VIENTO ▸ Estilo ▸ Flechas (vectores) (o Vista ▸ Viento) | Flechas de largo fijo que apuntan hacia donde sopla el viento, color de la escala fija, sin flecha en calma; se rotan en estereográfica; al alejar primero se acortan y afinan (hasta la mitad) y recién después se ralean; al acercar recuperan el tamaño; Densidad las ralea más; Extra Info sigue rotulando. |
+| F12 | Curvas | VIENTO ▸ Estilo ▸ Curvas (líneas de corriente) | Líneas de corriente continuas con varias flechas de sentido por línea, coloreadas por velocidad; al pasar a Barbas o Flechas y volver no queda ninguna flecha suelta; en estereográfica siguen la proyección; Densidad 4 muestra menos líneas; al hacer zoom se recalculan sobre la vista; el PNG las incluye. |
+| F13 | Estilo persistente | Elegir Curvas, reiniciar; Preferencias ▸ Mapa ▸ Viento = Barbas ▸ Aplicar | Arranca en Curvas; Preferencias cambia el panel, el menú Vista y el mapa. |
+| F8 | Actualizar | Clic en `Actualizar` (barra de acciones) | Redibuja sin cambiar nada (también F5 y Vista ▸ Actualizar). |
+| F9 | Ocultar / Mostrar capa | Clic en `Ocultar capa` (barra de acciones) | Sólo mapa base, "Capa de datos deshabilitada" en el mapa y en STATUS; el botón pasa a `Mostrar capa` y Vista ▸ "Capa de datos desactivada"; ⌘D alterna. |
+| F14 | Menú Vista sincronizado | Vista ▸ Extra Info; luego destildar Extra Info en el panel; Vista ▸ Proyección ▸ Mercator | La casilla del panel sigue al menú y viceversa; el combo Proyección del panel pasa a Mercator y el mapa cambia. |
+| F15 | Panel sin recortes | Preferencias ▸ Apariencia ▸ tamaño de fuente 18; abrir un archivo ECMWF (nombre largo) | Ningún botón, combo ni campo queda fuera del panel; los combos recortan el texto largo con «…» y el desplegable lo muestra entero; STATUS va en la franja sobre el mapa. |
 
 ## G. Mapa, zoom y recuadro
 

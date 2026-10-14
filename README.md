@@ -144,7 +144,7 @@ WAFS.
 
 Junto a cada archivo se escribe `archivo.grib2.json` con la **procedencia**
 (fuente, modelo, corrida, plazos, parámetros, resolución efectiva). Al
-abrirlo, el panel STATUS muestra `FUENTE: …` con fuente, modelo, corrida,
+abrirlo, la franja STATUS muestra `FUENTE: …` con fuente, modelo, corrida,
 plazo y, si se regrilló, desde qué resolución y con qué método. Un archivo
 sin ese JSON se muestra como "archivo local (sin procedencia)".
 
@@ -217,10 +217,19 @@ real salvo la cuantización del empaquetado). Por eso la fuente ofrece:
   (100 hPa); con los intermedios cada FL del visor queda a menos de 8 hPa
   de un nivel del archivo (F320 ≈ 275, F360 ≈ 225, F410 ≈ 175).
 
-### Panel de la derecha
+### Franja STATUS y panel de la derecha
 
-* **STATUS**: corrida, paso, ventana de validez en UTC y en hora local, nivel
-  elegido y si fue interpolado en ln(p) o extrapolado (nivel más cercano).
+La franja **STATUS** va pegada arriba del mapa, porque describe lo que se
+está viendo: fuente (modelo, corrida, plazo, resolución y formato WAFS),
+`RUN`, `STEP`, ventana de validez en UTC y en hora local, y `LEVEL` (nivel
+elegido y si es exacto del archivo, interpolado en ln(p) o extrapolado).
+
+El panel de la derecha agrupa los controles por pregunta: *qué miro*
+(TIME, LEVEL, VARIABLE), *cómo lo veo* (VIENTO) y *dónde* (MAPA). Cada
+sección separa sus grupos con una línea fina y un subtítulo; nada impone
+ancho (los combos recortan el texto largo y el desplegable lo muestra
+entero), así que el panel nunca se corta ni necesita scroll horizontal.
+
 * **TIME**: `Current (+0)`, `Next (+1)`, `Advanced (+2)` eligen el 1.°, 2.° y
   3.° paso del archivo, con su hora de validez al lado. Si hay más de tres
   pasos aparece un combo con todos.
@@ -235,29 +244,33 @@ real salvo la cuantización del empaquetado). Por eso la fuente ofrece:
   "Otro FL del archivo" para elegir los FL que no tienen botón (FL200,
   FL250, …).
 * **VARIABLE**: Viento, Temperatura (contornos cada 2 °C) o ambas.
-* **CONFIG**: `Proyección` elige cómo se dibuja el mapa: Lat/Lon
+* **VIENTO**: `Estilo` elige la representación: **Barbas** (convención
+  meteorológica, en kt), **Flechas** (de largo fijo, apuntan hacia donde
+  sopla el viento; la velocidad va sólo en el color y donde hay calma no
+  hay flecha) o **Curvas** (líneas de corriente del campo con una flecha
+  de sentido cada pocos centímetros); las tres usan la misma escala de
+  colores por velocidad. `Densidad` dibuja un punto cada N (en curvas baja
+  la densidad de líneas). Capas adicionales: `Extra Info` escribe la
+  velocidad (y la temperatura) junto a cada punto, con unidades
+  (`12 kt  −45 °C`) o sin ellas y con el tamaño que se elija en
+  Preferencias ▸ Mapa (además lo escala ⌘ +/−), raleando los rótulos para
+  que no se pisen; `Fondo de velocidad` rellena el mapa con la misma
+  escala de colores.
+* **MAPA**: `Proyección` elige cómo se dibuja el mapa: Lat/Lon
   (PlateCarree), Estereográfica conforme centrada en el dominio del archivo,
   Estereográfica polar sur o norte, Mercator o Lambert conforme (requieren
-  cartopy; la elección se guarda en la configuración). `Viento` elige la
-  representación: **Barbas** (convención meteorológica, en kt), **Flechas**
-  (de largo fijo, apuntan hacia donde sopla el viento; la velocidad va
-  sólo en el color y donde hay calma no hay flecha) o **Curvas** (líneas de
-  corriente del campo con una flecha de sentido cada pocos centímetros);
-  las tres usan la misma escala de colores por velocidad. Las flechas se
-  ralean solas para no pisarse al alejar la vista.
-  `Extra Info` escribe la velocidad (y la temperatura) junto a cada punto,
-  con unidades (`12 kt  −45 °C`) o sin ellas y con el tamaño que se elija
-  en Preferencias ▸ Mapa (además lo escala ⌘ +/−); los rótulos se ralean
-  para no pisarse; `Grilla` dibuja la grilla lat/lon del archivo;
-  `Fondo de velocidad` rellena el mapa con la misma escala de colores;
-  `Densidad` submuestrea las barbas o flechas cada N puntos (en curvas baja
-  la densidad de líneas); `Update` redibuja y
-  `Disable`/`Enable` oculta o muestra la capa de datos. Cualquier cambio de
-  radio, botón de nivel, combo o casilla redibuja automáticamente, y las
-  casillas y la densidad quedan guardadas como valores iniciales (también
-  editables en Preferencias ▸ Mapa).
-* **RECUADRO**: lat/lon mín/máx (Enter aplica) y `Todo el dominio`.
+  cartopy; la elección se guarda en la configuración); `Grilla` dibuja la
+  grilla lat/lon del archivo; el recuadro lat/lon mín/máx (Enter o
+  `Aplicar recuadro`) y `Todo el dominio` fijan la vista.
 * **INVENTARIO**: corrida, pasos, variables, niveles y grilla del archivo.
+
+Cualquier cambio de radio, botón de nivel, combo o casilla redibuja
+automáticamente, y estilo, casillas y densidad quedan guardados como
+valores iniciales (también editables en Preferencias ▸ Mapa). Las mismas
+opciones de VIENTO y MAPA están en el menú **Vista** (Proyección, Viento,
+Extra Info, Fondo de velocidad, Grilla), sincronizadas con el panel; las
+acciones globales `Actualizar` (F5) y `Ocultar capa` / `Mostrar capa`
+(⌘D) van en la barra de acciones y en Vista.
 
 ### Barra de acciones y mapa
 
@@ -460,7 +473,7 @@ con seis pestañas:
 
 * **Apariencia**: color de acento (presets o personalizado, con vista previa
   en vivo) y transparencia de la ventana.
-* **Mapa**: proyección, valores iniciales de CONFIG (viento, Extra Info, grilla,
+* **Mapa**: proyección, valores iniciales de VIENTO y MAPA (viento, Extra Info, grilla,
   fondo de velocidad, densidad).
 * **Fuentes**: lista de fuentes con su casilla de habilitación, tipo y
   `✓ FL`; `Configurar…` abre la fuente: parámetros por defecto (el mismo

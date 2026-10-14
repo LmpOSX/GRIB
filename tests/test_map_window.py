@@ -287,12 +287,50 @@ class TestCargaYRedibujo(_MapBase):
         self.w.panel.btn_disable.click()
         self.assertEqual(len(self.draws), n + 1)
         self.assertFalse(self.draws[-1]["show_wind"])
-        self.assertEqual(self.w.panel.btn_disable.text(), "Enable")
+        self.assertEqual(self.w.panel.btn_disable.text(), "Mostrar capa")
         self.assertFalse(self.w._act_layer.isChecked())
         self.assertIn("DESHABILITADA", self.w.panel.lbl_level.text())
         self.w.toggle_layer()
         self.assertTrue(self.draws[-1]["show_wind"])
-        self.assertEqual(self.w.panel.btn_disable.text(), "Disable")
+        self.assertEqual(self.w.panel.btn_disable.text(), "Ocultar capa")
+
+    def test_panel_entra_en_el_ancho(self):
+        """Nada del panel impone un ancho mayor que el área con scroll, ni
+        con fuente grande; STATUS va en la franja pegada al mapa."""
+        side = self.w._side_scroll.widget()
+        for size in (13, 18):
+            vals = dict(self.w._cfg); vals["font_size"] = size
+            self.w.apply_settings(vals)
+            _app.processEvents()
+            self.assertLessEqual(side.minimumSizeHint().width(),
+                                 self.w._side_scroll.viewport().width(), size)
+            self.assertLessEqual(self.w.panel.minimumSizeHint().width(),
+                                 self.w._side_scroll.viewport().width(), size)
+        self.assertEqual(list(self.w.panel._sections), ["TIME", "LEVEL", "VARIABLE", "VIENTO", "MAPA"])
+        self.assertIsNot(self.w.panel.status.parentWidget(), self.w.panel)
+        self.assertTrue(self.w.panel.status.isVisible())
+
+    def test_menu_vista_sincronizado(self):
+        """Vista ▸ Extra Info / Viento / Proyección reflejan y cambian el panel."""
+        w = self.w
+        self.assertFalse(w._act_extra.isChecked())
+        w._act_extra.trigger()
+        self.assertTrue(w.panel.chk_extra.isChecked())
+        self.assertTrue(self.draws[-1]["extra_info"])
+        w.panel.chk_extra.setChecked(False)
+        self.assertFalse(w._act_extra.isChecked())
+        w._style_actions["curvas"].trigger()
+        self.assertEqual(w.panel.options()["wind_style"], "curvas")
+        self.assertEqual(self.draws[-1]["wind_style"], "curvas")
+        w.panel.cb_style.setCurrentIndex(w.panel.cb_style.findData("flechas"))
+        self.assertTrue(w._style_actions["flechas"].isChecked())
+        if w.plot.use_cartopy:
+            w._proj_actions["mercator"].trigger()
+            self.assertEqual(w.panel.projection(), "mercator")
+            self.assertEqual(w.plot.proj_key, "mercator")
+            self.assertEqual(config.load_config()["projection"], "mercator")
+            w.panel.cb_proj.setCurrentIndex(w.panel.cb_proj.findData("platecarree"))
+            self.assertTrue(w._proj_actions["platecarree"].isChecked())
 
     def test_tema_redibuja_con_paleta(self):
         n = len(self.draws)

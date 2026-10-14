@@ -2,7 +2,7 @@
 """Preferencias del visor, en pestañas:
 
 * Apariencia: color de acento (con vista previa en vivo) y transparencia.
-* Mapa: proyección y valores iniciales de CONFIG (viento, Extra Info, grilla, fondo,
+* Mapa: proyección y valores iniciales de VIENTO y MAPA (viento, Extra Info, grilla, fondo,
   densidad).
 * Fuentes: habilitar cada fuente, sus parámetros, credenciales y prueba.
 * Descarga: plazos y destino por defecto de «Obtener datos…», caché.
@@ -198,7 +198,7 @@ class SettingsDialog(GlassDialog):
             self.cb_proj.setToolTip("Las proyecciones requieren cartopy")
         lay.addWidget(self.cb_proj)
 
-        self._sub(lay, "Valores iniciales de CONFIG (también se guardan al cambiarlos en el panel)")
+        self._sub(lay, "Valores iniciales de VIENTO y MAPA (también se guardan al cambiarlos en el panel)")
         row = QHBoxLayout()
         row.addWidget(QLabel("Viento"))
         self.cb_style = QComboBox()
