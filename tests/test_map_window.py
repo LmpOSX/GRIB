@@ -98,10 +98,12 @@ class TestCargaYRedibujo(_MapBase):
         self.assertEqual(self.w.panel.sel_p, 700.0)
         self.assertIn("LEVEL: 700 hPa (nivel del archivo)", self.w.panel.lbl_level.text())
         self.assertFalse(any(b.isChecked() for b in self.w.panel._fl_buttons.values()))
-        # Volver a FL: el combo vuelve a "(interpolar por FL)"
+        # Volver a FL: el combo vuelve a "(interpolar por FL)" (archivo en presión)
         self.w.panel._fl_buttons[300].click()
         self.assertEqual(self.w.panel.level_mode, "fl")
         self.assertEqual(self.w.panel.cb_press.currentIndex(), 0)
+        self.assertEqual(self.w.panel.cb_press.itemText(0), self.w.panel.P_COMBO_NONE)
+        self.assertEqual(self.w.panel.lbl_press.text(), self.w.panel.P_LABEL)
         self.assertEqual(len(self.draws), 3)
 
     def test_paso_redibuja(self):

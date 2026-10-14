@@ -702,7 +702,8 @@ class MainWindow(QMainWindow):
         if panel.level_mode == "sfc":
             lvl_txt = "Superficie (viento 10 m, T 2 m)"
         elif panel.level_mode == "p":
-            lvl_txt = f"{info['p']:g} hPa"
+            lvl_txt = (f"{panel._fl_text(info['p'])} (nivel WAFS)" if panel.wafs
+                       else f"{info['p']:g} hPa")
         elif info.get("mode") == "wafs":
             lvl_txt = f"F{panel.sel_fl:03d} ({info['p']:g} hPa, nivel WAFS)"
         else:
@@ -755,7 +756,8 @@ class MainWindow(QMainWindow):
         if panel.level_mode == "sfc":
             lvl = "LEVEL: superficie (viento 10 m / T 2 m)"
         elif panel.level_mode == "p":
-            lvl = f"LEVEL: {info['p']:g} hPa (nivel del archivo)"
+            lvl = (f"LEVEL: {panel._fl_text(info['p'])} (WAFS, nivel exacto)" if panel.wafs
+                   else f"LEVEL: {info['p']:g} hPa (nivel del archivo)")
         elif info.get("mode") == "wafs":
             lvl = f"LEVEL: F{panel.sel_fl:03d} = {info['p'] * 100:.0f} Pa (WAFS, nivel exacto)"
         else:

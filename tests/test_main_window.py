@@ -474,6 +474,14 @@ class TestVentanaWAFS(_Base):
         self.assertEqual(self.w._current["info"]["mode"], "wafs")
         self.assertTrue(self.w._act_export_wafs.isEnabled())
         self.assertIn("FL050 · 843.1 hPa", self.w.panel.cb_press.itemText(1))
+        # En WAFS no se interpola: el combo y su rótulo lo dicen, y elegir un
+        # FL sin botón muestra "nivel WAFS" en el hint y en STATUS
+        self.assertEqual(self.w.panel.cb_press.itemText(0), self.w.panel.P_COMBO_NONE_WAFS)
+        self.assertEqual(self.w.panel.lbl_press.text(), self.w.panel.P_LABEL_WAFS)
+        self.assertNotIn("interpolar", self.w.panel.cb_press.itemText(0))
+        self.w.panel.cb_press.setCurrentIndex(1)
+        self.assertIn("F050 = 843.1 hPa (nivel WAFS)", self.w.panel.lbl_fl_p.text())
+        self.assertIn("LEVEL: F050 = 843.1 hPa (WAFS, nivel exacto)", self.w.panel.lbl_level.text())
         # Un WAFS ya convertido se abre tal cual (no se vuelve a convertir)
         self.w.open_file(self.w._path)
         self.assertTrue(self.w._path.endswith("FDP_MULTI_wafs.grib2"))

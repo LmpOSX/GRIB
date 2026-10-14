@@ -229,7 +229,11 @@ real salvo la cuantización del empaquetado). Por eso la fuente ofrece:
   isotérmica arriba) y U, V y T se interpolan linealmente en ln(p) entre los
   niveles del archivo. Fuera del rango se usa el nivel más cercano y STATUS
   lo marca como "extrapolado". El combo "Nivel de presión" elige un nivel
-  del archivo sin interpolar.
+  del archivo sin interpolar. Con un archivo **WAFS** (lo normal, porque
+  todo se convierte al abrir o descargar) nada de esto interpola: cada
+  botón de FL es un nivel exacto del archivo, y el combo pasa a llamarse
+  "Otro FL del archivo" para elegir los FL que no tienen botón (FL200,
+  FL250, …).
 * **VARIABLE**: Viento, Temperatura (contornos cada 2 °C) o ambas.
 * **CONFIG**: `Proyección` elige cómo se dibuja el mapa: Lat/Lon
   (PlateCarree), Estereográfica conforme centrada en el dominio del archivo,
@@ -412,7 +416,8 @@ python -m app.wafs_format --validar archivo.grib2
 
 En el visor, con un WAFS abierto cada botón de FL cae en un **nivel exacto
 del archivo** (STATUS: `LEVEL: F300 = 30090 Pa (WAFS, nivel exacto)`), el
-combo «Nivel de presión» lista los 49 niveles como `FL300 · 300.9 hPa`, el
+combo «Otro FL del archivo» lista los 49 niveles como `FL300 · 300.9 hPa`
+(su primera opción es «el FL del botón elegido», sin interpolación), el
 inventario dice `FORMATO: WAFS …` y FUENTE agrega `WAFS FL050–FL530
 (convertido)`.
 

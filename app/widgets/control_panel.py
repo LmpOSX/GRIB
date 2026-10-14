@@ -31,12 +31,16 @@ class ControlPanel(QWidget):
     projection_changed = pyqtSignal(str)    # clave de PROJECTIONS
 
     TIME_LABELS = ["Current (+0)", "Next (+1)", "Advanced (+2)"]
-    P_COMBO_NONE = "(interpolar por FL)"
+    P_COMBO_NONE = "(interpolar por FL)"            # archivo en niveles de presión
+    P_COMBO_NONE_WAFS = "(el FL del botón elegido)"  # archivo WAFS: no se interpola
+    P_LABEL = "Nivel de presión:"
+    P_LABEL_WAFS = "Otro FL del archivo:"
 
     def __init__(self, parent=None):
         super().__init__(parent)
         self.level_mode = "fl"      # 'fl', 'p' o 'sfc' (fuente de superficie)
         self.surface = False
+        self.wafs = False           # archivo WAFS: los FL son niveles exactos
         self.sel_fl = 300
         self.sel_p = None
         self._levels = []           # niveles de presión del archivo (hPa)
@@ -133,7 +137,8 @@ class ControlPanel(QWidget):
         lay.addLayout(grid)
         row = QHBoxLayout()
         row.setContentsMargins(0, 4, 0, 0)
-        row.addWidget(QLabel("Nivel de presión:"))
+        self.lbl_press = QLabel(self.P_LABEL)
+        row.addWidget(self.lbl_press)
         self.cb_press = QComboBox()
         self.cb_press.addItem(self.P_COMBO_NONE)
         self.cb_press.setSizePolicy(QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Fixed)
@@ -275,11 +280,18 @@ class ControlPanel(QWidget):
             self._steps_row.setVisible(n > 3)
 
             self._levels = list(reader.levels)
+            self.wafs = bool(getattr(reader, "is_wafs", False))
+            # En WAFS cada botón de FL es un nivel exacto del archivo: el combo
+            # sólo sirve para elegir alguno de los FL que no tienen botón.
+            self.lbl_press.setText(self.P_LABEL_WAFS if self.wafs else self.P_LABEL)
             self.cb_press.clear()
-            self.cb_press.addItem(self.P_COMBO_NONE)
+            self.cb_press.addItem(self.P_COMBO_NONE_WAFS if self.wafs else self.P_COMBO_NONE)
+            self.cb_press.setToolTip(
+                "Los botones de FL caen en niveles exactos del archivo WAFS; acá se eligen "
+                "los demás FL del archivo" if self.wafs else
+                "Nivel del archivo sin interpolar; los botones de FL interpolan en ln(p)")
             label = getattr(reader, "level_label", None) or (lambda lv: f"{lv:g} hPa")
             self.cb_press.addItems([label(lv) for lv in self._levels])
-            self.wafs = bool(getattr(reader, "is_wafs", False))
             self.cb_press.setCurrentIndex(0)
             # Fuentes de superficie (viento 10 m / T 2 m): sin selector de nivel
             self.surface = getattr(reader, "kind", "altura") == "superficie"
@@ -348,7 +360,7 @@ class ControlPanel(QWidget):
         self.level_changed.emit()
 
     def select_pressure_index(self, idx: int):
-        """Selección programática del combo de presión (0 = interpolar por FL)."""
+        """Selección programática del combo de niveles (0 = el FL del botón)."""
         self.cb_press.setCurrentIndex(idx)
 
     def _on_press_combo(self, idx: int):
@@ -377,8 +389,17 @@ class ControlPanel(QWidget):
                 self.lbl_fl_p.setText(f"F{self.sel_fl:03d} = {fl_to_hpa(self.sel_fl):.1f} hPa (nivel WAFS)")
             else:
                 self.lbl_fl_p.setText(f"F{self.sel_fl:03d} ≈ {fl_to_hpa(self.sel_fl):.1f} hPa (ISA)")
+        elif getattr(self, "wafs", False):
+            self.lbl_fl_p.setText(f"{self._fl_text(self.sel_p)} (nivel WAFS)")
         else:
             self.lbl_fl_p.setText(f"Nivel del archivo: {self.sel_p:g} hPa (sin interpolar)")
+
+    @staticmethod
+    def _fl_text(p_hpa):
+        """'F200 = 46.6 hPa' si la presión es la de un FL entero, si no '46.6 hPa'."""
+        from ..wafs_format import fl_from_hpa
+        fl = fl_from_hpa(p_hpa)
+        return f"F{fl:03d} = {p_hpa:g} hPa" if fl is not None else f"{p_hpa:g} hPa"
 
     # ── Variable y opciones ──────────────────────────────────────────────────
 

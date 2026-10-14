@@ -60,6 +60,7 @@ detalle.
 | E2 | Extrapolación | Clic en F530 con nivel mínimo 100 hPa → interpola. Con un archivo cuyo nivel más alto sea 200 hPa | STATUS "extrapolado / nivel más cercano: 200 hPa" y el título del mapa lo indica. |
 | E3 | Nivel de presión directo | Combo "Nivel de presión" ▸ 700 hPa | Ningún FL queda marcado; STATUS "700 hPa (nivel del archivo)"; el mapa muestra el nivel exacto. |
 | E4 | Volver a FL | Clic en un FL con el combo en un nivel | El combo vuelve a "(interpolar por FL)". |
+| E6 | Combo con WAFS | Abrir un archivo WAFS (cualquier descarga o archivo convertido) | El rótulo dice "Otro FL del archivo" y la primera opción "(el FL del botón elegido)"; elegir FL200 en el combo muestra `F200 = 46.6 hPa (nivel WAFS)` y STATUS `LEVEL: F200 = 46.6 hPa (WAFS, nivel exacto)`; ningún texto dice "interpolar". |
 | E5 | Verificación wgrib2 | README, sección "Verificación con wgrib2" | Valores de u, v, T en 700 mb coinciden con la barra de estado / CSV. |
 
 ## F. VARIABLE y CONFIG
