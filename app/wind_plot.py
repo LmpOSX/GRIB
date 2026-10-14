@@ -183,6 +183,8 @@ STREAM_NOMINAL_CELL_PX = 18.0   # curvas: por debajo de esta separación entre p
 CALM_KT = 0.5               # por debajo no hay dirección: sin flecha
 STREAM_ARROW_PX = 55.0      # separación entre flechas embebidas en las curvas (px)
 LABEL_SIZE_DEFAULT = 7      # tamaño base (pt) de los rótulos de Extra Info
+GRID_LABEL_MARGIN_PX = (66.0, 18.0, 14.0, 38.0)   # margen de inscripciones: izq, der, arriba, abajo
+GRID_STEPS = [(10, "10°"), (5, "5°"), (1, "1°")]   # grilla de grados seleccionable
 MAX_LABELS = 900        # rótulos de Extra Info visibles como máximo
 SETTLE_MS = 150         # espera tras el último cambio de vista para reconstruir
 
@@ -406,11 +408,14 @@ class WindPlot:
             return
         if w < 80 or h < 80:
             return
+        # Margen de inscripciones: las etiquetas de lat/lon se escriben
+        # fuera de los ejes (izquierda y abajo) y necesitan este espacio;
+        # arriba y a la derecha queda un margen chico para que nada se corte.
         s = max(0.8, self.font_scale)
-        left = 48.0 * s
-        right = 10.0
-        top = (34.0 * s) if with_title else 8.0
-        bottom = 28.0 * s
+        left = GRID_LABEL_MARGIN_PX[0] * s
+        right = GRID_LABEL_MARGIN_PX[1] * s
+        top = (36.0 * s) if with_title else GRID_LABEL_MARGIN_PX[2] * s
+        bottom = GRID_LABEL_MARGIN_PX[3] * s
         self.fig.subplots_adjust(left=left / w, right=1.0 - right / w,
                                  top=1.0 - top / h, bottom=bottom / h)
 
@@ -582,48 +587,73 @@ class WindPlot:
                 transform=self.ax.transAxes, color=self.pal["warn"], fontsize=self._fs(7),
                 ha="right", va="top", zorder=10))
 
-    def _gridlines(self, dlon, dlat, fine):
-        """Meridianos/paralelos cada 10° con etiquetas y, opcionalmente, la
-        grilla fina del archivo."""
+    @staticmethod
+    def grid_spacing(step):
+        """(principal, secundaria) en grados para la grilla elegida: con 10°
+        sólo principales cada 10; con 5°, principales cada 10 y secundarias
+        (a rayas) cada 5; con 1°, principales cada 5 (10 y 5 iguales) y
+        secundarias (punteadas) cada 1."""
+        step = int(step) if step in (10, 5, 1) else 10
+        if step == 10:
+            return 10, None
+        if step == 5:
+            return 10, 5
+        return 5, 1
+
+    def _gridlines(self, dlon, dlat, fine, step=10):
+        """Meridianos/paralelos de la grilla de grados elegida (principales
+        etiquetadas en los bordes, secundarias con otro trazo) y,
+        opcionalmente, la grilla fina del archivo."""
+        major, minor = self.grid_spacing(step)
         if self.use_cartopy:
-            # Meridianos y paralelos cada 10°, etiquetados en los bordes del
-            # mapa (también en proyecciones no rectangulares)
             gl = self.ax.gridlines(crs=self.data_crs, draw_labels=True,
-                                   xlocs=mticker.MultipleLocator(10),
-                                   ylocs=mticker.MultipleLocator(10),
+                                   xlocs=mticker.MultipleLocator(major),
+                                   ylocs=mticker.MultipleLocator(major),
                                    x_inline=False, y_inline=False, rotate_labels=False,
-                                   color=self.pal["grid"], linewidth=0.8, linestyle="-",
-                                   alpha=0.9, zorder=2)
+                                   color=self.pal["grid"], linewidth=0.9, linestyle="-",
+                                   alpha=1.0, zorder=2)
             gl.top_labels = False
             gl.right_labels = False
             gl.xlabel_style = {"color": self.pal["text"], "size": self._fs(9)}
             gl.ylabel_style = {"color": self.pal["text"], "size": self._fs(9)}
+            gl.xpadding = 6
+            gl.ypadding = 6
             gl.n_steps = 30          # puntos por línea (100 por defecto): mucho más rápido
             self._gridliners.append(gl)
+            if minor:
+                gm = self.ax.gridlines(
+                    crs=self.data_crs, draw_labels=False,
+                    xlocs=mticker.MultipleLocator(minor),
+                    ylocs=mticker.MultipleLocator(minor),
+                    color=self.pal["grid"], linewidth=0.7,
+                    linestyle="--" if minor == 5 else ":", alpha=0.85, zorder=2)
+                gm.n_steps = 30
+                self._gridliners.append(gm)
             if fine:
-                # Grilla del archivo (p. ej. 1°): más tenue, punteada
+                # Grilla del archivo (p. ej. 0,25°): más tenue, punteada
                 gf = self.ax.gridlines(
                     crs=self.data_crs, draw_labels=False,
                     xlocs=mticker.MultipleLocator(dlon),
                     ylocs=mticker.MultipleLocator(dlat),
-                    color=self.pal["grid_fine"], linewidth=0.6,
+                    color=self.pal["grid_fine"], linewidth=0.5,
                     linestyle=":", alpha=0.9, zorder=1)
                 gf.n_steps = 30
                 self._gridliners.append(gf)
         else:
-            self.ax.xaxis.set_major_locator(mticker.MultipleLocator(10))
-            self.ax.yaxis.set_major_locator(mticker.MultipleLocator(10))
-            self.ax.xaxis.set_minor_locator(mticker.MultipleLocator(dlon))
-            self.ax.yaxis.set_minor_locator(mticker.MultipleLocator(dlat))
-            self.ax.grid(True, which="major", color=self.pal["grid"], linewidth=0.8, linestyle="-")
-            self.ax.grid(fine, which="minor", color=self.pal["grid_fine"], linewidth=0.6,
-                         linestyle=":")
+            self.ax.xaxis.set_major_locator(mticker.MultipleLocator(major))
+            self.ax.yaxis.set_major_locator(mticker.MultipleLocator(major))
+            sub = minor or dlon
+            self.ax.xaxis.set_minor_locator(mticker.MultipleLocator(sub))
+            self.ax.yaxis.set_minor_locator(mticker.MultipleLocator(minor or dlat))
+            self.ax.grid(True, which="major", color=self.pal["grid"], linewidth=0.9, linestyle="-")
+            self.ax.grid(bool(minor) or fine, which="minor", color=self.pal["grid"],
+                         linewidth=0.7, linestyle="--" if minor == 5 else ":")
             self.ax.set_xlabel("Longitud", fontsize=self._fs(9))
             self.ax.set_ylabel("Latitud", fontsize=self._fs(9))
 
-    def _ensure_base(self, dlon, dlat, fine):
+    def _ensure_base(self, dlon, dlat, fine, step=10):
         """Reconstruye costas y grillas sólo si cambió algo que las afecta."""
-        key = (self.proj_key, bool(fine), round(self.font_scale, 3), round(dlon, 6),
+        key = (self.proj_key, bool(fine), int(step), round(self.font_scale, 3), round(dlon, 6),
                round(dlat, 6))
         if key == self._base_key:
             return
@@ -631,7 +661,7 @@ class WindPlot:
         self._remove_all(self._gridliners)
         self._style_axes()
         self._base_map()
-        self._gridlines(dlon, dlat, fine)
+        self._gridlines(dlon, dlat, fine, step)
         self._base_key = key
 
     def _legend(self):
@@ -659,6 +689,7 @@ class WindPlot:
             label_units bool  (rótulos con unidad: "12 kt −45 °C")
             wind_style  'barbas' | 'flechas' | 'curvas' (representación del viento)
             grid        bool  (grilla fina del archivo)
+            grid_step   10 | 5 | 1 (grilla de grados: principales y secundarias)
             fill        bool  (fondo de velocidad en contornos rellenos)
             stride      int   (submuestreo mínimo de barbas / flechas; en curvas
                                baja la densidad de líneas)
@@ -701,7 +732,7 @@ class WindPlot:
             }
 
             # Capa base (se conserva entre redibujos)
-            self._ensure_base(dlon, dlat, opts.get("grid", False))
+            self._ensure_base(dlon, dlat, opts.get("grid", False), opts.get("grid_step", 10))
 
             # Capa estática: se reconstruye entera
             self._remove_all(self._static_artists)

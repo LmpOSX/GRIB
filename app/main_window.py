@@ -29,7 +29,7 @@ from .grib_reader import KELVIN, fl_to_hpa, fmt_dt, speed_dir_from_uv
 from .dialogs.settings_dialog import SettingsDialog
 from .widgets.welcome_widget import WelcomeWidget
 from .widgets.control_panel import ControlPanel
-from .wind_plot import PROJECTIONS, WIND_STYLES
+from .wind_plot import PROJECTIONS, WIND_STYLES, GRID_STEPS
 from .widgets.inventory_panel import InventoryPanel
 from .sources import enabled_sources, all_sources, get_source, source_label, read_provenance
 
@@ -97,7 +97,7 @@ class MainWindow(QMainWindow):
             bg=p["bg_data"].name(), ax_bg=p["bg_data"].name(),
             text=p["text_bright"].name(), text_dim=p["text_dim"].name(),
             coast=p["text_bright"].name(), border=p["text_dim"].name(),
-            grid=p["mid"].name(), grid_fine=p["bg2"].name(),
+            grid=p["text_dim"].name(), grid_fine=p["mid"].name(),
             legend_bg=p["bg1"].name(), warn=p["accent_light"].name(),
         )
         if self._reader is not None:
@@ -269,13 +269,15 @@ class MainWindow(QMainWindow):
         c = self._cfg
         return {"wind_style": c.get("map_wind_style", "barbas"),
                 "extra_info": c.get("map_extra_info", False), "grid": c.get("map_grid", False),
+                "grid_step": c.get("map_grid_step", 10),
                 "fill": c.get("map_fill", False), "stride": c.get("map_stride", 1)}
 
     def _on_panel_options_changed(self):
         """VIENTO / MAPA del panel: se guarda como valor inicial y se redibuja."""
         o = self.panel.options()
         self._cfg.update({"map_wind_style": o["wind_style"], "map_extra_info": o["extra_info"],
-                          "map_grid": o["grid"], "map_fill": o["fill"], "map_stride": o["stride"]})
+                          "map_grid": o["grid"], "map_grid_step": o["grid_step"],
+                          "map_fill": o["fill"], "map_stride": o["stride"]})
         save_config(self._cfg)
         self._sync_view_menu()
         self.redraw()
@@ -452,6 +454,17 @@ class MainWindow(QMainWindow):
                                            lambda c: self._menu_set_option("extra_info", c))
         self._act_fill = self._add_action(vista, "Fondo de velocidad",
                                           lambda c: self._menu_set_option("fill", c))
+        self._menu_grid = vista.addMenu("Grilla de grados")
+        self._grid_actions = {}
+        grp = QActionGroup(self)
+        grp.setExclusive(True)
+        for val, name in GRID_STEPS:
+            act = QAction(name, self)
+            act.setCheckable(True)
+            act.triggered.connect(lambda _c, v=val: self._menu_set_option("grid_step", v))
+            grp.addAction(act)
+            self._menu_grid.addAction(act)
+            self._grid_actions[val] = act
         self._act_grid = self._add_action(vista, "Grilla lat/lon del archivo",
                                           lambda c: self._menu_set_option("grid", c))
         for act in (self._act_extra, self._act_fill, self._act_grid):
@@ -484,6 +497,9 @@ class MainWindow(QMainWindow):
             act.setChecked(bool(val))
             act.blockSignals(False)
         act = self._style_actions.get(o["wind_style"])
+        if act is not None:
+            act.setChecked(True)
+        act = self._grid_actions.get(o["grid_step"])
         if act is not None:
             act.setChecked(True)
         act = self._proj_actions.get(self.panel.projection())

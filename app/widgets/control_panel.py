@@ -15,7 +15,7 @@ from PyQt6.QtWidgets import (
 )
 
 from ..grib_reader import FLIGHT_LEVELS, fl_to_hpa
-from ..wind_plot import PROJECTIONS, HAVE_CARTOPY, WIND_STYLES
+from ..wind_plot import PROJECTIONS, HAVE_CARTOPY, WIND_STYLES, GRID_STEPS
 
 
 class ControlPanel(QWidget):
@@ -257,6 +257,17 @@ class ControlPanel(QWidget):
             lambda i: self._emit_if_live(self.projection_changed, self.cb_proj.itemData(i)))
         row.addWidget(self.cb_proj, 1)
         lay.addLayout(row)
+        row = QHBoxLayout()
+        row.addWidget(QLabel("Grilla de grados:"))
+        self.cb_grid_step = self._compact(QComboBox())
+        for val, name in GRID_STEPS:
+            self.cb_grid_step.addItem(name, val)
+        self.cb_grid_step.setToolTip("Meridianos y paralelos: cada 10°; cada 5° (secundarias a "
+                                     "rayas); o cada 1° (principales cada 5°, secundarias punteadas)")
+        self.cb_grid_step.currentIndexChanged.connect(
+            lambda _i: self._emit_if_live(self.options_changed))
+        row.addWidget(self.cb_grid_step, 1)
+        lay.addLayout(row)
         self.chk_grid = QCheckBox("Grilla lat/lon del archivo")
         self.chk_grid.toggled.connect(lambda _=False: self._emit_if_live(self.options_changed))
         lay.addWidget(self.chk_grid)
@@ -468,6 +479,7 @@ class ControlPanel(QWidget):
             "wind_style": self.cb_style.currentData() or "barbas",
             "extra_info": self.chk_extra.isChecked(),
             "grid": self.chk_grid.isChecked(),
+            "grid_step": int(self.cb_grid_step.currentData() or 10),
             "fill": self.chk_fill.isChecked(),
             "stride": int(self.spin_stride.value()),
         }
@@ -483,6 +495,8 @@ class ControlPanel(QWidget):
                 self.chk_extra.setChecked(bool(opts["extra_info"]))
             if "grid" in opts:
                 self.chk_grid.setChecked(bool(opts["grid"]))
+            if "grid_step" in opts:
+                self.cb_grid_step.setCurrentIndex(max(0, self.cb_grid_step.findData(int(opts["grid_step"]))))
             if "fill" in opts:
                 self.chk_fill.setChecked(bool(opts["fill"]))
             if "stride" in opts:

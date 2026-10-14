@@ -119,7 +119,7 @@ class TestDialogos(_Base):
         from app.dialogs.settings_dialog import SettingsDialog
         cfg = dict(config.DEFAULTS)
         cfg.update({"accent_color": "#4A90D9", "opacity": 180, "projection": "mercator",
-                    "map_stride": 3, "map_wind_style": "flechas", "map_label_size": 9,
+                    "map_stride": 3, "map_wind_style": "flechas", "map_label_size": 9, "map_grid_step": 5,
                     "map_label_units": False, "cache_max_mb": 123, "engine": "wgrib2",
                     "wgrib2_path": "/no/existe/wgrib2",
                     "sources": {"gfs": {"enabled": True, "params": {"resolucion": "0p50"}}}})
@@ -136,6 +136,7 @@ class TestDialogos(_Base):
         self.assertEqual(v["map_stride"], 3)
         self.assertEqual(v["map_wind_style"], "flechas")
         self.assertEqual((v["map_label_size"], v["map_label_units"]), (9, False))
+        self.assertEqual(v["map_grid_step"], 5)
         self.assertEqual(v["cache_max_mb"], 123)
         self.assertEqual(v["engine"], "wgrib2")
         self.assertEqual(v["wgrib2_path"], "/no/existe/wgrib2")

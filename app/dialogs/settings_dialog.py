@@ -27,7 +27,7 @@ from ..config import OPACITY_MAX
 from ..utils import MOD_KEY
 from .. import gfs_download as gfs
 from ..grib_engines import ENGINES, ec, find_wgrib2, wgrib2_version
-from ..wind_plot import PROJECTIONS, HAVE_CARTOPY, WIND_STYLES
+from ..wind_plot import PROJECTIONS, HAVE_CARTOPY, WIND_STYLES, GRID_STEPS
 from ..sources import all_sources, source_config, set_source_config, source_label
 from ..sources.cache import DownloadCache
 
@@ -207,6 +207,15 @@ class SettingsDialog(GlassDialog):
         self.cb_style.setCurrentIndex(max(0, self.cb_style.findData(
             self._cfg.get("map_wind_style", "barbas"))))
         row.addWidget(self.cb_style, 1)
+        lay.addLayout(row)
+        row = QHBoxLayout()
+        row.addWidget(QLabel("Grilla de grados"))
+        self.cb_grid_step = QComboBox()
+        for val, name in GRID_STEPS:
+            self.cb_grid_step.addItem(name, val)
+        self.cb_grid_step.setCurrentIndex(max(0, self.cb_grid_step.findData(
+            int(self._cfg.get("map_grid_step", 10)))))
+        row.addWidget(self.cb_grid_step, 1)
         lay.addLayout(row)
         self.chk_extra = QCheckBox("Extra Info (kt / °C junto a cada punto)")
         self.chk_extra.setChecked(bool(self._cfg.get("map_extra_info", False)))
@@ -512,6 +521,7 @@ class SettingsDialog(GlassDialog):
             "map_wind_style": self.cb_style.currentData() or "barbas",
             "map_extra_info": self.chk_extra.isChecked(),
             "map_grid": self.chk_grid.isChecked(),
+            "map_grid_step": int(self.cb_grid_step.currentData() or 10),
             "map_fill": self.chk_fill.isChecked(),
             "map_stride": int(self.spin_stride.value()),
             "map_label_size": int(self.spin_label.value()),

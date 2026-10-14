@@ -72,7 +72,9 @@ detalle.
 | F3 | Ambas | Radio Viento + Temp. | Barbas y contornos. |
 | F4 | Extra Info | Marcar | `12 kt` junto a cada punto (y `−45 °C` con temperatura); los rótulos no se salen del mapa ni se pisan entre sí. |
 | F4b | Rótulos configurables | Preferencias ▸ Mapa ▸ Rótulos: Tamaño 11, destildar «Mostrar unidades» ▸ Aplicar | Los números se ven más grandes y sin `kt`/`°C` (la temperatura queda `−45°`); persiste al reiniciar. |
-| F5 | Grilla | Marcar | Grilla fina de 1° (o la del archivo) además de meridianos/paralelos cada 10°. |
+| F5 | Grilla del archivo | Marcar `Grilla lat/lon del archivo` | Grilla fina punteada del dato (0,25°/0,50°/1°) además de la grilla de grados. |
+| F5b | Grilla de grados | MAPA ▸ Grilla de grados ▸ 10° / 5° / 1° (o Vista ▸ Grilla de grados) | 10°: líneas principales continuas, bien contrastadas, etiquetadas en los bordes. 5°: se suman secundarias a rayas cada 5°. 1°: principales continuas cada 5° (10 y 5 iguales) y secundarias punteadas cada 1°, con etiquetas cada 5°. Persiste y el menú lo refleja. |
+| F5c | Margen de inscripciones | Cualquier proyección, con y sin zoom | Las etiquetas de grados a la izquierda y abajo se ven enteras; nada las tapa. |
 | F6 | Fondo de velocidad | Marcar | Contornos rellenos con la misma escala, semitransparentes. |
 | F7 | Densidad | Poner 2 y 3 | Barbas cada 2 / 3 puntos; redibuja al cambiar. |
 | F7b | Zoom out con barbas | Alejar con la rueda hasta ver todo el continente | Las barbas se achican y afinan antes de ralearse; con curvas, las líneas y sus flechas se afinan. |

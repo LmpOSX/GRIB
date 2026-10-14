@@ -56,6 +56,7 @@ DEFAULTS = {
     "map_wind_style": "barbas",   # 'barbas' | 'flechas' | 'curvas' (wind_plot.WIND_STYLES)
     "map_extra_info": False,
     "map_grid": False,
+    "map_grid_step": 10,          # grilla de grados: 10, 5 o 1
     "map_fill": False,
     "map_stride": 1,
     "map_label_size": 7,          # tamaño (pt) de los rótulos de Extra Info

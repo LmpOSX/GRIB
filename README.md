@@ -264,16 +264,22 @@ la pantalla) y recuerda tamaño y posición.
 * **MAPA**: `Proyección` elige cómo se dibuja el mapa: Lat/Lon
   (PlateCarree), Estereográfica conforme centrada en el dominio del archivo,
   Estereográfica polar sur o norte, Mercator o Lambert conforme (requieren
-  cartopy; la elección se guarda en la configuración); `Grilla` dibuja la
-  grilla lat/lon del archivo; el recuadro lat/lon mín/máx (Enter o
-  `Aplicar recuadro`) y `Todo el dominio` fijan la vista.
+  cartopy; la elección se guarda en la configuración); `Grilla de grados`
+  elige los meridianos y paralelos: **10°** (sólo principales, etiquetadas
+  en los bordes), **5°** (principales cada 10° y secundarias a rayas cada
+  5°) o **1°** (principales cada 5°, iguales entre sí, y secundarias
+  punteadas cada 1°); `Grilla lat/lon del archivo` agrega además la grilla
+  fina del dato; el recuadro lat/lon mín/máx (Enter o `Aplicar recuadro`)
+  y `Todo el dominio` fijan la vista. Alrededor del mapa queda un margen
+  reservado a las inscripciones de grados, que nunca se tapan.
 * **INVENTARIO**: corrida, pasos, variables, niveles y grilla del archivo.
 
 Cualquier cambio de radio, botón de nivel, combo o casilla redibuja
 automáticamente, y estilo, casillas y densidad quedan guardados como
 valores iniciales (también editables en Preferencias ▸ Mapa). Las mismas
 opciones de VIENTO y MAPA están en el menú **Vista** (Proyección, Viento,
-Extra Info, Fondo de velocidad, Grilla), sincronizadas con el panel; las
+Extra Info, Fondo de velocidad, Grilla de grados, Grilla del archivo),
+sincronizadas con el panel; las
 acciones globales `Actualizar` (F5) y `Ocultar capa` / `Mostrar capa`
 (⌘D) van en la barra de acciones y en Vista.
 

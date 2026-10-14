@@ -334,6 +334,30 @@ class TestCargaYRedibujo(_MapBase):
         self.assertTrue(w._btn_panel.isChecked())
         self.assertTrue(config.load_config()["panel_visible"])
 
+    def test_grilla_de_grados(self):
+        """10° sólo principales; 5° agrega secundarias a rayas; 1° principales
+        cada 5° y secundarias punteadas. Se guarda y el menú Vista la refleja."""
+        from app import wind_plot
+        w = self.w
+        self.assertEqual(wind_plot.WindPlot.grid_spacing(10), (10, None))
+        self.assertEqual(wind_plot.WindPlot.grid_spacing(5), (10, 5))
+        self.assertEqual(wind_plot.WindPlot.grid_spacing(1), (5, 1))
+        for step, n in ((5, 2), (1, 2), (10, 1)):
+            w.panel.cb_grid_step.setCurrentIndex(w.panel.cb_grid_step.findData(step))
+            _app.processEvents()
+            self.assertEqual(self.draws[-1]["grid_step"], step)
+            self.assertEqual(config.load_config()["map_grid_step"], step)
+            self.assertTrue(w._grid_actions[step].isChecked())
+            if w.plot.use_cartopy:
+                w.plot.canvas.draw()
+                self.assertEqual(len(w.plot._gridliners), n, step)
+        w._grid_actions[1].trigger()
+        self.assertEqual(w.panel.options()["grid_step"], 1)
+        # Margen de inscripciones: los ejes no llegan al borde izquierdo ni al inferior
+        pos = w.plot.ax.get_position()
+        self.assertGreater(pos.x0 * w.plot.fig.get_figwidth() * w.plot.fig.dpi, 50)
+        self.assertGreater(pos.y0 * w.plot.fig.get_figheight() * w.plot.fig.dpi, 28)
+
     def test_menu_vista_sincronizado(self):
         """Vista ▸ Extra Info / Viento / Proyección reflejan y cambian el panel."""
         w = self.w
