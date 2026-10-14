@@ -35,7 +35,8 @@ class ControlPanel(QWidget):
 
     def __init__(self, parent=None):
         super().__init__(parent)
-        self.level_mode = "fl"      # 'fl' o 'p'
+        self.level_mode = "fl"      # 'fl', 'p' o 'sfc' (fuente de superficie)
+        self.surface = False
         self.sel_fl = 300
         self.sel_p = None
         self._levels = []           # niveles de presión del archivo (hPa)
@@ -54,6 +55,9 @@ class ControlPanel(QWidget):
         lbl.setObjectName("PanelTitle")
         lay.addWidget(lbl)
         self._root.addWidget(frame)
+        if not hasattr(self, "_sections"):
+            self._sections = {}
+        self._sections[title] = frame
         return lay
 
     def _build(self):
@@ -264,7 +268,10 @@ class ControlPanel(QWidget):
             self.cb_press.addItem(self.P_COMBO_NONE)
             self.cb_press.addItems([f"{lv:g} hPa" for lv in self._levels])
             self.cb_press.setCurrentIndex(0)
-            self.level_mode = "fl"
+            # Fuentes de superficie (viento 10 m / T 2 m): sin selector de nivel
+            self.surface = getattr(reader, "kind", "altura") == "superficie"
+            self._sections["LEVEL"].setVisible(not self.surface)
+            self.level_mode = "sfc" if self.surface else "fl"
             self.sel_p = None
             self._fl_buttons[self.sel_fl].setChecked(True)
             self.set_extent_entries([float(reader.lons.min()), float(reader.lons.max()),
@@ -350,7 +357,9 @@ class ControlPanel(QWidget):
         self.level_changed.emit()
 
     def _update_level_hint(self):
-        if self.level_mode == "fl":
+        if self.level_mode == "sfc":
+            self.lbl_fl_p.setText("Superficie: viento 10 m, temperatura 2 m")
+        elif self.level_mode == "fl":
             self.lbl_fl_p.setText(f"F{self.sel_fl:03d} ≈ {fl_to_hpa(self.sel_fl):.1f} hPa (ISA)")
         else:
             self.lbl_fl_p.setText(f"Nivel del archivo: {self.sel_p:g} hPa (sin interpolar)")

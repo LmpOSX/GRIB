@@ -134,14 +134,30 @@ sin ese JSON se muestra como "archivo local (sin procedencia)".
 
 #### Fuentes disponibles
 
-| Fuente | Modelo / producto | Tipo | Resolución y zona | Credenciales | Niveles por FL | Documentación |
-|---|---|---|---|---|---|---|
-| NOAA GFS | GFS de NCEP vía NOMADS grib filter (`pgrb2` + `pgrb2b`) | altura: T, U, V, HGT, RH en 42 niveles isobáricos; 4 corridas/día; +0…+384 h | 0,25° / 0,50° / 1,00°, recorte por zona en el servidor | no | no (pero con los intermedios ofrece los mismos niveles que WAFS) | <https://nomads.ncep.noaa.gov/> |
+| Fuente | Modelo / producto | Tipo y variables | Resolución y zona | Corridas y plazos | Credenciales | Niveles por FL | Documentación |
+|---|---|---|---|---|---|---|---|
+| **NOAA GFS** | GFS (NCEP) vía NOMADS grib filter (`pgrb2` + `pgrb2b`) | altura: T, U, V, HGT, RH en 42 niveles isobáricos | 0,25° / 0,50° / 1,00°; recorte en el servidor; regrillado y suavizado local opcionales | 00/06/12/18; +0…+120 cada 1 h, +123…+384 cada 3 h | no | no (con los intermedios cubre los niveles OACI) | <https://nomads.ncep.noaa.gov/> |
+| **NOAA WAFS 0,25° (WIFS)** ✓ FL | WAFC Washington (o Londres), producto OACI de viento y temperatura en altura | altura: U/V, T, altura geopotencial en **FL050–FL600 cada 1000 ft** (56 niveles); el nivel del archivo coincide con el FL del visor | 0,25° global; recorte local; se filtran los FL pedidos | 00/06/12/18 (sólo la última); +6…+24 cada 1 h, +27…+48 cada 3 h, +54…+120 cada 6 h (archivos de tres plazos) | **sí**: clave de API de WIFS (Token, `X-API-Key`); cuenta aprobada por la autoridad meteorológica del Estado y la FAA | **sí** | <https://aviationweather.gov/wifs/users_guide/> |
+| **ECMWF Open Data** | IFS 0,25° (CC BY 4.0), librería oficial `ecmwf-opendata` | altura: u, v, t, gh, r en 13 niveles (1000…50 hPa) | 0,25° global; recorte local | 00/12 hasta +240 h (cada 3 h hasta +144, cada 6 h después); 06/18 hasta +90 h | no | no | <https://www.ecmwf.int/en/forecasts/datasets/open-data> |
+| **DWD ICON global** | ICON ~13 km, grilla icosaédrica regrillada localmente a 0,25° con los pesos de DWD (vecino más cercano, sin cdo) | altura: U, V, T, FI, RELHUM en 18 niveles (1000…30 hPa) | 0,25° tras regrillar; recorte local | 00/12 hasta +180 h, 06/18 hasta +120 h; cada 1 h hasta +78, cada 3 h después; sólo la última corrida de cada ciclo | no | no | <https://www.dwd.de/EN/ourservices/opendata/opendata.html> |
+| **SMN Argentina WRF 4 km** | WRF-ARW 4 km del SMN, NetCDF horario en AWS (`smn-ar-wrf`) | **superficie**: viento 10 m, T 2 m, HR 2 m (sin niveles: el visor oculta LEVEL) | Lambert 4 km convertido localmente a lat/lon 0,04–0,25° recortado a la zona (dominio 57S–12S / 94W–36W) | 00/06/12/18; +0…+72 cada 1 h (~38 MB por hora) | no | no | <https://odp-aws-smn.github.io/documentation_wrf_det/> |
+| **Fuente genérica (URL)** | servidor propio: plantilla de URL con `{YYYY} {MM} {DD} {HH} {FFF}` | lo que publique el servidor (GRIB2 se recorta; NetCDF sólo se valida y guarda) | según el archivo | ciclos y plazos configurables | opcional: ninguna, usuario/clave (HTTP básica, FTP, SFTP) o token (HTTP Bearer) | no | — |
 
-Las fuentes previstas para las próximas etapas (NOAA WAFS 0,25° ✓ FL, ECMWF
-Open Data, DWD ICON, SMN Argentina WRF, fuente genérica con URL
-configurable) se suman implementando una subclase de `sources.base.Source`
-y registrándola en `sources/__init__.py`; los diálogos se arman solos.
+Las fuentes marcadas ✓ FL publican los niveles isobáricos OACI por nivel de
+vuelo. WAFS y la fuente genérica vienen deshabilitadas hasta que se
+configuren. Para sumar otra fuente se implementa una subclase de
+`sources.base.Source` (atributos y `build_requests`; opcionalmente
+`fetch_request`, `postprocess_step`, `test_connection`) y se registra en
+`sources/__init__.py`; los diálogos se arman solos a partir de sus
+parámetros.
+
+Notas verificadas contra los servidores (14/10/2026): el producto WAFS de
+viento y temperatura a 0,25° ya no está en NOMADS (ni en `gfs.YYYYMMDD/HH/
+atmos` ni en un paquete `wafs`), por eso la fuente va contra WIFS; ECMWF
+responde `Too Many Requests` si se piden los índices a mano, de ahí la
+librería y el espejo AWS por defecto; ICON global sólo existe en
+icosaédrica, y los pesos `ICON_GLOBAL2WORLD_025_EASY` de DWD son de vecino
+más cercano con un enlace por punto, lo que permite aplicarlos con numpy.
 
 #### Fuente NOAA GFS: resolución y suavizado
 
@@ -300,8 +316,12 @@ Cubren el lector (ISA, viento, colores, grilla, ln(p), lectura de un GRIB2
 sintético generado con ecCodes), el parseo de la salida de wgrib2, el
 esquema de fuentes (parámetros, corridas, descarga con caché, reintentos,
 validación y procedencia, regrillado y recorte local, credenciales con un
-llavero en memoria, formulario y diálogos de fuente), la descarga con
-niveles intermedios, la ventana y los diálogos en offscreen, y
+llavero en memoria, formulario y diálogos de fuente), cada fuente con
+servidores simulados (WAFS con ítems JSON y plazos agrupados, ECMWF con un
+cliente falso, SMN con un NetCDF sintético convertido a GRIB2, ICON con
+pesos sintéticos, la genérica contra un servidor HTTP local con
+autenticación básica), la descarga con niveles intermedios, la ventana y
+los diálogos en offscreen, y
 que cambiar nivel, paso, variable u opción redibuja sobre un lector
 sintético. Si hay un `.grib2` real en la carpeta del proyecto se suma un
 test de inventario, y si hay un `wgrib2` en el PATH (o en la variable

@@ -113,6 +113,7 @@ def _reader_sintetico(levels, shape=(3, 4)):
     r.steps = [GribStep("6", run, run + dt.timedelta(hours=6))]
     r._compute_windows()
     r.levels = sorted(levels, reverse=True)
+    r.has_surface, r.kind = False, "altura"
     r.variables = ["u", "v", "t"]
     for lv in levels:
         r.index[(0, "u", float(lv))] = object()

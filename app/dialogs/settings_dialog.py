@@ -227,8 +227,9 @@ class SettingsDialog(GlassDialog):
         for src in all_sources():
             st = source_config(self._sources_wrapper, src.key)
             kind = "altura" if src.kind == "altura" else "superficie"
-            item = QListWidgetItem(f"{source_label(src)}   —   {src.model}   [{kind}]"
+            item = QListWidgetItem(f"{source_label(src)}   [{kind}]"
                                    + ("   🔑" if src.needs_credentials else ""))
+            item.setToolTip(src.model)
             item.setData(Qt.ItemDataRole.UserRole, src.key)
             item.setFlags(item.flags() | Qt.ItemFlag.ItemIsUserCheckable)
             item.setCheckState(Qt.CheckState.Checked if st["enabled"] else Qt.CheckState.Unchecked)

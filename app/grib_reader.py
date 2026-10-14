@@ -22,7 +22,7 @@ import numpy as np
 
 from .grib_engines import (  # noqa: F401 - reexportados para quien importe de aquí
     ec, ECCODES_ERROR, ECCODES_HELP, WGRIB2_HELP, ENGINES, EngineUnavailable,
-    GribMessage, make_backend, find_wgrib2, wgrib2_version,
+    GribMessage, make_backend, find_wgrib2, wgrib2_version, SURFACE_LEVEL,
 )
 
 # ---------------------------------------------------------------------------
@@ -228,12 +228,17 @@ class GribReader:
             levels.add(m.level_hpa)
             variables.add(m.var)
 
-        self.levels = sorted(levels, reverse=True)
+        # Niveles de presión descendentes; la superficie (SURFACE_LEVEL) aparte
+        self.levels = sorted((lv for lv in levels if lv != SURFACE_LEVEL), reverse=True)
+        self.has_surface = SURFACE_LEVEL in levels
+        # 'altura' si hay niveles de presión; 'superficie' si sólo hay viento 10 m / T 2 m
+        self.kind = "altura" if self.levels else "superficie"
         self.variables = [v for v in ("u", "v", "t") if v in variables]
         if not self.index:
             raise ValueError(
                 "El archivo no contiene campos U/V/T en niveles de presión "
-                "(typeOfLevel isobaricInhPa) sobre la grilla principal.")
+                "(typeOfLevel isobaricInhPa) ni de superficie (10 m / 2 m) sobre la "
+                "grilla principal.")
 
     def _compute_windows(self):
         """Calcula la ventana de validez de cada paso. Si el stepRange es un
@@ -280,9 +285,10 @@ class GribReader:
         return arr
 
     def levels_for(self, step_idx, var):
-        """Niveles (hPa, descendentes) disponibles para una variable y paso."""
-        return sorted({lv for (s, v, lv) in self.index if s == step_idx and v == var},
-                      reverse=True)
+        """Niveles de presión (hPa, descendentes) disponibles para una variable
+        y paso; la superficie no participa de la interpolación."""
+        return sorted({lv for (s, v, lv) in self.index
+                       if s == step_idx and v == var and lv != SURFACE_LEVEL}, reverse=True)
 
     def get_level_fields(self, step_idx, level_hpa):
         """u, v, t en un nivel exacto del archivo (sin interpolar)."""
@@ -291,6 +297,12 @@ class GribReader:
         t = self.get_field(step_idx, "t", level_hpa)
         info = {"p": float(level_hpa), "mode": "nivel", "extrapolated": False,
                 "nearest": float(level_hpa), "bracket": None}
+        return u, v, t, info
+
+    def get_surface_fields(self, step_idx):
+        """Viento a 10 m y temperatura a 2 m (fuentes de superficie)."""
+        u, v, t, info = self.get_level_fields(step_idx, SURFACE_LEVEL)
+        info["mode"] = "superficie"
         return u, v, t, info
 
     def interp_to_pressure(self, step_idx, p_target):
@@ -357,7 +369,9 @@ class GribReader:
                          f"ventana [{fmt_dt(s.window_start, False)}–{fmt_dt(s.window_end, False)}]")
         lines.append("")
         lines.append("VARIABLES: " + ", ".join(self.VAR_NAMES[v] for v in self.variables))
-        lines.append("NIVELES (hPa): " + ", ".join(f"{lv:g}" for lv in self.levels))
+        lines.append("NIVELES (hPa): " + ", ".join(f"{lv:g}" for lv in self.levels)
+                     + ("  + superficie (viento 10 m / T 2 m)"
+                        if getattr(self, "has_surface", False) else ""))
         lines.append("")
         lines.append("GRILLA:")
         lines.append(f"  tipo: {g.get('grid_type')}   Ni={g.get('ni')}  Nj={g.get('nj')}")

@@ -166,6 +166,22 @@ detalle.
 | M5 | Parámetros por defecto | Resolución 0,50° + intermedios ▸ Aplicar dos veces ▸ `Obtener datos…` | El diálogo de descarga abre con 0,50° e intermedios marcados. |
 | M6 | Selector persistente | Cambiar la fuente en el selector y reiniciar | Se conserva la elegida. |
 
+## N. Otras fuentes (requiere conexión)
+
+| # | Caso | Pasos | Resultado esperado |
+|---|---|---|---|
+| N1 | ECMWF | Fuente = ECMWF Open Data, `Obtener datos…`, 1 plazo, 2 niveles, zona de prueba | Baja por la librería (espejo AWS), recorta localmente, abre con FUENTE `ECMWF Open Data (IFS …)`; grilla 0,25° de la zona. |
+| N2 | ECMWF 06/18 | Corrida 06Z, plazo +96 | Aviso "no ofrece" (06/18 llegan a +90). |
+| N3 | ICON | Fuente = DWD ICON global, 1 plazo, 2 niveles, U/V/T | Primera vez baja los pesos (44 MB) y luego un archivo por campo; abre con grilla 0,25° recortada; FUENTE `regrillado: vecino más cercano`. |
+| N4 | ICON corrida vieja | Elegir la 3.ª corrida del combo | 404 explicado (DWD sólo conserva la última por ciclo). |
+| N5 | SMN | Fuente = SMN Argentina WRF 4 km, 1 plazo, zona dentro del dominio | Baja ~38 MB, convierte a GRIB2 0,04°; el panel no muestra LEVEL; STATUS `LEVEL: superficie`; FUENTE `SMN …`; barbas de viento a 10 m y T a 2 m. |
+| N6 | SMN fuera del dominio | Zona 10N–0 / 0–10E | Error claro: la zona no se cruza con el dominio. |
+| N7 | WAFS sin clave | Habilitar la fuente, `Obtener datos…` | Mensaje "WIFS requiere una clave de API". |
+| N8 | WAFS con clave | Preferencias ▸ Fuentes ▸ WAFS ▸ Token = clave de WIFS ▸ Guardar ▸ Probar conexión | `Conexión OK` (o el error exacto de la API); descarga F06–F08 y el visor muestra `✓FL` en FUENTE y "nivel exacto" en los FL. **No verificado por falta de clave.** |
+| N9 | Genérica HTTP | Plantilla a un servidor propio, ciclos y plazos, `Probar conexión` | Resultado ok / sin red / credenciales / no publicado según el servidor; descarga y recorte. |
+| N10 | Genérica FTP/SFTP | Plantilla `ftp://` o `sftp://` con usuario/clave guardados | Igual que N9. **No verificado contra un servidor real.** |
+| N11 | Credenciales | Guardar y borrar credenciales en el diálogo de la fuente | Se ven enmascaradas; no aparecen en `config.json`; tras borrar, "(sin definir)". |
+
 ## K. Empaquetado (opcional)
 
 | # | Caso | Pasos | Resultado esperado |

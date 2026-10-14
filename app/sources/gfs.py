@@ -43,7 +43,7 @@ class GFSSource(Source):
     availability_lag_h = gfs.AVAILABILITY_LAG_H
     region_filter = "servidor"
 
-    def steps(self, params=None):
+    def steps(self, params=None, cycle=None):
         return list(range(0, 121, 1)) + list(range(123, gfs.MAX_HOUR + 1, 3))
 
     def viewer_levels_for(self, params):
@@ -100,7 +100,7 @@ class GFSSource(Source):
         spec = self._spec(job)
         return [Request(url, tag) for url, tag in gfs.build_urls(spec, step)]
 
-    def postprocess_step(self, data, job):
+    def postprocess_step(self, data, job, step=None):
         p = self.merged_params(job.params)
         src = self.download_resolution(p)
         if src == p["resolucion"]:

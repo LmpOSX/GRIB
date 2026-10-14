@@ -21,6 +21,31 @@ def _axis_1d(first, last, n):
     return np.linspace(first, last, n) if n > 1 else np.array([first])
 
 
+def grid_axes(gid):
+    """Ejes lat/lon 1D de un mensaje regular_ll en el orden del archivo,
+    usando los incrementos y el sentido de barrido (las longitudes pueden
+    seguir más allá de 360, por ejemplo 180 … 539,75 en ECMWF)."""
+    ni, nj = ec.codes_get(gid, "Ni"), ec.codes_get(gid, "Nj")
+    lat0 = ec.codes_get(gid, "latitudeOfFirstGridPointInDegrees")
+    lon0 = ec.codes_get(gid, "longitudeOfFirstGridPointInDegrees")
+    lat1 = ec.codes_get(gid, "latitudeOfLastGridPointInDegrees")
+    lon1 = ec.codes_get(gid, "longitudeOfLastGridPointInDegrees")
+    try:
+        di = float(ec.codes_get(gid, "iDirectionIncrementInDegrees"))
+        dj = float(ec.codes_get(gid, "jDirectionIncrementInDegrees"))
+        i_neg = int(ec.codes_get(gid, "iScansNegatively"))
+        j_pos = int(ec.codes_get(gid, "jScansPositively"))
+        if di > 0 and dj > 0:
+            lon1d = lon0 + (-1 if i_neg else 1) * di * np.arange(ni)
+            lat1d = lat0 + (1 if j_pos else -1) * dj * np.arange(nj)
+            return lat1d, lon1d
+    except Exception:
+        pass
+    if lon1 < lon0:
+        lon1 += 360.0
+    return _axis_1d(lat0, lat1, nj), _axis_1d(lon0, lon1, ni)
+
+
 def coarse_axes(lat1d, lon1d, factor):
     """Ejes gruesos tomando un punto cada `factor` a partir del primero que
     sea múltiplo del paso grueso (para que coincidan con los productos de
@@ -92,10 +117,7 @@ def regrid_grib(data, factor, method="ninguno"):
                 out += data[pos:pos + total]
                 continue
             ni, nj = ec.codes_get(gid, "Ni"), ec.codes_get(gid, "Nj")
-            lat1d = _axis_1d(ec.codes_get(gid, "latitudeOfFirstGridPointInDegrees"),
-                             ec.codes_get(gid, "latitudeOfLastGridPointInDegrees"), nj)
-            lon1d = _axis_1d(ec.codes_get(gid, "longitudeOfFirstGridPointInDegrees"),
-                             ec.codes_get(gid, "longitudeOfLastGridPointInDegrees"), ni)
+            lat1d, lon1d = grid_axes(gid)
             vals = np.asarray(ec.codes_get_double_array(gid, "values"), dtype=float).reshape(nj, ni)
             if ec.codes_get(gid, "bitmapPresent"):
                 vals = np.where(vals == ec.codes_get(gid, "missingValue"), np.nan, vals)
@@ -111,8 +133,8 @@ def regrid_grib(data, factor, method="ninguno"):
             ec.codes_set(gid, "Nj", len(jj))
             ec.codes_set(gid, "latitudeOfFirstGridPointInDegrees", float(lat1d[jj[0]]))
             ec.codes_set(gid, "latitudeOfLastGridPointInDegrees", float(lat1d[jj[-1]]))
-            ec.codes_set(gid, "longitudeOfFirstGridPointInDegrees", float(lon1d[ii[0]]))
-            ec.codes_set(gid, "longitudeOfLastGridPointInDegrees", float(lon1d[ii[-1]]))
+            ec.codes_set(gid, "longitudeOfFirstGridPointInDegrees", float(lon1d[ii[0]] % 360))
+            ec.codes_set(gid, "longitudeOfLastGridPointInDegrees", float(lon1d[ii[-1]] % 360))
             if len(ii) > 1:
                 ec.codes_set(gid, "iDirectionIncrementInDegrees", float(abs(lon1d[ii[1]] - lon1d[ii[0]])))
             if len(jj) > 1:
@@ -149,10 +171,7 @@ def crop_grib(data, region):
                 out += data[pos:pos + total]
                 continue
             ni, nj = ec.codes_get(gid, "Ni"), ec.codes_get(gid, "Nj")
-            lat1d = _axis_1d(ec.codes_get(gid, "latitudeOfFirstGridPointInDegrees"),
-                             ec.codes_get(gid, "latitudeOfLastGridPointInDegrees"), nj)
-            lon1d = _axis_1d(ec.codes_get(gid, "longitudeOfFirstGridPointInDegrees"),
-                             ec.codes_get(gid, "longitudeOfLastGridPointInDegrees"), ni)
+            lat1d, lon1d = grid_axes(gid)
             lon_norm = ((lon1d + 180) % 360) - 180
             l_, r_ = ((left + 180) % 360) - 180, ((right + 180) % 360) - 180
             if l_ <= r_:
@@ -172,10 +191,42 @@ def crop_grib(data, region):
             ec.codes_set(gid, "Nj", len(sel_j))
             ec.codes_set(gid, "latitudeOfFirstGridPointInDegrees", float(lat1d[sel_j[0]]))
             ec.codes_set(gid, "latitudeOfLastGridPointInDegrees", float(lat1d[sel_j[-1]]))
-            ec.codes_set(gid, "longitudeOfFirstGridPointInDegrees", float(lon1d[sel_i[0]]))
-            ec.codes_set(gid, "longitudeOfLastGridPointInDegrees", float(lon1d[sel_i[-1]]))
+            ec.codes_set(gid, "longitudeOfFirstGridPointInDegrees", float(lon1d[sel_i[0]] % 360))
+            ec.codes_set(gid, "longitudeOfLastGridPointInDegrees", float(lon1d[sel_i[-1]] % 360))
             ec.codes_set_values(gid, new.ravel())
             out += ec.codes_get_message(gid)
+        finally:
+            pos += total
+            ec.codes_release(gid)
+    return bytes(out)
+
+
+def filter_grib(data, keep_levels_hpa=None, keep_vars=None, tol=0.6):
+    """Conserva sólo los mensajes cuyo nivel (en hPa según level_to_hpa) esté
+    a menos de `tol` hPa de alguno pedido y cuya variable (u/v/t/…) esté en
+    keep_vars (claves cortas de ecCodes). None = sin filtro."""
+    from .grib_engines import level_to_hpa
+    if ec is None:
+        raise RuntimeError("filtrar requiere eccodes")
+    out = bytearray()
+    pos = 0
+    while pos < len(data):
+        gid = ec.codes_new_from_message(data[pos:])
+        if gid is None:
+            break
+        try:
+            total = ec.codes_get_message_size(gid)
+            keep = True
+            if keep_vars is not None:
+                keep = ec.codes_get(gid, "shortName") in keep_vars
+            if keep and keep_levels_hpa is not None:
+                try:
+                    lv = level_to_hpa(ec.codes_get(gid, "typeOfLevel"), ec.codes_get(gid, "level"))
+                except Exception:
+                    lv = None
+                keep = lv is not None and any(abs(lv - k) <= tol for k in keep_levels_hpa)
+            if keep:
+                out += data[pos:pos + total]
         finally:
             pos += total
             ec.codes_release(gid)

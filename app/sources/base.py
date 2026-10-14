@@ -182,9 +182,30 @@ class Source:
         d.update({k: v for k, v in (params or {}).items() if k in d})
         return d
 
-    def steps(self, params=None):
-        """Plazos (horas) que ofrece la fuente."""
+    def steps(self, params=None, cycle=None):
+        """Plazos (horas) que ofrece la fuente (si dependen del ciclo, con
+        cycle=None se devuelve la unión)."""
         return list(range(0, 121, 3))
+
+    def credentials(self):
+        """Secretos guardados en el llavero para esta fuente (o los pasados
+        a download/test_connection)."""
+        cur = getattr(self, "_creds", None)
+        if cur:
+            return cur
+        if not self.needs_credentials:
+            return {}
+        from . import credentials as cr
+        return cr.get_all(self.key)
+
+    def fetch_request(self, req, fetch_fn, chunk_cb=None, cancel=None, retry_wait=1.5,
+                      max_bytes=None):
+        """Obtiene los bytes de un Request. Por defecto HTTP(S) con reintentos;
+        las fuentes con otro transporte o cliente lo redefinen."""
+        if max_bytes is not None:
+            return fetch_fn(req.url, headers=req.headers, max_bytes=max_bytes)
+        return fetch_with_retries(fetch_fn, req.url, headers=req.headers, chunk_cb=chunk_cb,
+                                  cancel=cancel, retry_wait=retry_wait)
 
     def latest_run(self, now=None):
         now = now or dt.datetime.now(dt.timezone.utc)
@@ -226,7 +247,7 @@ class Source:
             return "Ciclo no ofrecido por la fuente: " + ", ".join(f"{c:02d}Z" for c in self.cycles)
         if not job.steps:
             return "Elegí al menos un plazo."
-        offered = set(self.steps(job.params))
+        offered = set(self.steps(job.params, job.cycle))
         bad = [s for s in job.steps if s not in offered]
         if bad:
             return f"Plazos que la fuente no ofrece: {', '.join(str(b) for b in bad)}"
@@ -252,8 +273,9 @@ class Source:
         producto). Debe implementarse en cada fuente."""
         raise NotImplementedError
 
-    def postprocess_step(self, data, job):
-        """Recorte / regrillado local de los bytes de un plazo ya validado."""
+    def postprocess_step(self, data, job, step=None):
+        """Recorte / regrillado / conversión local de los bytes de un plazo ya
+        validado. Puede devolver (bytes, info) para la procedencia."""
         return data
 
     def provenance(self, job, effective=None):
@@ -267,15 +289,17 @@ class Source:
 
     def test_connection(self, params=None, credentials=None, fetch_fn=None):
         """Verifica acceso; por defecto pide el primer plazo de la última
-        corrida (sólo cabecera) y clasifica el resultado."""
+        corrida (sólo el comienzo) y clasifica el resultado."""
         from .. import gfs_download
         fetch_fn = fetch_fn or gfs_download.fetch
+        self._creds = credentials or None
         day, cyc = self.latest_run()
-        job = DownloadJob(day, cyc, [self.steps(params)[0]], self.default_variables[:1],
+        steps = self.steps(params, cyc)
+        job = DownloadJob(day, cyc, [steps[0]], self.default_variables[:1],
                           self.viewer_levels[:1] or self.levels[:1], None, params=params)
         try:
             reqs = self.build_requests(job, job.steps[0])
-            data = fetch_fn(reqs[0].url, headers=reqs[0].headers, max_bytes=4096)
+            data = self.fetch_request(reqs[0], fetch_fn, max_bytes=4096)
             check_content(data, reqs[0].expect, "la prueba")
             return TestResult("ok", f"{self.name}: corrida {day:%Y-%m-%d} {cyc:02d}Z disponible")
         except DownloadError as exc:
@@ -287,12 +311,13 @@ class Source:
     # ── Descarga genérica ────────────────────────────────────────────────────
 
     def download(self, job, progress_cb=None, cancel=None, fetch_fn=None, cache=None,
-                 retry_wait=1.5, write_provenance=True):
+                 retry_wait=1.5, write_provenance=True, credentials=None):
         """Baja todos los plazos del trabajo con caché, reintentos y
         validación; escribe los archivos y su procedencia. Devuelve las
         rutas escritas. Lanza DownloadError / DownloadCancelled."""
         from .. import gfs_download
         fetch_fn = fetch_fn or gfs_download.fetch
+        self._creds = credentials or None
         err = self.validate(job)
         if err:
             raise DownloadError(err)
@@ -302,6 +327,7 @@ class Source:
         written = []
         out = None
         effective = {}
+        seen = set()          # un mismo archivo puede cubrir varios plazos (WAFS)
         try:
             if job.merge:
                 out = open(paths[0], "wb")
@@ -311,11 +337,12 @@ class Source:
                 msg = f"Plazo +{step} h ({i + 1} de {n})"
                 if progress_cb:
                     progress_cb(i, n, msg, i / n)
-                reqs = self.build_requests(job, step)
+                reqs = [r for r in self.build_requests(job, step) if r.url not in seen]
                 parts = []
                 for k, req in enumerate(reqs):
                     if cancel is not None and cancel():
                         raise DownloadCancelled()
+                    seen.add(req.url)
                     sub = f"{msg}{' · ' + req.tag if req.tag else ''}"
                     cached = cache.get(req.url) if cache is not None else None
                     if cached is not None:
@@ -329,10 +356,11 @@ class Source:
                             frac = (got / total) if total else 0.0
                             progress_cb(_i, n, f"{_msg}: {got / 1e6:.1f} MB", (_i + (_k + frac) / _m) / n)
                     try:
-                        data = fetch_with_retries(fetch_fn, req.url, headers=req.headers,
-                                                  chunk_cb=chunk_cb, cancel=cancel,
+                        data = self.fetch_request(req, fetch_fn, chunk_cb=chunk_cb, cancel=cancel,
                                                   retry_wait=retry_wait)
                     except DownloadCancelled:
+                        raise
+                    except DownloadError:
                         raise
                     except Exception as exc:
                         status, detail = classify_exception(exc)
@@ -354,9 +382,17 @@ class Source:
                         cache.put(req.url, data)
                     parts.append(data)
                 data = b"".join(parts)
+                if not data:
+                    continue          # el plazo ya vino en un archivo anterior
                 if progress_cb:
                     progress_cb(i, n, f"{msg}: procesando…", (i + 1) / n)
-                data, eff = self._post(data, job)
+                try:
+                    data, eff = self._post(data, job, step)
+                except DownloadError:
+                    raise
+                except Exception as exc:
+                    raise DownloadError(f"{self.name}: no se pudo procesar el plazo +{step} h: "
+                                        f"{type(exc).__name__}: {exc}") from exc
                 effective.update(eff)
                 if job.merge:
                     out.write(data)
@@ -388,9 +424,9 @@ class Source:
             progress_cb(n, n, "Descarga completa", 1.0)
         return written
 
-    def _post(self, data, job):
+    def _post(self, data, job, step=None):
         """Envuelve postprocess_step devolviendo (bytes, info efectiva)."""
-        res = self.postprocess_step(data, job)
+        res = self.postprocess_step(data, job, step)
         if isinstance(res, tuple):
             return res
         return res, {}

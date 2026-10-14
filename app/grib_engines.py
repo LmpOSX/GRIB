@@ -66,6 +66,40 @@ _VAR_INFO = {
 }
 
 
+# Clave de "nivel" de los campos de superficie (viento a 10 m, T a 2 m) en el
+# índice del lector: se guardan como un nivel más, con este valor.
+SURFACE_LEVEL = 0.0
+SURFACE_MAX_M = 50.0          # alturas sobre el suelo hasta acá cuentan como superficie
+
+
+def isa_pressure_from_m(h_m):
+    """Presión ISA (hPa) de una altura geométrica sobre el nivel del mar."""
+    h_ft = float(h_m) / 0.3048
+    h_trop = 36089.0
+    if h_ft <= h_trop:
+        return 1013.25 * (1.0 - 6.8756e-6 * h_ft) ** 5.2559
+    p_trop = 1013.25 * (1.0 - 6.8756e-6 * h_trop) ** 5.2559
+    import math
+    return p_trop * math.exp(-(h_ft - h_trop) / 20805.8)
+
+
+def level_to_hpa(type_of_level, level):
+    """Nivel del mensaje → hPa para el índice del lector: isobáricos tal
+    cual; alturas sobre el nivel del mar (productos WAFS por FL) con la ISA;
+    alturas sobre el suelo bajas (10 m, 2 m) como SURFACE_LEVEL; otros None."""
+    if level is None:
+        return None
+    if type_of_level == "isobaricInhPa":
+        return float(level)
+    if type_of_level == "isobaricInPa":
+        return float(level) / 100.0
+    if type_of_level == "heightAboveSea":
+        return round(isa_pressure_from_m(level), 2)
+    if type_of_level == "heightAboveGround" and float(level) <= SURFACE_MAX_M:
+        return SURFACE_LEVEL
+    return None
+
+
 class EngineUnavailable(RuntimeError):
     """El motor pedido no está disponible en este equipo."""
 
@@ -194,10 +228,7 @@ class EccodesBackend:
                     msg.nj = self._get(gid, "Nj", None, "long")
                     msg.grid_type = self._get(gid, "gridType", "?", "str")
                     msg.var = self._classify(gid)
-                    if msg.type_of_level == "isobaricInhPa" and msg.level is not None:
-                        msg.level_hpa = float(msg.level)
-                    elif msg.type_of_level == "isobaricInPa" and msg.level is not None:
-                        msg.level_hpa = float(msg.level) / 100.0
+                    msg.level_hpa = level_to_hpa(msg.type_of_level, msg.level)
                     if grid is None and msg.ni and msg.nj:
                         grid = self._read_grid(gid, msg)
                     messages.append(msg)
@@ -244,6 +275,8 @@ _RE_NXNY = re.compile(r"\((\d+) x (\d+)\)")
 _RE_RUN = re.compile(r":D=(\d{14})|:d=(\d{10})")
 _RE_VALID = re.compile(r":(?:VT|vt)=(\d{10,14})")
 _RE_MB = re.compile(r"^(\d+(?:\.\d+)?) mb$")
+_RE_AGL = re.compile(r"^(\d+(?:\.\d+)?) m above ground$")
+_RE_MSL = re.compile(r"^(\d+(?:\.\d+)?) m above mean sea level$")
 _RE_FTIME = re.compile(r"^(\d+)(?:-(\d+))? (hour|day|min)")
 _RE_GRID_LL = re.compile(r"lat-lon grid:\((\d+) x (\d+)\).*?input (WE|EW):(NS|SN)", re.S)
 _RE_GRID_LAT = re.compile(r"lat (-?\d+(?:\.\d+)?) to (-?\d+(?:\.\d+)?) by (-?\d+(?:\.\d+)?)")
@@ -307,6 +340,16 @@ def parse_inventory_line(line):
         msg.level_hpa = float(m.group(1))
     else:
         msg.type_of_level = lev
+        m = _RE_AGL.match(lev)
+        if m:
+            msg.type_of_level = "heightAboveGround"
+            msg.level = float(m.group(1))
+            msg.level_hpa = level_to_hpa("heightAboveGround", msg.level)
+        m = _RE_MSL.match(lev)
+        if m:
+            msg.type_of_level = "heightAboveSea"
+            msg.level = float(m.group(1))
+            msg.level_hpa = level_to_hpa("heightAboveSea", msg.level)
     # Paso: "anl", "6 hour fcst", "6-9 hour ave fcst", "1 day fcst"
     if ftime.startswith("anl"):
         msg.step_range, msg.end_step = "0", 0

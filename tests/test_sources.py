@@ -97,7 +97,7 @@ class TestFuenteGFS(unittest.TestCase):
         self.assertFalse(st["enabled"])
         self.assertEqual(st["params"]["resolucion"], "1p00")
         self.assertNotIn("basura", st["params"])
-        self.assertEqual(enabled_sources(cfg), [])
+        self.assertNotIn("gfs", [x.key for x in enabled_sources(cfg)])
         self.assertIs(get_source("gfs").__class__, GFSSource)
         self.assertIsNone(get_source("nada"))
 
@@ -246,7 +246,7 @@ class TestFuenteNueva(unittest.TestCase):
             params = [Param("res", "Res", "choice", "a", choices=[("a", "A"), ("b", "B")]),
                       Param("n", "N", "int", 3, lo=1, hi=9)]
 
-            def steps(self, params=None):
+            def steps(self, params=None, cycle=None):
                 return [0, 24, 48]
 
             def build_requests(self, job, step):
@@ -449,3 +449,336 @@ class TestWidgetsDeFuente(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+# ═══════════════════════════ Etapa 2: fuentes nuevas ═══════════════════════════
+
+class TestWAFS(unittest.TestCase):
+    def setUp(self):
+        from app.sources.wafs import WAFSSource
+        self.src = WAFSSource()
+        self.src._creds = {"token": "CLAVE"}
+
+    def test_descripcion(self):
+        s = self.src
+        self.assertTrue(s.flight_levels and s.needs_credentials)
+        self.assertIn("✓ FL", source_label(s))
+        self.assertEqual(s.auth_kinds, ["token"])
+        self.assertEqual(len(s.levels), 56)
+        self.assertAlmostEqual(s.levels[0], 843.1, delta=0.1)      # FL050
+        self.assertAlmostEqual(s.viewer_levels[6], 300.9, delta=0.1)  # F300
+        steps = s.steps()
+        self.assertEqual(steps[:3], [6, 7, 8]); self.assertIn(27, steps); self.assertNotIn(28, steps)
+        self.assertIn(120, steps); self.assertNotIn(121, steps)
+
+    def test_agrupamiento_y_pedidos(self):
+        from app.sources.wafs import bundle_for
+        self.assertEqual(bundle_for(6), (6, 8)); self.assertEqual(bundle_for(8), (6, 8))
+        self.assertEqual(bundle_for(9), (9, 11)); self.assertEqual(bundle_for(24), (24, 26))
+        self.assertEqual(bundle_for(27), (27, 33)); self.assertEqual(bundle_for(48), (45, 51))
+        self.assertEqual(bundle_for(54), (54, 66)); self.assertEqual(bundle_for(120), (108, 120))
+        job = _job(variables=["UV", "T"], levels=[300.9], steps=[6, 7])
+        reqs = self.src.build_requests(job, 7)
+        self.assertEqual(len(reqs), 2)
+        self.assertTrue(reqs[0].url.endswith("kwbc_wafs_windtempgeo_0p25/items/YUVDYG006_008FLALL"))
+        self.assertTrue(reqs[1].url.endswith("/items/YTDYG006_008FLALL"))
+        self.assertEqual(reqs[0].headers["X-API-Key"], "CLAVE")
+        # Londres
+        job.params = {"centro": "egrr"}
+        self.assertIn("egrr_wafs", self.src.build_requests(job, 6)[0].url)
+
+    def test_sin_clave(self):
+        self.src._creds = {}
+        import shutil
+        from app.sources import credentials as cr
+        old = cr.get_all
+        cr.get_all = lambda key: {"usuario": None, "clave": None, "token": None}
+        try:
+            with self.assertRaises(DownloadError) as cm:
+                self.src.build_requests(_job(variables=["UV"], levels=[300.9]), 6)
+            self.assertEqual(cm.exception.status, "credenciales")
+            r = self.src.test_connection(fetch_fn=lambda *a, **k: b"GRIB")
+            self.assertEqual(r.status, "credenciales")
+        finally:
+            cr.get_all = old
+
+    def test_item_json_sigue_el_enlace_y_plazos_compartidos(self):
+        pedidos = []
+
+        def fetch(url, headers=None, chunk_cb=None, cancel=None, **kw):
+            pedidos.append(url)
+            if url.endswith("FLALL"):
+                return (b'{"id":"x","links":[{"rel":"self","href":"a"},'
+                        b'{"rel":"data","type":"application/x-grib2","href":"https://x/f.grib2"}]}')
+            return b"GRIBdatos"
+        tmp = tempfile.TemporaryDirectory()
+        try:
+            job = _job(variables=["UV"], levels=[300.9], steps=[6, 7, 8], dest_dir=tmp.name, region=None)
+            # filtro/recorte requieren mensajes GRIB reales: se anulan
+            from app.sources import wafs as wm
+            old = wm.filter_grib
+            wm.filter_grib = lambda data, **k: data
+            try:
+                paths = self.src.download(job, fetch_fn=fetch, retry_wait=0,
+                                          credentials={"token": "CLAVE"})
+            finally:
+                wm.filter_grib = old
+            # Tres plazos en un mismo archivo: un solo ítem (JSON + GRIB), no tres
+            self.assertEqual(len(pedidos), 2)
+            with open(paths[0], "rb") as fh:
+                self.assertEqual(fh.read(), b"GRIBdatos")
+        finally:
+            tmp.cleanup()
+
+
+class TestECMWF(unittest.TestCase):
+    def test_descripcion_y_pedidos(self):
+        from app.sources.ecmwf import ECMWFSource
+        s = ECMWFSource()
+        self.assertEqual(s.region_filter, "local")
+        self.assertEqual(s.steps(cycle=0)[-1], 240); self.assertEqual(s.steps(cycle=6)[-1], 90)
+        self.assertIn(150, s.steps(cycle=12)); self.assertNotIn(147, s.steps(cycle=12))
+        job = _job(variables=["u", "v", "t"], levels=[300, 250], steps=[6], params={"servidor": "aws"})
+        self.assertIsNone(s.validate(job))
+        self.assertIn("no ofrece", s.validate(_job(cycle=6, steps=[96], variables=["t"], levels=[300])))
+        req = s.build_requests(job, 6)[0]
+        self.assertTrue(req.url.startswith("ecmwf-opendata://aws/20261014/06/6?"))
+        self.assertIn("levelist=300,250", req.url)
+        self.assertEqual(s.default_basename(job), "ecmwf_20261014_06z_0p25")
+
+    def test_fetch_usa_la_libreria(self):
+        from app.sources import ecmwf as em
+        llamadas = {}
+
+        class FakeClient:
+            def __init__(self, source, model, resol):
+                llamadas["source"] = source
+
+            def retrieve(self, **kw):
+                llamadas["kw"] = kw
+                with open(kw["target"], "wb") as fh:
+                    fh.write(b"GRIBecmwf")
+        old = em._client
+        em._client = lambda source: FakeClient(source, "ifs", "0p25")
+        try:
+            s = em.ECMWFSource()
+            req = s.build_requests(_job(variables=["t"], levels=[500], params={"servidor": "azure"}), 9)[0]
+            data = s.fetch_request(req, None)
+        finally:
+            em._client = old
+        self.assertEqual(data, b"GRIBecmwf")
+        self.assertEqual(llamadas["source"], "azure")
+        self.assertEqual((llamadas["kw"]["date"], llamadas["kw"]["time"], llamadas["kw"]["step"]),
+                         ("20261014", 6, 9))
+        self.assertEqual(llamadas["kw"]["levelist"], [500])
+
+
+class TestSMN(unittest.TestCase):
+    def test_descripcion_y_pedidos(self):
+        from app.sources.smn import SMNSource
+        s = SMNSource()
+        self.assertEqual(s.kind, "superficie")
+        self.assertEqual(s.levels, [])
+        self.assertEqual(s.steps()[-1], 72)
+        job = DownloadJob(dt.date(2026, 10, 14), 6, [6], ["viento10", "T2"], [], (-30, -40, -70, -55), ".")
+        self.assertIsNone(s.validate(job))
+        req = s.build_requests(job, 6)[0]
+        self.assertEqual(req.url, "https://smn-ar-wrf.s3.amazonaws.com/DATA/WRF/DET/2026/10/14/06/"
+                                  "WRFDETAR_01H_20261014_06_006.nc")
+        self.assertEqual(req.expect, "netcdf")
+
+    @unittest.skipIf(regrid.ec is None, "eccodes no disponible")
+    def test_conversion_netcdf_sintetico(self):
+        try:
+            import netCDF4
+        except Exception:
+            self.skipTest("sin netCDF4")
+        from app.netcdf_convert import smn_wrf_to_grib, bin_regrid
+        from app.grib_reader import GribReader
+        tmp = tempfile.TemporaryDirectory()
+        try:
+            p = os.path.join(tmp.name, "s.nc")
+            ds = netCDF4.Dataset(p, "w")
+            ny, nx = 40, 30
+            ds.createDimension("time", 1); ds.createDimension("y", ny); ds.createDimension("x", nx)
+            t = ds.createVariable("time", "f8", ("time",)); t.units = "hours since 2026-10-14 06:00:00"; t[:] = [6.0]
+            # grilla "Lambert" sintética: lat/lon 2D levemente rotadas, paso ~0,04°
+            jj, ii = np.mgrid[0:ny, 0:nx]
+            lat = ds.createVariable("lat", "f4", ("y", "x")); lon = ds.createVariable("lon", "f4", ("y", "x"))
+            lat[:] = -40.0 + 0.04 * jj + 0.002 * ii
+            lon[:] = -65.0 + 0.04 * ii - 0.002 * jj
+            for name, val in (("magViento10", 10.0), ("dirViento10", 270.0), ("T2", 20.0), ("HR2", 50.0)):
+                v = ds.createVariable(name, "f4", ("time", "y", "x")); v[:] = val
+            ds.variables["T2"].units = "degree_Celsius"
+            ds.close()
+            data = open(p, "rb").read()
+            out, info = smn_wrf_to_grib(data, region=None, res_deg=0.04, variables=("viento10", "T2", "HR2"))
+            g = os.path.join(tmp.name, "s.grib2"); open(g, "wb").write(out)
+            r = GribReader(g)
+            self.assertEqual(r.kind, "superficie")
+            self.assertTrue(r.has_surface)
+            self.assertEqual(r.variables, ["u", "v", "t"])
+            self.assertEqual(r.steps[0].step_range, "6")
+            self.assertEqual(r.run_time(), dt.datetime(2026, 10, 14, 6, tzinfo=dt.timezone.utc))
+            u, v, tt, inf = r.get_surface_fields(0)
+            self.assertEqual(inf["mode"], "superficie")
+            # viento de 270° a 10 m/s → u = +10, v ≈ 0; T 20 °C → 293,15 K
+            self.assertAlmostEqual(float(np.nanmedian(u)), 10.0, places=3)
+            self.assertAlmostEqual(float(np.nanmedian(v)), 0.0, places=3)
+            self.assertAlmostEqual(float(np.nanmedian(tt)), 293.15, places=3)
+            self.assertLess(np.isnan(u).mean(), 0.2)
+            # Zona fuera del dominio
+            with self.assertRaises(ValueError):
+                smn_wrf_to_grib(data, region=(10, 0, 0, 10))
+            # bin_regrid con un hueco se rellena
+            lat1d = np.arange(-40, -38.4, 0.04); lon1d = np.arange(-65, -63.8, 0.04)
+            f = np.full((ny, nx), 5.0); f[10, 10] = np.nan
+            out2 = bin_regrid(np.asarray(netCDF4.Dataset(p).variables["lat"][:]), np.asarray(netCDF4.Dataset(p).variables["lon"][:]), f, lat1d, lon1d)
+            self.assertFalse(np.isnan(out2[5:30, 5:25]).any())
+        finally:
+            tmp.cleanup()
+
+
+@unittest.skipIf(regrid.ec is None, "eccodes no disponible")
+class TestICON(unittest.TestCase):
+    def test_descripcion_y_pedidos(self):
+        from app.sources.icon import IconSource
+        s = IconSource()
+        self.assertEqual(s.steps(cycle=0)[-1], 180); self.assertEqual(s.steps(cycle=6)[-1], 120)
+        self.assertIn(78, s.steps()); self.assertNotIn(79, s.steps()); self.assertIn(81, s.steps())
+        self.assertEqual(len(s.available_runs()), 4)
+        job = _job(variables=["U", "T"], levels=[500, 300], steps=[6])
+        reqs = s.build_requests(job, 6)
+        self.assertEqual(len(reqs), 4)
+        self.assertEqual(reqs[0].url, "https://opendata.dwd.de/weather/nwp/icon/grib/06/u/"
+                                      "icon_global_icosahedral_pressure-level_2026101406_006_500_U.grib2.bz2")
+        self.assertIn("/t/", reqs[2].url)
+
+    def test_regrillado_con_pesos_sinteticos(self):
+        import bz2
+        import eccodes as ec
+        from app.sources import icon as ic
+        from app.grib_reader import GribReader
+        # "Icosaédrica" sintética de 12 celdas con valor = índice; destino 4x3
+        ni, nj = 4, 3
+        index = np.array([0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11])
+        weights = {"ni": ni, "nj": nj, "index": index,
+                   "lat1d": np.array([-10.0, 0.0, 10.0]), "lon1d": np.array([0.0, 90.0, 180.0, 270.0])}
+        gid = ec.codes_grib_new_from_samples("regular_ll_pl_grib2")
+        ec.codes_set(gid, "Ni", 12); ec.codes_set(gid, "Nj", 1)
+        ec.codes_set(gid, "typeOfLevel", "isobaricInhPa"); ec.codes_set(gid, "level", 300)
+        ec.codes_set(gid, "dataDate", 20261014); ec.codes_set(gid, "dataTime", 600)
+        ec.codes_set(gid, "stepUnits", "m"); ec.codes_set(gid, "forecastTime", 360)
+        ec.codes_set(gid, "discipline", 0); ec.codes_set(gid, "parameterCategory", 2); ec.codes_set(gid, "parameterNumber", 2)
+        ec.codes_set_values(gid, np.arange(12, dtype=float))
+        src = ec.codes_get_message(gid); ec.codes_release(gid)
+        out = ic.icosahedral_to_latlon(src, weights)
+        tmp = tempfile.TemporaryDirectory()
+        try:
+            p = os.path.join(tmp.name, "r.grib2"); open(p, "wb").write(out)
+            r = GribReader(p)
+            self.assertEqual((r.grid["ni"], r.grid["nj"]), (4, 3))
+            self.assertEqual(r.steps[0].step_range, "6")
+            self.assertEqual(r.levels, [300.0])
+            u = r.get_field(0, "u", 300.0)
+            # lon 0..270 → normalizadas −180..90: columnas reordenadas (180→−180, 270→−90, 0, 90)
+            self.assertEqual(list(r.lons), [-180.0, -90.0, 0.0, 90.0])
+            self.assertEqual(list(u[0]), [2.0, 3.0, 0.0, 1.0])
+            # fetch_request descomprime bz2 y la prueba de conexión acepta el comienzo de un bz2
+            s = ic.IconSource()
+            data = s.fetch_request(Request("https://x/a.grib2.bz2"), lambda url, headers=None, chunk_cb=None, cancel=None: bz2.compress(b"GRIBxx"))
+            self.assertEqual(data, b"GRIBxx")
+            data = s.fetch_request(Request("https://x/a.grib2.bz2"), lambda url, headers=None, max_bytes=None: b"BZh91AY", max_bytes=10)
+            self.assertEqual(data, b"GRIB")
+        finally:
+            tmp.cleanup()
+
+
+class TestGenerica(unittest.TestCase):
+    def test_plantilla_y_listas(self):
+        from app.sources.generic import expand_template, parse_int_list, GenericSource
+        d = dt.date(2026, 10, 14)
+        self.assertEqual(expand_template("http://h/{YYYYMMDD}/{HH}/m_{YYYYMMDDHH}_f{FFF}_{FF}.grib2", d, 6, 9),
+                         "http://h/20261014/06/m_2026101406_f009_09.grib2")
+        self.assertEqual(expand_template("ftp://h/{date:%Y}/{cycle:02d}/{step:03d}", d, 0, 120), "ftp://h/2026/00/120")
+        self.assertEqual(parse_int_list("0,6,12", []), [0, 6, 12])
+        self.assertEqual(parse_int_list("6-18/6", []), [6, 12, 18])
+        self.assertEqual(parse_int_list("", [1, 2]), [1, 2])
+        s = GenericSource()
+        job = DownloadJob(d, 6, [6], [], [], None, ".", params={"plantilla": "sin esquema", "ciclos": "0,6"})
+        self.assertIn("http://", s.validate(job))
+        job.params["plantilla"] = "https://h/{FFF}.grib2"
+        self.assertIsNone(s.validate(job))
+        self.assertIn("Ciclo", s.validate(DownloadJob(d, 12, [6], [], [], None, ".", params=job.params)))
+        self.assertTrue(s.build_requests(job, 6)[0].url.endswith("/006.grib2"))
+
+    def test_http_con_autenticacion_basica(self):
+        """Servidor HTTP local que exige usuario/clave: la fuente baja con las
+        credenciales y recorta nada (GRIB mínimo falso con recorte apagado)."""
+        import base64
+        import threading
+        from http.server import BaseHTTPRequestHandler, HTTPServer
+        from app.sources.generic import GenericSource
+        token = base64.b64encode(b"luis:secreta").decode()
+
+        class H(BaseHTTPRequestHandler):
+            def log_message(self, *a):
+                pass
+
+            def do_GET(self):
+                if self.headers.get("Authorization") != "Basic " + token:
+                    self.send_response(401); self.end_headers(); return
+                if not self.path.endswith("/f006.grib2"):
+                    self.send_response(404); self.end_headers(); return
+                body = b"GRIBfalso"
+                self.send_response(200); self.send_header("Content-Length", str(len(body))); self.end_headers()
+                self.wfile.write(body)
+        srv = HTTPServer(("127.0.0.1", 0), H)
+        th = threading.Thread(target=srv.serve_forever, daemon=True); th.start()
+        tmp = tempfile.TemporaryDirectory()
+        try:
+            port = srv.server_address[1]
+            s = GenericSource()
+            params = {"plantilla": f"http://127.0.0.1:{port}/{{YYYYMMDD}}/f{{FFF}}.grib2", "ciclos": "0,6,12,18",
+                      "plazos": "6,12", "formato": "grib", "recortar": False}
+            job = DownloadJob(dt.date(2026, 10, 14), 6, [6], [], [], None, tmp.name, params=params)
+            # Sin credenciales: 401 → credenciales
+            with self.assertRaises(DownloadError) as cm:
+                s.download(job, retry_wait=0, credentials={"auth": "ninguna"})
+            self.assertEqual(cm.exception.status, "credenciales")
+            paths = s.download(job, retry_wait=0, credentials={"auth": "usuario", "usuario": "luis", "clave": "secreta"})
+            self.assertEqual(open(paths[0], "rb").read(), b"GRIBfalso")
+            self.assertEqual(read_provenance(paths[0])["formato"], "grib")
+            # Plazo inexistente → no publicado
+            job2 = DownloadJob(dt.date(2026, 10, 14), 6, [12], [], [], None, tmp.name, params=params)
+            with self.assertRaises(DownloadError) as cm:
+                s.download(job2, retry_wait=0, credentials={"auth": "usuario", "usuario": "luis", "clave": "secreta"})
+            self.assertEqual(cm.exception.status, "no_publicado")
+            # Probar conexión (última corrida → plazo 6)
+            r = s.test_connection(params, credentials={"auth": "usuario", "usuario": "luis", "clave": "secreta"})
+            self.assertTrue(r.ok, r)
+            r = s.test_connection(params, credentials={"auth": "token", "token": "x"})
+            self.assertEqual(r.status, "credenciales")
+        finally:
+            srv.shutdown(); tmp.cleanup()
+
+    def test_transportes(self):
+        from app.sources.transport import auth_headers, fetch_any
+        self.assertEqual(auth_headers("token", {"token": "abc"}), {"Authorization": "Bearer abc"})
+        self.assertTrue(auth_headers("usuario", {"usuario": "a", "clave": "b"})["Authorization"].startswith("Basic "))
+        self.assertEqual(auth_headers("ninguna", {"token": "abc"}), {})
+        with self.assertRaises(ValueError):
+            fetch_any("gopher://x")
+
+
+class TestRegistroEtapa2(unittest.TestCase):
+    def test_registro(self):
+        from app.sources import SOURCES
+        keys = [s.key for s in SOURCES]
+        self.assertEqual(keys, ["gfs", "wafs", "ecmwf", "icon", "smn_wrf", "generica"])
+        cfg = {}
+        habilitadas = [s.key for s in enabled_sources(cfg)]
+        self.assertNotIn("wafs", habilitadas); self.assertNotIn("generica", habilitadas)
+        self.assertIn("ecmwf", habilitadas)
+        # Las de superficie no mezclan niveles
+        self.assertEqual([s.key for s in SOURCES if s.kind == "superficie"], ["smn_wrf"])

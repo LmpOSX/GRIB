@@ -568,6 +568,8 @@ class MainWindow(QMainWindow):
         """Valida el contenido: sin U/V se puede seguir sólo con temperatura;
         sin nada útil no se abre."""
         if "u" in reader.variables and "v" in reader.variables:
+            if getattr(reader, "kind", "altura") == "superficie":
+                self.set_status("Archivo de superficie: viento a 10 m y temperatura a 2 m.")
             return True
         if "t" in reader.variables:
             QMessageBox.warning(
@@ -624,7 +626,9 @@ class MainWindow(QMainWindow):
         panel = self.panel
 
         try:
-            if panel.level_mode == "p" and panel.sel_p is not None:
+            if panel.level_mode == "sfc":
+                u, v, t, info = r.get_surface_fields(step_idx)
+            elif panel.level_mode == "p" and panel.sel_p is not None:
                 u, v, t, info = r.get_level_fields(step_idx, panel.sel_p)
             else:
                 u, v, t, info = r.interp_to_pressure(step_idx, fl_to_hpa(panel.sel_fl))
@@ -644,7 +648,9 @@ class MainWindow(QMainWindow):
 
         # Título del mapa
         run = r.run_time()
-        if panel.level_mode == "p":
+        if panel.level_mode == "sfc":
+            lvl_txt = "Superficie (viento 10 m, T 2 m)"
+        elif panel.level_mode == "p":
             lvl_txt = f"{info['p']:g} hPa"
         else:
             lvl_txt = f"F{panel.sel_fl:03d} ({info['p']:.0f} hPa)"
@@ -691,7 +697,9 @@ class MainWindow(QMainWindow):
             loc_txt = "LOCAL    [--:-- – --:--]"
 
         panel = self.panel
-        if panel.level_mode == "p":
+        if panel.level_mode == "sfc":
+            lvl = "LEVEL: superficie (viento 10 m / T 2 m)"
+        elif panel.level_mode == "p":
             lvl = f"LEVEL: {info['p']:g} hPa (nivel del archivo)"
         else:
             lvl = f"LEVEL: F{panel.sel_fl:03d} = {info['p']:.1f} hPa (ISA)"
@@ -732,13 +740,21 @@ class MainWindow(QMainWindow):
             line2 += f"  +{h:g} h"
         res = prov.get("resolucion_final")
         lines = [line1, line2]
+
+        def deg(r):
+            return f"{r.replace('p', ',')}°" if "p" in r and r[0].isdigit() else r
         if res:
-            line2 += f"  ·  {res.replace('p', ',')}°"
+            line2 += f"  ·  {deg(res)}"
             lines[1] = line2
-            if prov.get("regrillado"):
-                # Tercer renglón corto: el panel tiene ancho fijo y no ajusta texto
-                lines.append(f"  desde {prov.get('resolucion_descargada', '?').replace('p', ',')}° "
-                             f"({prov['regrillado']})")
+        if prov.get("regrillado"):
+            # Tercer renglón corto: el panel tiene ancho fijo y no ajusta texto
+            src_res = prov.get("resolucion_descargada")
+            if src_res:
+                lines.append(f"  desde {deg(src_res)} ({prov['regrillado']})")
+            else:
+                lines.append(f"  regrillado: {prov['regrillado']}")
+        elif prov.get("niveles"):
+            lines.append(f"  niveles {prov['niveles']}")
         return "\n".join(lines)
 
     def set_projection(self, key: str):
@@ -834,7 +850,8 @@ class MainWindow(QMainWindow):
         base = (os.path.splitext(os.path.basename(self._reader.path))[0]
                 if self._reader else "grib")
         panel = self.panel
-        lvl = f"F{panel.sel_fl:03d}" if panel.level_mode == "fl" else f"{panel.sel_p:g}hPa"
+        lvl = {"fl": f"F{panel.sel_fl:03d}", "sfc": "superficie"}.get(
+            panel.level_mode, f"{panel.sel_p}hPa")
         step_idx = self._current["step_idx"] if self._current else panel.step_index()
         return f"{base}_paso{step_idx}_{lvl}.{ext}"
 
@@ -896,7 +913,8 @@ class MainWindow(QMainWindow):
             w.writerow(["# paso", cur["step"].step_range, "validez_utc",
                         cur["step"].valid.isoformat() if cur["step"].valid else ""])
             w.writerow(["# nivel_hPa", f"{cur['info']['p']:.2f}", "modo",
-                        "FL interpolado" if self.panel.level_mode == "fl" else "nivel exacto"])
+                        {"fl": "FL interpolado", "sfc": "superficie"}.get(
+                            self.panel.level_mode, "nivel exacto")])
             w.writerow(["lat", "lon", "u_ms", "v_ms", "velocidad_kt", "direccion_deg", "t_c"])
             tc = (cur["t"] - KELVIN) if cur["t"] is not None else None
             for j in range(len(lats)):

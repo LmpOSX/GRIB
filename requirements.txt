@@ -14,6 +14,9 @@ certifi>=2024.2.2    # opcional: certificados para la descarga de costas de Natu
 
 # Fuentes de datos
 keyring>=25          # credenciales de fuentes restringidas en el llavero del sistema (Keychain en macOS)
+netCDF4>=1.7         # fuentes en NetCDF (SMN WRF) y pesos de regrillado de ICON
+ecmwf-opendata>=0.3  # cliente oficial de ECMWF Open Data
+paramiko>=3.4        # SFTP de la fuente genérica
 
 # Empaquetado macOS (.app + DMG)
 py2app>=0.28; sys_platform == "darwin"

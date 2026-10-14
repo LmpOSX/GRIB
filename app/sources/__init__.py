@@ -6,8 +6,14 @@ from .base import (  # noqa: F401
     read_provenance,
 )
 from .gfs import GFSSource
+from .wafs import WAFSSource
+from .ecmwf import ECMWFSource
+from .icon import IconSource
+from .smn import SMNSource
+from .generic import GenericSource
 
-SOURCES = [GFSSource()]
+# Orden del selector: la aeronáutica destacada primero tras el GFS
+SOURCES = [GFSSource(), WAFSSource(), ECMWFSource(), IconSource(), SMNSource(), GenericSource()]
 
 
 def all_sources():

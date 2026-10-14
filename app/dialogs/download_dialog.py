@@ -314,10 +314,13 @@ class DownloadDialog(GlassDialog):
         self.lbl_levels.setVisible(is_alt)
         self.levels_box.setVisible(is_alt)
         self._refresh_levels()
-        # Zona
+        # Zona (la fuente puede proponer su dominio si no se pidió otra)
         has_zone = src.region_filter != "ninguno"
         self.lbl_zone.setVisible(has_zone)
         self.zone_box.setVisible(has_zone)
+        default_region = getattr(src, "default_region", None)
+        if has_zone and default_region and self._region is None:
+            self.set_region(*default_region)
         self._refresh_steps_hint()
         self.adjustSize()
 
