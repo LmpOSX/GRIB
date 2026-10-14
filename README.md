@@ -90,6 +90,32 @@ python main.py FDP_MULTI.grib2        # abre directamente un archivo
 También se abre un `.grib2` con doble clic en el Finder cuando la app está
 empaquetada (`scripts/build.sh`).
 
+### Descargar GFS
+
+`Descargar GFS…` (barra de acciones o Archivo, ⌘⇧D) baja un GRIB2 del GFS
+desde el servidor NOMADS de NOAA usando su "grib filter", que recorta en el
+servidor sólo lo pedido:
+
+* **Corrida**: fecha y ciclo (00/06/12/18 UTC); `Última disponible` propone
+  la corrida que debería estar publicada según la hora actual.
+* **Horas de pronóstico**: desde / hasta / cada N h (por ejemplo 6 a 12
+  cada 3 → +6, +9, +12, los tres pasos del panel TIME).
+* **Variables**: viento U y V, temperatura, altura geopotencial y humedad.
+* **Niveles de presión**: los del producto pgrb2 (1000 … 10 hPa), con
+  atajos "Los del visor", "Todos" y "Ninguno".
+* **Resolución**: 0,25°, 0,50° o 1,00°.
+* **Zona**: latitudes norte/sur y longitudes oeste/este (o todo el globo);
+  con un archivo abierto, "Dominio del archivo abierto" copia su recuadro.
+* **Destino**: carpeta y nombre; opcionalmente un archivo por paso en vez
+  de uno solo con todos los pasos, y abrir el resultado en el visor.
+
+La descarga corre en segundo plano con barra de progreso y se puede
+cancelar. Si la corrida todavía no está publicada el servidor responde 404
+y el diálogo lo explica; una respuesta que no es GRIB (variables o niveles
+sin datos) también se informa. Nota: los niveles 275, 225 y 175 hPa no
+existen en el producto pgrb2 del GFS; el visor interpola entre los
+disponibles.
+
 ### Panel de la derecha
 
 * **STATUS**: corrida, paso, ventana de validez en UTC y en hora local, nivel
@@ -150,6 +176,7 @@ reordenan de sur a norte si el archivo viene de norte a sur.
 | Acción | macOS | Windows / Linux |
 |---|---|---|
 | Abrir GRIB… | ⌘ O | Ctrl O |
+| Descargar GFS… | ⌘ ⇧ D | Ctrl Shift D |
 | Exportar PNG… | ⌘ E | Ctrl E |
 | Exportar CSV… | ⌘ ⇧ E | Ctrl Shift E |
 | Cerrar archivo | ⌘ W | Ctrl W |

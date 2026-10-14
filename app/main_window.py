@@ -275,6 +275,11 @@ class MainWindow(QMainWindow):
         open_btn.setToolTip("Abrir un archivo GRIB2 (Ctrl+O)")
         open_btn.clicked.connect(self._file_open)
         lay.addWidget(open_btn)
+        dl_btn = QPushButton("Descargar GFS…")
+        dl_btn.setToolTip("Bajar un GRIB2 del GFS desde NOMADS con niveles, variables, "
+                          "resolución y zona a elección (Ctrl+Shift+D)")
+        dl_btn.clicked.connect(self.download_gfs)
+        lay.addWidget(dl_btn)
 
         # Acciones que dependen de un archivo abierto
         self._bar_file_area = QWidget()
@@ -325,6 +330,8 @@ class MainWindow(QMainWindow):
     def _setup_file_menu(self):
         archivo = self._menubar.addMenu("Archivo")
         self._act_open = self._add_action(archivo, "Abrir GRIB…", self._file_open, "Ctrl+O")
+        self._act_download = self._add_action(archivo, "Descargar GFS…", self.download_gfs,
+                                              "Ctrl+Shift+D")
         self._recent_menu = archivo.addMenu("Recientes")
         self._refresh_recent_menu()
         archivo.addSeparator()
@@ -475,6 +482,27 @@ class MainWindow(QMainWindow):
         save_config(self._cfg)
         self._refresh_recent_menu()
         self.set_status(f"Archivo cargado: {path}")
+
+    def download_gfs(self):
+        """Diálogo de descarga del GFS (NOMADS). Si el usuario lo pide, el
+        archivo bajado se abre directamente en el visor."""
+        from .dialogs.download_dialog import DownloadDialog
+        region = None
+        if self._reader is not None:
+            r = self._reader
+            region = (float(r.lats.max()), float(r.lats.min()),
+                      float(r.lons.min()), float(r.lons.max()))
+        dlg = DownloadDialog(self, dest_dir=working_dir(self._cfg), region=region)
+        if region is not None:
+            dlg.enable_domain_button(region)
+        if dlg.exec() and dlg.downloaded_paths:
+            first = dlg.downloaded_paths[0]
+            self._cfg["last_directory"] = os.path.dirname(first)
+            save_config(self._cfg)
+            if dlg.open_after:
+                self.open_file(first)
+            else:
+                self.set_status("Descargado: " + ", ".join(dlg.downloaded_paths))
 
     def _accept_reader(self, reader) -> bool:
         """Valida el contenido: sin U/V se puede seguir sólo con temperatura;

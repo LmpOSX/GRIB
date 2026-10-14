@@ -281,14 +281,14 @@ QPushButton#DangerBtn:hover {{
 }}
 
 /* ── Inputs ── */
-QLineEdit, QTextEdit, QDoubleSpinBox, QSpinBox, QComboBox {{
+QLineEdit, QTextEdit, QDoubleSpinBox, QSpinBox, QComboBox, QDateEdit {{
     background: {bg2};
     border: none;
     border-radius: 6px;
     padding: 5px 10px;
     color: {txt};
 }}
-QLineEdit:focus, QTextEdit:focus, QDoubleSpinBox:focus, QSpinBox:focus {{
+QLineEdit:focus, QTextEdit:focus, QDoubleSpinBox:focus, QSpinBox:focus, QDateEdit:focus {{
     background: {mid};
 }}
 QComboBox::drop-down {{
@@ -305,7 +305,8 @@ QComboBox QAbstractItemView {{
     padding: 4px;
 }}
 QDoubleSpinBox::up-button, QDoubleSpinBox::down-button,
-QSpinBox::up-button, QSpinBox::down-button {{
+QSpinBox::up-button, QSpinBox::down-button,
+QDateEdit::up-button, QDateEdit::down-button, QDateEdit::drop-down {{
     background: transparent;
     border: none;
     width: 14px;
@@ -653,6 +654,19 @@ QPlainTextEdit {{
     color: {txt};
     font-family: "Menlo", "Consolas", "DejaVu Sans Mono", monospace;
     font-size: {h3}px;
+}}
+QProgressBar {{
+    background: {bg2};
+    border: none;
+    border-radius: 4px;
+    height: 8px;
+}}
+QProgressBar::chunk {{
+    background: {acc_solid};
+    border-radius: 4px;
+}}
+QCalendarWidget QWidget {{
+    background: {_rgba(p["bg0"], 240)};
 }}
 QStatusBar {{
     background: {bg1};

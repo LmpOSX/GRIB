@@ -168,3 +168,63 @@ class TestPantallaCompleta(_Base):
             self.assertFalse(platform_blur.disable_native_fullscreen(None))
         finally:
             _pl.system = old
+
+
+class TestDialogoDescarga(_Base):
+    def test_abre_y_arma_spec(self):
+        from app.dialogs.download_dialog import DownloadDialog
+        from app.dialogs.glass_dialog import GlassDialog
+        self.w = DownloadDialog(None, dest_dir=self._tmp.name, region=(4.0, -64.0, -90.0, -22.0))
+        self.assertIsInstance(self.w, GlassDialog)
+        self.w.show()
+        _app.processEvents()
+        self.assertTrue(self.w.isVisible())
+        spec = self.w.spec()
+        self.assertIsNone(spec.validate())
+        self.assertEqual(spec.hours, [6, 9, 12])
+        self.assertEqual(set(spec.variables), {"UGRD", "VGRD", "TMP"})
+        self.assertEqual(spec.levels[0], 850)
+        self.assertEqual(spec.resolution, "0p25")
+        self.assertEqual(spec.region, (4.0, -64.0, -90.0, -22.0))
+        self.assertEqual(spec.dest_dir, self._tmp.name)
+        # Todo el globo deshabilita la zona
+        self.w.chk_global.setChecked(True)
+        self.assertFalse(self.w.lat_n.isEnabled())
+        self.assertIsNone(self.w.spec().region)
+        # Niveles: ninguno → inválido
+        self.w._set_levels([])
+        self.assertIn("nivel", self.w.spec().validate().lower())
+        self.w.reject()
+
+    def test_ventana_abre_el_dialogo_con_el_dominio(self):
+        from app.main_window import MainWindow
+        from app.dialogs import download_dialog as dd
+        from tests.test_grib_reader import _reader_sintetico
+        self.w = MainWindow()
+        self.w.show()
+        _app.processEvents()
+        r = _reader_sintetico([850, 700])
+        r.path = os.path.join(self._tmp.name, "s.grib2")
+        self.w.load_reader(r, r.path)
+        capturado = {}
+
+        class FakeDlg:
+            def __init__(self, parent, dest_dir=".", region=None):
+                capturado["region"] = region
+                capturado["dest"] = dest_dir
+                self.downloaded_paths = []
+                self.open_after = False
+
+            def enable_domain_button(self, region):
+                capturado["btn"] = region
+
+            def exec(self):
+                return 0
+        old = dd.DownloadDialog
+        dd.DownloadDialog = FakeDlg
+        try:
+            self.w.download_gfs()
+        finally:
+            dd.DownloadDialog = old
+        self.assertEqual(capturado["region"], (10.0, -10.0, -60.0, -30.0))
+        self.assertEqual(capturado["btn"], capturado["region"])

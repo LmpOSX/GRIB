@@ -10,6 +10,7 @@ from .glass_dialog import GlassDialog, add_shadow as _add_shadow
 # (grupo, acción, atajo).  Cmd = tecla ⌘ en macOS (Ctrl en Windows/Linux).
 SHORTCUTS = [
     ("Archivo", "Abrir GRIB…", "Cmd O"),
+    ("Archivo", "Descargar GFS…", "Cmd Shift D"),
     ("Archivo", "Exportar PNG…", "Cmd E"),
     ("Archivo", "Exportar CSV…", "Cmd Shift E"),
     ("Archivo", "Cerrar archivo", "Cmd W"),

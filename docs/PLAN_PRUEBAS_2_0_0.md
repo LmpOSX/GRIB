@@ -129,6 +129,20 @@ detalle.
 | J1 | Atajos | Ayuda ▸ Atajos de teclado (⌘/) | Tabla con los atajos del README, con ⌘ en macOS. |
 | J2 | Acerca de | Ayuda ▸ Acerca de Visor GRIB | Versión 2.0.0, Qt, Python, ecCodes, matplotlib y cartopy. |
 
+## L. Descarga GFS (requiere conexión)
+
+| # | Caso | Pasos | Resultado esperado |
+|---|---|---|---|
+| L1 | Abrir el diálogo | `Descargar GFS…` en la barra o ⌘⇧D | Diálogo glass con corrida, horas, variables, niveles, resolución, zona y destino; fecha y ciclo propuestos por "Última disponible". |
+| L2 | Descarga básica | Dejar los valores por defecto (UGRD/VGRD/TMP, niveles del visor, 0,25°, zona 4N–64S / 90W–22W, +6…+12 cada 3) y `Descargar` | Barra de progreso por paso; al terminar se abre en el visor con 3 pasos y los niveles pedidos; el inventario coincide. |
+| L3 | Dominio del archivo | Con un archivo abierto, `Dominio del archivo abierto` | Los cuatro campos toman el recuadro del archivo. |
+| L4 | Todo el globo | Marcar `Todo el globo` con 1,00° | Los campos de zona se deshabilitan; el archivo bajado cubre 180W–180E. |
+| L5 | Archivos separados | Desmarcar "Unir los pasos" | Un archivo por paso `nombre_f006.grib2`, etc.; se abre el primero. |
+| L6 | Corrida no publicada | Elegir el ciclo actual (hace menos de 1 h) | Mensaje claro con HTTP 404 y la sugerencia de probar la corrida anterior; sin archivo a medias. |
+| L7 | Cancelar | `Cancelar` durante la descarga | Se detiene, no queda archivo parcial, el diálogo sigue abierto. |
+| L8 | Validaciones | Sin variables, sin niveles o lat norte < sur | Aviso antes de empezar. |
+| L9 | Reemplazo | Bajar dos veces con el mismo nombre | Pregunta si reemplazar. |
+
 ## K. Empaquetado (opcional)
 
 | # | Caso | Pasos | Resultado esperado |
