@@ -15,6 +15,7 @@ from PyQt6.QtWidgets import (
 )
 
 from ..grib_reader import FLIGHT_LEVELS, fl_to_hpa
+from ..wind_plot import PROJECTIONS, HAVE_CARTOPY
 
 
 class ControlPanel(QWidget):
@@ -27,6 +28,7 @@ class ControlPanel(QWidget):
     extent_applied = pyqtSignal(float, float, float, float)   # lon0, lon1, lat0, lat1
     full_extent_clicked = pyqtSignal()
     extent_invalid = pyqtSignal(str)        # mensaje para la ventana
+    projection_changed = pyqtSignal(str)    # clave de PROJECTIONS
 
     TIME_LABELS = ["Current (+0)", "Next (+1)", "Advanced (+2)"]
     P_COMBO_NONE = "(interpolar por FL)"
@@ -155,6 +157,19 @@ class ControlPanel(QWidget):
 
         # ── CONFIG ──
         lay = self._section("CONFIG")
+        row = QHBoxLayout()
+        row.addWidget(QLabel("Proyección:"))
+        self.cb_proj = QComboBox()
+        for key, name in PROJECTIONS:
+            self.cb_proj.addItem(name, key)
+        self.cb_proj.setSizePolicy(QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Fixed)
+        if not HAVE_CARTOPY:
+            self.cb_proj.setEnabled(False)
+            self.cb_proj.setToolTip("Las proyecciones requieren cartopy")
+        self.cb_proj.currentIndexChanged.connect(
+            lambda i: self._emit_if_live(self.projection_changed, self.cb_proj.itemData(i)))
+        row.addWidget(self.cb_proj, 1)
+        lay.addLayout(row)
         self.chk_extra = QCheckBox("Extra Info (kt / °C junto a cada barba)")
         self.chk_grid = QCheckBox("Grilla lat/lon del archivo")
         self.chk_fill = QCheckBox("Fondo de velocidad (contornos rellenos)")
@@ -358,6 +373,20 @@ class ControlPanel(QWidget):
             "fill": self.chk_fill.isChecked(),
             "stride": int(self.spin_stride.value()),
         }
+
+    def projection(self) -> str:
+        return self.cb_proj.currentData() or "platecarree"
+
+    def set_projection(self, key: str):
+        """Selección programática (no emite la señal)."""
+        idx = self.cb_proj.findData(key)
+        if idx < 0:
+            idx = 0
+        self._updating = True
+        try:
+            self.cb_proj.setCurrentIndex(idx)
+        finally:
+            self._updating = False
 
     def set_layer_enabled(self, enabled: bool):
         self.btn_disable.setText("Disable" if enabled else "Enable")

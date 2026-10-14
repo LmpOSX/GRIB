@@ -104,8 +104,11 @@ empaquetada (`scripts/build.sh`).
   lo marca como "extrapolado". El combo "Nivel de presión" elige un nivel
   del archivo sin interpolar.
 * **VARIABLE**: Viento (barbas), Temperatura (contornos cada 2 °C) o ambas.
-* **CONFIG**: `Extra Info` escribe la velocidad en kt (y la temperatura en
-  °C) junto a cada barba; `Grilla` dibuja la grilla lat/lon del archivo;
+* **CONFIG**: `Proyección` elige cómo se dibuja el mapa: Lat/Lon
+  (PlateCarree), Estereográfica conforme centrada en el dominio del archivo,
+  Estereográfica polar sur o norte, Mercator o Lambert conforme (requieren
+  cartopy; la elección se guarda en la configuración). `Extra Info` escribe
+  la velocidad en kt (y la temperatura en °C) junto a cada barba; `Grilla` dibuja la grilla lat/lon del archivo;
   `Fondo de velocidad` rellena el mapa con la misma escala de colores;
   `Densidad` submuestrea las barbas cada N puntos; `Update` redibuja y
   `Disable`/`Enable` oculta o muestra la capa de datos. Cualquier cambio de
@@ -120,6 +123,11 @@ empaquetada (`scripts/build.sh`).
 acento y transparencia). Al mover el mouse sobre el mapa la barra inferior
 muestra lat/lon y, en el punto de grilla más cercano, velocidad (kt),
 dirección (°) y temperatura (°C).
+
+En cualquier proyección las barbas se rotan a la orientación local del
+mapa, los meridianos y paralelos cada 10° llevan etiquetas en los bordes y
+la grilla del archivo (opcional) se dibuja punteada. La barra de estado
+convierte la posición del cursor a lat/lon.
 
 Escala de colores de las barbas: 0–9 kt cian, 10–19 azul, 20–29 verde,
 30–39 amarillo, 40–49 naranja, ≥50 rojo. Conversiones: 1 m/s = 1.943844 kt;

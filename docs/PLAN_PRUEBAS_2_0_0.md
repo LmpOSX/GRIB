@@ -88,6 +88,10 @@ detalle.
 | G7 | Cambio de nivel con zoom | Hacer zoom y cambiar de FL | La vista se mantiene. |
 | G8 | Hover | Mover el mouse sobre el mapa | La barra inferior muestra lat/lon, punto de grilla, viento kt / dirección y T °C; fuera de la grilla sólo lat/lon. |
 | G9 | Sin cartopy | Desinstalar cartopy temporalmente (`pip uninstall cartopy`) | El mapa se dibuja sin costas con el aviso; Acerca de lo indica. Reinstalar después. |
+| G11 | Proyección estereográfica | CONFIG ▸ Proyección ▸ "Estereográfica conforme (centro del dominio)" | El mapa se redibuja con meridianos convergentes, barbas rotadas, etiquetas de lat/lon en los bordes; el hover sigue mostrando lat/lon correctos; zoom, pan, Inicio y recuadro funcionan. |
+| G12 | Resto de proyecciones | Elegir polar sur, polar norte, Mercator y Lambert | Todas dibujan sin error; Lambert con un dominio ecuatorial también. |
+| G13 | Proyección persistida | Elegir estereográfica, cerrar y reabrir la app | Arranca con la proyección elegida. |
+| G14 | Grilla visible | Marcar `Grilla lat/lon del archivo` con opacidad alta y baja | Meridianos/paralelos cada 10° en línea continua y la grilla del archivo punteada, ambas visibles sobre el fondo. |
 | G10 | Sin red la primera vez | Borrar `~/.local/share/cartopy` y abrir sin conexión | Aviso "No se pudieron cargar las costas"; el mapa igual se dibuja. |
 
 ## H. Exportar
@@ -105,7 +109,7 @@ detalle.
 |---|---|---|---|
 | I1 | Color de acento | `⚙` ▸ preset Verde ▸ Aplicar | Toda la interfaz y el fondo del mapa cambian; se conserva al reiniciar. |
 | I2 | Vista previa y cancelar | `⚙` ▸ elegir color ▸ Cancelar | Vuelve al color anterior. |
-| I3 | Transparencia | Mover el deslizador | La ventana cambia de opacidad en vivo. |
+| I3 | Transparencia | Mover el deslizador con un archivo abierto | Toda la ventana cambia de opacidad en vivo, incluido el panel derecho (controles e inventario): con el valor mínimo se ve el escritorio desenfocado detrás; sólo el mapa queda opaco. |
 | I4 | Zoom de fuente | ⌘+ / ⌘− / ⌘0 | El texto de la interfaz crece / achica / vuelve a 13; persiste al reiniciar. |
 | I5 | Escala de barbas | Cambiar el acento | Los colores de las barbas (cian…rojo) y de los contornos de temperatura no cambian. |
 | I6 | Diálogos glass | Abrir Preferencias, Atajos y Acerca de | Fondo translúcido con desenfoque, barra de título nativa, contenido sin aplastar; Esc / Cerrar los cierran. |

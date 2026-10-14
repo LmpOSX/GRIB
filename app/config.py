@@ -50,6 +50,7 @@ DEFAULTS = {
     "window_h": 860,
     "recent_files": [],      # list[str] — most-recent first
     "last_directory": "",    # working directory for open/save dialogs
+    "projection": "platecarree",   # clave de wind_plot.PROJECTIONS
 }
 
 OPACITY_MIN = 80

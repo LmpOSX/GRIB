@@ -297,3 +297,57 @@ class TestCierreYValidacion(_MapBase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class TestProyeccion(_MapBase):
+    def test_combo_cambia_proyeccion_y_persiste(self):
+        import json
+        from app.wind_plot import HAVE_CARTOPY
+        if not HAVE_CARTOPY:
+            self.skipTest("cartopy no disponible")
+        n = len(self.draws)
+        idx = self.w.panel.cb_proj.findData("stereo")
+        self.w.panel.cb_proj.setCurrentIndex(idx)
+        self.assertEqual(self.w.plot.proj_key, "stereo")
+        self.assertEqual(len(self.draws), n + 1)
+        with open(config.CONFIG_PATH) as fh:
+            self.assertEqual(json.load(fh)["projection"], "stereo")
+        # Centro de la proyección = centro del dominio del archivo
+        self.assertAlmostEqual(self.w.plot.proj.proj4_params["lon_0"],
+                               float(self.reader.lons.mean()), places=3)
+        # El cursor convierte coordenadas proyectadas a lon/lat
+        x, y = self.w.plot.proj.transform_point(-45.0, -2.5, self.w.plot.data_crs)
+        lon, lat = self.w.plot.to_lonlat(x, y)
+        self.assertAlmostEqual(lon, -45.0, places=4)
+        self.assertAlmostEqual(lat, -2.5, places=4)
+        self.assertIn("Lat   -2.50   Lon   -45.00", self.w.cursor_text(lon, lat))
+        # Volver a lat/lon: las coordenadas son directas
+        self.w.panel.cb_proj.setCurrentIndex(self.w.panel.cb_proj.findData("platecarree"))
+        self.assertEqual(self.w.plot.proj_key, "platecarree")
+        self.assertEqual(self.w.plot.to_lonlat(-50.0, -10.0), (-50.0, -10.0))
+
+    def test_todas_las_proyecciones_dibujan(self):
+        from app.wind_plot import HAVE_CARTOPY, PROJECTIONS
+        if not HAVE_CARTOPY:
+            self.skipTest("cartopy no disponible")
+        for key, _name in PROJECTIONS:
+            self.w.set_projection(key)
+            self.assertTrue(self.w.plot.has_data, key)
+            ext = self.w.plot.get_extent()
+            self.assertEqual(len(ext), 4, key)
+
+    def test_proyeccion_guardada_se_restaura(self):
+        from app.wind_plot import HAVE_CARTOPY
+        if not HAVE_CARTOPY:
+            self.skipTest("cartopy no disponible")
+        from app.main_window import MainWindow
+        self.w._cfg["projection"] = "spstereo"
+        config.save_config(self.w._cfg)
+        w2 = MainWindow()
+        try:
+            self.assertEqual(w2.panel.projection(), "spstereo")
+            self.assertEqual(w2.plot.proj_key, "spstereo")
+        finally:
+            w2.close()
+            w2.deleteLater()
+            _app.processEvents()

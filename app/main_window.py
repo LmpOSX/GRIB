@@ -205,12 +205,21 @@ class MainWindow(QMainWindow):
         scroll = QScrollArea()
         scroll.setWidgetResizable(True)
         scroll.setFixedWidth(PANEL_WIDTH)
+        scroll.setFrameShape(QFrame.Shape.NoFrame)
         scroll.setHorizontalScrollBarPolicy(Qt.ScrollBarPolicy.ScrollBarAlwaysOff)
+        # El viewport del QScrollArea pinta el color Base del sistema aunque el
+        # stylesheet lo declare transparente, y tapa el desenfoque detrás de
+        # todo el panel: se desactiva el relleno automático.
+        scroll.viewport().setAutoFillBackground(False)
+        scroll.setAttribute(Qt.WidgetAttribute.WA_TranslucentBackground)
         side = QWidget()
+        side.setAutoFillBackground(False)
         side_lay = QVBoxLayout(side)
         side_lay.setContentsMargins(0, 0, 4, 0)
         side_lay.setSpacing(8)
         self.panel = ControlPanel()
+        self.panel.set_projection(self._cfg.get("projection", "platecarree"))
+        self.plot.set_projection(self.panel.projection())
         side_lay.addWidget(self.panel)
         inv_frame = QFrame()
         inv_frame.setObjectName("GlassPanel")
@@ -236,6 +245,7 @@ class MainWindow(QMainWindow):
         self.panel.full_extent_clicked.connect(self.full_extent)
         self.panel.extent_invalid.connect(
             lambda msg: QMessageBox.warning(self, "Recuadro", msg))
+        self.panel.projection_changed.connect(self.set_projection)
 
         # ── Eventos del canvas ──
         self.plot.canvas.mpl_connect("motion_notify_event", self._on_motion)
@@ -519,6 +529,7 @@ class MainWindow(QMainWindow):
         self._set_empty_state(False)
         self.inventory.set_text(reader.inventory_text())
         self.panel.populate(reader)
+        self.plot.set_projection(self.panel.projection(), reader.lons, reader.lats)
         self.redraw(keep_extent=False)
 
     def _file_close(self):
@@ -630,6 +641,20 @@ class MainWindow(QMainWindow):
             lvl += "\n  capa de datos DESHABILITADA"
         panel.set_status_texts(run_txt, step_txt, utc_txt, loc_txt, lvl)
 
+    def set_projection(self, key: str):
+        """Cambia la proyección del mapa (centrada en el dominio del archivo)
+        y redibuja con la vista completa."""
+        r = self._reader
+        lons = r.lons if r is not None else None
+        lats = r.lats if r is not None else None
+        self.plot.set_projection(key, lons, lats)
+        self._cfg["projection"] = key
+        save_config(self._cfg)
+        if r is not None:
+            self.redraw(keep_extent=False)
+        else:
+            self.plot.draw_empty()
+
     def toggle_layer(self):
         """Disable / Enable: oculta la capa de datos y deja el mapa base."""
         self._layer_enabled = not self._layer_enabled
@@ -664,7 +689,10 @@ class MainWindow(QMainWindow):
         """Lat/lon y valores bajo el cursor en la barra de estado."""
         if event.inaxes is not self.plot.ax or event.xdata is None or event.ydata is None:
             return
-        self.set_status(self.cursor_text(float(event.xdata), float(event.ydata)))
+        lon, lat = self.plot.to_lonlat(float(event.xdata), float(event.ydata))
+        if lon is None:
+            return
+        self.set_status(self.cursor_text(lon, lat))
 
     def cursor_text(self, lon: float, lat: float) -> str:
         txt = f"Lat {lat:7.2f}   Lon {lon:8.2f}"

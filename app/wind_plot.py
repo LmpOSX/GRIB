@@ -68,6 +68,48 @@ DEFAULT_PALETTE = {
 TEMP_CONTOUR = "#ff5cf0"       # contornos de temperatura (dato, no tema)
 TEMP_LABEL = "#ffb3f7"
 
+# Proyecciones del mapa: (clave, nombre para el combo). Todas menos la
+# primera necesitan cartopy. Las "centradas en el dominio" se construyen con
+# el centro de la grilla del archivo.
+PROJECTIONS = [
+    ("platecarree", "Lat/Lon (PlateCarree)"),
+    ("stereo", "Estereográfica conforme (centro del dominio)"),
+    ("spstereo", "Estereográfica polar sur"),
+    ("npstereo", "Estereográfica polar norte"),
+    ("mercator", "Mercator"),
+    ("lambert", "Lambert conforme (centro del dominio)"),
+]
+
+
+def make_projection(key, lons=None, lats=None):
+    """Construye la proyección cartopy para la clave dada. Sin cartopy
+    devuelve None (ejes matplotlib comunes en lat/lon)."""
+    if not HAVE_CARTOPY:
+        return None
+    lon_c = float(np.mean(lons)) if lons is not None and len(lons) else 0.0
+    lat_c = float(np.mean(lats)) if lats is not None and len(lats) else 0.0
+    if key == "stereo":
+        return ccrs.Stereographic(central_latitude=lat_c, central_longitude=lon_c)
+    if key == "spstereo":
+        return ccrs.SouthPolarStereo(central_longitude=lon_c)
+    if key == "npstereo":
+        return ccrs.NorthPolarStereo(central_longitude=lon_c)
+    if key == "mercator":
+        return ccrs.Mercator(central_longitude=lon_c)
+    if key == "lambert":
+        # Paralelos estándar simétricos alrededor del centro del dominio
+        half = max(5.0, (float(np.max(lats)) - float(np.min(lats))) / 4.0) if lats is not None and len(lats) else 10.0
+        p1 = max(-85.0, min(85.0, lat_c - half))
+        p2 = max(-85.0, min(85.0, lat_c + half))
+        if abs(p1 + p2) < 1.0:
+            # Dominio centrado en el ecuador: PROJ rechaza paralelos simétricos;
+            # se corre el cono hacia el hemisferio del centro (o el sur)
+            p1, p2 = ((5.0, 15.0) if lat_c > 0 else (-15.0, -5.0))
+        return ccrs.LambertConformal(central_longitude=lon_c, central_latitude=lat_c,
+                                     standard_parallels=(p1, p2),
+                                     cutoff=(30 if (p1 + p2) < 0 else -30))
+    return ccrs.PlateCarree()
+
 
 # ---------------------------------------------------------------------------
 # Dibujo del mapa
@@ -83,7 +125,9 @@ class WindPlot:
         if master is not None:
             self.canvas.setParent(master)
         self.use_cartopy = HAVE_CARTOPY
-        self.proj = ccrs.PlateCarree() if self.use_cartopy else None
+        self.data_crs = ccrs.PlateCarree() if self.use_cartopy else None   # los datos vienen en lat/lon
+        self.proj_key = "platecarree"
+        self.proj = ccrs.PlateCarree() if self.use_cartopy else None       # proyección del mapa
         self.ax = None
         self.has_data = False
         self._features = None           # (costas, fronteras) ya cargadas
@@ -100,6 +144,31 @@ class WindPlot:
         else:
             self.ax = self.fig.add_subplot(1, 1, 1)
         self.fig.subplots_adjust(left=0.06, right=0.99, top=0.95, bottom=0.07)
+
+    def set_projection(self, key, lons=None, lats=None):
+        """Cambia la proyección del mapa y recrea los ejes. Devuelve True si
+        la proyección cambió (sin cartopy sólo existe lat/lon)."""
+        if not self.use_cartopy:
+            self.proj_key = "platecarree"
+            return False
+        self.proj_key = key if key in dict(PROJECTIONS) else "platecarree"
+        self.proj = make_projection(self.proj_key, lons, lats)
+        self._make_axes()
+        self._style_axes()
+        self.has_data = False
+        return True
+
+    def to_lonlat(self, x, y):
+        """Convierte coordenadas de los ejes (proyectadas) a lon/lat."""
+        if self.use_cartopy and self.proj_key != "platecarree":
+            try:
+                lon, lat = self.data_crs.transform_point(x, y, self.proj)
+                if np.isfinite(lon) and np.isfinite(lat):
+                    return float(lon), float(lat)
+                return None, None
+            except Exception:
+                return None, None
+        return float(x), float(y)
 
     def _style_axes(self):
         ax = self.ax
@@ -120,13 +189,13 @@ class WindPlot:
 
     def _tr(self):
         """kwargs de transformación para cartopy (vacío sin cartopy)."""
-        return {"transform": self.proj} if self.use_cartopy else {}
+        return {"transform": self.data_crs} if self.use_cartopy else {}
 
     def get_extent(self):
         """Extensión actual [lonmin, lonmax, latmin, latmax]."""
         try:
             if self.use_cartopy:
-                return list(self.ax.get_extent(crs=self.proj))
+                return list(self.ax.get_extent(crs=self.data_crs))
             x0, x1 = self.ax.get_xlim()
             y0, y1 = self.ax.get_ylim()
             return [x0, x1, y0, y1]
@@ -139,7 +208,7 @@ class WindPlot:
         if lon1 <= lon0 or lat1 <= lat0:
             return
         if self.use_cartopy:
-            self.ax.set_extent([lon0, lon1, lat0, lat1], crs=self.proj)
+            self.ax.set_extent([lon0, lon1, lat0, lat1], crs=self.data_crs)
         else:
             self.ax.set_xlim(lon0, lon1)
             self.ax.set_ylim(lat0, lat1)
@@ -201,27 +270,34 @@ class WindPlot:
         dlon = float(abs(lons[1] - lons[0])) if len(lons) > 1 else 1.0
         dlat = float(abs(lats[1] - lats[0])) if len(lats) > 1 else 1.0
         if self.use_cartopy:
-            gl = self.ax.gridlines(crs=self.proj, draw_labels=True,
+            # Meridianos y paralelos cada 10°, etiquetados en los bordes del
+            # mapa (también en proyecciones no rectangulares)
+            gl = self.ax.gridlines(crs=self.data_crs, draw_labels=True,
                                    xlocs=mticker.MultipleLocator(10),
                                    ylocs=mticker.MultipleLocator(10),
-                                   color=self.pal["grid"], linewidth=0.6, linestyle="--", zorder=2)
+                                   x_inline=False, y_inline=False, rotate_labels=False,
+                                   color=self.pal["grid"], linewidth=0.8, linestyle="-",
+                                   alpha=0.9, zorder=2)
             gl.top_labels = False
             gl.right_labels = False
-            gl.xlabel_style = {"color": self.pal["text"], "size": 8}
-            gl.ylabel_style = {"color": self.pal["text"], "size": 8}
+            gl.xlabel_style = {"color": self.pal["text"], "size": 9}
+            gl.ylabel_style = {"color": self.pal["text"], "size": 9}
             if fine:
-                self.ax.gridlines(crs=self.proj, draw_labels=False,
+                # Grilla del archivo (p. ej. 1°): más tenue, punteada
+                self.ax.gridlines(crs=self.data_crs, draw_labels=False,
                                   xlocs=mticker.MultipleLocator(dlon),
                                   ylocs=mticker.MultipleLocator(dlat),
-                                  color=self.pal["grid_fine"], linewidth=0.4, zorder=1)
+                                  color=self.pal["grid_fine"], linewidth=0.6,
+                                  linestyle=":", alpha=0.9, zorder=1)
         else:
             self.ax.xaxis.set_major_locator(mticker.MultipleLocator(10))
             self.ax.yaxis.set_major_locator(mticker.MultipleLocator(10))
             self.ax.xaxis.set_minor_locator(mticker.MultipleLocator(dlon))
             self.ax.yaxis.set_minor_locator(mticker.MultipleLocator(dlat))
-            self.ax.grid(True, which="major", color=self.pal["grid"], linewidth=0.6, linestyle="--")
+            self.ax.grid(True, which="major", color=self.pal["grid"], linewidth=0.8, linestyle="-")
             if fine:
-                self.ax.grid(True, which="minor", color=self.pal["grid_fine"], linewidth=0.4)
+                self.ax.grid(True, which="minor", color=self.pal["grid_fine"], linewidth=0.6,
+                             linestyle=":")
             self.ax.set_xlabel("Longitud")
             self.ax.set_ylabel("Latitud")
 
