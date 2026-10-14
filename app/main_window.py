@@ -15,7 +15,7 @@ import numpy as np
 from PyQt6.QtWidgets import (
     QMainWindow, QWidget, QVBoxLayout, QHBoxLayout, QPushButton, QFrame,
     QApplication, QMessageBox, QMenuBar, QFileDialog, QStatusBar, QScrollArea,
-    QLabel,
+    QLabel, QComboBox,
 )
 from PyQt6.QtCore import Qt
 from PyQt6.QtGui import QKeySequence, QShortcut, QAction
@@ -30,6 +30,7 @@ from .dialogs.settings_dialog import SettingsDialog
 from .widgets.welcome_widget import WelcomeWidget
 from .widgets.control_panel import ControlPanel
 from .widgets.inventory_panel import InventoryPanel
+from .sources import enabled_sources, all_sources, get_source, source_label, read_provenance
 
 APP_TITLE = "Visor GRIB"
 GRIB_FILTER = "GRIB (*.grib2 *.grb2 *.grib *.grb);;Todos los archivos (*)"
@@ -44,6 +45,7 @@ class MainWindow(QMainWindow):
         self._path: str | None = None  # ruta del archivo abierto
         self._current = None           # campos del paso/nivel dibujados (hover, CSV)
         self._layer_enabled = True     # capa de datos visible (Disable/Enable)
+        self._provenance = None        # procedencia del archivo abierto (fuente, corrida…)
 
         self.setAttribute(Qt.WidgetAttribute.WA_TranslucentBackground)
 
@@ -289,10 +291,19 @@ class MainWindow(QMainWindow):
         open_btn.setToolTip("Abrir un archivo GRIB2 (Ctrl+O)")
         open_btn.clicked.connect(self._file_open)
         lay.addWidget(open_btn)
-        dl_btn = QPushButton("Descargar GFS…")
-        dl_btn.setToolTip("Bajar un GRIB2 del GFS desde NOMADS con niveles, variables, "
-                          "resolución y zona a elección (Ctrl+Shift+D)")
-        dl_btn.clicked.connect(self.download_gfs)
+        lay.addWidget(self._action_sep())
+        lbl = QLabel("Fuente")
+        lay.addWidget(lbl)
+        self.cb_source = QComboBox()
+        self.cb_source.setToolTip("Fuente de datos; se configura en Preferencias ▸ Fuentes. "
+                                  "✓ FL = publica los niveles OACI por nivel de vuelo")
+        self._refresh_sources_combo()
+        self.cb_source.currentIndexChanged.connect(self._on_source_combo)
+        lay.addWidget(self.cb_source)
+        dl_btn = QPushButton("Obtener datos…")
+        dl_btn.setToolTip("Elegir corrida, plazos, variables, niveles y zona de la fuente "
+                          "y descargar (Ctrl+Shift+D)")
+        dl_btn.clicked.connect(self.get_data)
         lay.addWidget(dl_btn)
 
         # Acciones que dependen de un archivo abierto
@@ -312,6 +323,25 @@ class MainWindow(QMainWindow):
         settings_btn.clicked.connect(self._open_settings)
         lay.addWidget(settings_btn)
         return bar
+
+    def _refresh_sources_combo(self):
+        """Fuentes habilitadas en el selector; conserva la elegida."""
+        cb = self.cb_source
+        cb.blockSignals(True)
+        try:
+            cb.clear()
+            for src in (enabled_sources(self._cfg) or all_sources()):
+                cb.addItem(source_label(src), src.key)
+            idx = cb.findData(self._cfg.get("source", "gfs"))
+            cb.setCurrentIndex(max(0, idx))
+        finally:
+            cb.blockSignals(False)
+
+    def _on_source_combo(self, _idx):
+        key = self.cb_source.currentData()
+        if key:
+            self._cfg["source"] = key
+            save_config(self._cfg)
 
     @staticmethod
     def _action_sep() -> QFrame:
@@ -344,7 +374,7 @@ class MainWindow(QMainWindow):
     def _setup_file_menu(self):
         archivo = self._menubar.addMenu("Archivo")
         self._act_open = self._add_action(archivo, "Abrir GRIB…", self._file_open, "Ctrl+O")
-        self._act_download = self._add_action(archivo, "Descargar GFS…", self.download_gfs,
+        self._act_download = self._add_action(archivo, "Obtener datos…", self.get_data,
                                               "Ctrl+Shift+D")
         self._recent_menu = archivo.addMenu("Recientes")
         self._refresh_recent_menu()
@@ -501,34 +531,38 @@ class MainWindow(QMainWindow):
             return
         if not self._accept_reader(reader):
             return
-        self.load_reader(reader, path)
+        self.load_reader(reader, path, read_provenance(path))
         push_recent_file(self._cfg, path)
         save_config(self._cfg)
         self._refresh_recent_menu()
         self.set_status(f"Archivo cargado: {path}")
 
-    def download_gfs(self):
-        """Diálogo de descarga del GFS (NOMADS). Si el usuario lo pide, el
-        archivo bajado se abre directamente en el visor."""
+    def get_data(self):
+        """Diálogo «Obtener datos…» para la fuente elegida. Si el usuario lo
+        pide, el archivo bajado se abre directamente en el visor."""
         from .dialogs.download_dialog import DownloadDialog
         region = None
         if self._reader is not None:
             r = self._reader
             region = (float(r.lats.max()), float(r.lats.min()),
                       float(r.lons.min()), float(r.lons.max()))
-        defaults = {k: v for k, v in self._cfg.items() if k.startswith("download_")}
-        dlg = DownloadDialog(self, dest_dir=working_dir(self._cfg), region=region,
-                             defaults=defaults)
+        dlg = DownloadDialog(self, cfg=self._cfg, dest_dir=working_dir(self._cfg), region=region,
+                             source_key=self.cb_source.currentData())
         if region is not None:
             dlg.enable_domain_button(region)
         if dlg.exec() and dlg.downloaded_paths:
             first = dlg.downloaded_paths[0]
             self._cfg["last_directory"] = os.path.dirname(first)
+            if dlg.source is not None:
+                self._cfg["source"] = dlg.source.key
+                self._refresh_sources_combo()
             save_config(self._cfg)
             if dlg.open_after:
                 self.open_file(first)
             else:
                 self.set_status("Descargado: " + ", ".join(dlg.downloaded_paths))
+
+    download_gfs = get_data     # nombre anterior
 
     def _accept_reader(self, reader) -> bool:
         """Valida el contenido: sin U/V se puede seguir sólo con temperatura;
@@ -549,11 +583,13 @@ class MainWindow(QMainWindow):
         self.set_status("Archivo sin U/V.")
         return False
 
-    def load_reader(self, reader, path: str):
+    def load_reader(self, reader, path: str, provenance: dict = None):
         """Instala un lector ya construido (también lo usan los tests con un
-        lector sintético) y dibuja el primer paso."""
+        lector sintético) y dibuja el primer paso. `provenance` es el JSON
+        que escribe la descarga junto al archivo (fuente, modelo, corrida)."""
         self._reader = reader
         self._path = path
+        self._provenance = provenance
         self._current = None
         self._update_title()
         self._set_empty_state(False)
@@ -565,6 +601,7 @@ class MainWindow(QMainWindow):
     def _file_close(self):
         self._reader = None
         self._path = None
+        self._provenance = None
         self._current = None
         self.inventory.set_text("Sin archivo abierto.")
         self.plot.draw_empty()
@@ -668,7 +705,38 @@ class MainWindow(QMainWindow):
             lvl += f"\n  sin datos de: {', '.join(missing)}"
         if not self._layer_enabled:
             lvl += "\n  capa de datos DESHABILITADA"
-        panel.set_status_texts(run_txt, step_txt, utc_txt, loc_txt, lvl)
+        panel.set_status_texts(run_txt, step_txt, utc_txt, loc_txt, lvl,
+                               source=self.source_text(step))
+
+    def source_text(self, step=None) -> str:
+        """Línea FUENTE del panel (dos renglones): fuente y modelo; corrida,
+        plazo y resolución según la procedencia guardada por la descarga. Sin
+        procedencia, archivo local."""
+        prov = self._provenance
+        if not prov:
+            return "FUENTE: archivo local (sin procedencia)"
+        src = get_source(prov.get("fuente", ""))
+        name = prov.get("nombre") or (src.name if src else prov.get("fuente", "?"))
+        if src is not None and src.flight_levels:
+            name += " ✓FL"
+        model = (prov.get("modelo") or "").split(" vía ")[0].split(" (")[0]
+        line1 = f"FUENTE: {name}" + (f"  ({model})" if model and model != name else "")
+        run = prov.get("corrida", "?")
+        try:
+            run = f"{run[8:10]}/{run[5:7]} {run[11:13]}Z"      # 2026-10-14T06:00Z → 14/10 06Z
+        except Exception:
+            pass
+        line2 = f"  corrida {run}"
+        h = step.hours if step is not None else None
+        if h is not None:
+            line2 += f"  +{h:g} h"
+        res = prov.get("resolucion_final")
+        if res:
+            line2 += f"  ·  {res.replace('p', ',')}°"
+            if prov.get("regrillado"):
+                line2 += (f" desde {prov.get('resolucion_descargada', '?').replace('p', ',')}° "
+                          f"({prov['regrillado']})")
+        return line1 + "\n" + line2
 
     def set_projection(self, key: str):
         """Cambia la proyección del mapa (centrada en el dominio del archivo)
@@ -856,6 +924,7 @@ class MainWindow(QMainWindow):
         self._cfg.update(values)
         self._apply_theme(values.get("accent_color"), opacity=values.get("opacity"))
         self.panel.set_options(self._map_options_from_cfg())
+        self._refresh_sources_combo()
         if values.get("projection", old_proj) != old_proj:
             self.panel.set_projection(values["projection"])
             self.set_projection(values["projection"])     # redibuja y guarda

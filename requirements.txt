@@ -12,5 +12,8 @@ eccodes>=2.37        # bindings Python de ecCodes (las ruedas recientes incluyen
 cartopy>=0.22        # opcional: costas y fronteras; el programa funciona sin él
 certifi>=2024.2.2    # opcional: certificados para la descarga de costas de Natural Earth
 
+# Fuentes de datos
+keyring>=25          # credenciales de fuentes restringidas en el llavero del sistema (Keychain en macOS)
+
 # Empaquetado macOS (.app + DMG)
 py2app>=0.28; sys_platform == "darwin"

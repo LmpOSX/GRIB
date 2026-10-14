@@ -56,9 +56,12 @@ DEFAULTS = {
     "map_grid": False,
     "map_fill": False,
     "map_stride": 1,
-    # Descarga GFS: valores iniciales del diálogo
-    "download_resolution": "0p25",      # clave de gfs_download.RESOLUTIONS
-    "download_extra_levels": False,     # niveles intermedios cada 25 hPa (pgrb2b)
+    # Fuentes de datos: última elegida y configuración por fuente
+    "source": "gfs",
+    "sources": {},                      # {clave: {"enabled": bool, "params": {...}}}
+    "cache_max_mb": 500,                # caché de descargas (0 = sin límite)
+    "cache_max_days": 3,
+    # Descarga: valores iniciales del diálogo
     "download_merge": True,             # un solo archivo con todos los pasos
     "download_open": True,              # abrir en el visor al terminar
     "download_h_from": 6,
@@ -124,6 +127,21 @@ def remove_recent_file(cfg: dict, path: str):
     ]
 
 
+def _migrate(cfg: dict):
+    """Claves de versiones anteriores → configuración por fuente."""
+    if "download_resolution" in cfg or "download_extra_levels" in cfg:
+        sources = dict(cfg.get("sources") or {})
+        gfs = dict(sources.get("gfs") or {})
+        params = dict(gfs.get("params") or {})
+        if "download_resolution" in cfg:
+            params.setdefault("resolucion", cfg.pop("download_resolution"))
+        if "download_extra_levels" in cfg:
+            params.setdefault("niveles_intermedios", cfg.pop("download_extra_levels"))
+        gfs["params"] = params
+        sources["gfs"] = gfs
+        cfg["sources"] = sources
+
+
 def load_config() -> dict:
     if os.path.exists(CONFIG_PATH):
         try:
@@ -132,6 +150,7 @@ def load_config() -> dict:
             # merge with defaults for any missing keys
             merged = dict(DEFAULTS)
             merged.update(data)
+            _migrate(merged)
             return merged
         except Exception:
             pass

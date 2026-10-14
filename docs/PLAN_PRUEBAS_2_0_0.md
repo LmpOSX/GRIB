@@ -135,21 +135,36 @@ detalle.
 | J1 | Atajos | Ayuda ▸ Atajos de teclado (⌘/) | Tabla con los atajos del README, con ⌘ en macOS. |
 | J2 | Acerca de | Ayuda ▸ Acerca de Visor GRIB | Versión 2.0.0, Qt, Python, ecCodes, matplotlib y cartopy. |
 
-## L. Descarga GFS (requiere conexión)
+## L. Obtener datos: fuente NOAA GFS (requiere conexión)
 
 | # | Caso | Pasos | Resultado esperado |
 |---|---|---|---|
-| L1 | Abrir el diálogo | `Descargar GFS…` en la barra o ⌘⇧D | Diálogo glass con corrida, horas, variables, niveles, resolución, zona y destino; fecha y ciclo propuestos por "Última disponible". |
-| L2 | Descarga básica | Dejar los valores por defecto (UGRD/VGRD/TMP, niveles del visor, 0,25°, zona 4N–64S / 90W–22W, +6…+12 cada 3) y `Descargar` | Barra de progreso por paso; al terminar se abre en el visor con 3 pasos y los niveles pedidos; el inventario coincide. |
+| L1 | Abrir el diálogo | Selector `Fuente` = NOAA GFS, `Obtener datos…` o ⌘⇧D | Diálogo glass con fuente, corrida (combo con las últimas 12), plazos, variables, opciones de la fuente, niveles, zona y destino. |
+| L2 | Descarga básica | Valores por defecto (UGRD/VGRD/TMP, niveles del visor, 0,25°, zona 4N–64S / 90W–22W, +6…+12 cada 3) y `Descargar` | Progreso por plazo; al terminar se abre en el visor con 3 pasos; STATUS muestra `FUENTE: NOAA GFS`, modelo, corrida y plazo; junto al archivo queda `.grib2.json`. |
 | L3 | Dominio del archivo | Con un archivo abierto, `Dominio del archivo abierto` | Los cuatro campos toman el recuadro del archivo. |
 | L4 | Todo el globo | Marcar `Todo el globo` con 1,00° | Los campos de zona se deshabilitan; el archivo bajado cubre 180W–180E. |
-| L5 | Archivos separados | Desmarcar "Unir los pasos" | Un archivo por paso `nombre_f006.grib2`, etc.; se abre el primero. |
-| L6 | Corrida no publicada | Elegir el ciclo actual (hace menos de 1 h) | Mensaje claro con HTTP 404 y la sugerencia de probar la corrida anterior; sin archivo a medias. |
+| L5 | Archivos separados | Desmarcar "Unir los plazos" | Un archivo por plazo `nombre_f006.grib2`, etc.; se abre el primero; cada uno con su `.json`. |
+| L6 | Corrida no publicada | Elegir la corrida más nueva del combo si hace menos de 1 h | Mensaje claro con HTTP 404 y la sugerencia de probar la corrida anterior; sin archivo a medias. |
 | L7 | Cancelar | `Cancelar` durante la descarga | Se detiene, no queda archivo parcial, el diálogo sigue abierto. |
-| L8 | Validaciones | Sin variables, sin niveles o lat norte < sur | Aviso antes de empezar. |
+| L8 | Validaciones | Sin variables, sin niveles, lat norte < sur, plazos 121–125 cada 1 | Aviso antes de empezar (los plazos no ofrecidos se marcan debajo de los campos). |
 | L9 | Reemplazo | Bajar dos veces con el mismo nombre | Pregunta si reemplazar. |
-| L10 | Niveles intermedios | 0,25°, marcar `Incluir niveles intermedios`, `Los del visor`, descargar | Las casillas 875…125 se habilitan y "Los del visor" suma 275/225/175; el progreso muestra "· niveles intermedios" por paso; el inventario lista 14 niveles y F320 interpola entre 300 y 275 (STATUS). |
-| L11 | Intermedios a 1,00° | Elegir 1,00° con la casilla marcada | La casilla se apaga y las casillas intermedias se destildan; a 0,50° vuelve a habilitarse (un solo producto, pgrb2full). |
+| L10 | Niveles intermedios | 0,25°, marcar `Incluir niveles intermedios`, `Los del visor`, descargar | Las casillas 875…125 se habilitan y "Los del visor" suma 275/225/175; el progreso muestra "· niveles intermedios"; F320 interpola entre 300 y 275 (STATUS). |
+| L11 | Intermedios a 1,00° | Resolución 1,00° con la casilla marcada | Las casillas intermedias se apagan y `Descargar` avisa; marcando "Bajar siempre 0,25°" vuelven a habilitarse. |
+| L12 | Caché | Repetir la descarga L2 (mismo nombre, reemplazar) | El progreso dice "en caché" y termina en segundos sin red; Preferencias ▸ Descarga muestra archivos y MB; `Vaciar caché` los borra. |
+| L13 | Bajar 0,25° y regrillar | Resolución 1,00° + "Bajar siempre 0,25°" | El nombre lleva `_desde_0p25`; STATUS: `1,00° desde 0,25° (ninguno)`; grilla 1° idéntica al producto real de 1,00°. |
+| L14 | Suavizado | Resolución 1,00° + suavizado `Promedio de área` | Nombre `_desde_0p25_suav`; STATUS `(promedio)`; las barbas en bordes del chorro difieren del producto real. |
+| L15 | Sin red | Desconectar la red y descargar | Tras tres intentos, mensaje "no se pudo conectar"; nada a medias. |
+
+## M. Fuentes (Preferencias)
+
+| # | Caso | Pasos | Resultado esperado |
+|---|---|---|---|
+| M1 | Lista | `⚙` ▸ Fuentes | NOAA GFS con casilla marcada, modelo y tipo "altura"; sin `✓ FL` (lo tendrán WAFS y las que publiquen niveles OACI). |
+| M2 | Deshabilitar | Destildar NOAA GFS ▸ Aplicar | Desaparece del selector de la ventana; si no queda ninguna habilitada, el selector muestra todas. |
+| M3 | Configurar | `Configurar…` (o doble clic) | Diálogo glass con descripción, enlace a la documentación, casilla de habilitación, parámetros por defecto y `Probar conexión`. |
+| M4 | Probar conexión | `Probar conexión` con red | `✔ Conexión OK: NOAA GFS: corrida … disponible`; sin red: `✖ Sin red`. |
+| M5 | Parámetros por defecto | Resolución 0,50° + intermedios ▸ Aplicar dos veces ▸ `Obtener datos…` | El diálogo de descarga abre con 0,50° e intermedios marcados. |
+| M6 | Selector persistente | Cambiar la fuente en el selector y reiniciar | Se conserva la elegida. |
 
 ## K. Empaquetado (opcional)
 

@@ -172,7 +172,7 @@ class TestDescarga(unittest.TestCase):
         with self.assertRaises(gfs.DownloadError) as cm:
             gfs.download(s, fetch_fn=fetch_404)
         self.assertIn("404", str(cm.exception))
-        self.assertIn("no esté publicada", str(cm.exception))
+        self.assertIn("no esté publicad", str(cm.exception))
 
     def test_cancelacion(self):
         s = _spec(dest_dir=self.tmp.name)

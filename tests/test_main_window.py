@@ -11,6 +11,7 @@ import unittest
 
 os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
 
+from PyQt6.QtCore import Qt  # noqa: E402
 from PyQt6.QtWidgets import QApplication  # noqa: E402
 
 from app import config  # noqa: E402
@@ -118,9 +119,9 @@ class TestDialogos(_Base):
         from app.dialogs.settings_dialog import SettingsDialog
         cfg = dict(config.DEFAULTS)
         cfg.update({"accent_color": "#4A90D9", "opacity": 180, "projection": "mercator",
-                    "map_stride": 3, "download_resolution": "0p50",
-                    "download_extra_levels": True, "engine": "wgrib2",
-                    "wgrib2_path": "/no/existe/wgrib2"})
+                    "map_stride": 3, "cache_max_mb": 123, "engine": "wgrib2",
+                    "wgrib2_path": "/no/existe/wgrib2",
+                    "sources": {"gfs": {"enabled": True, "params": {"resolucion": "0p50"}}}})
         self.w = SettingsDialog(None, cfg=cfg)
         self.w.show()
         _app.processEvents()
@@ -132,27 +133,31 @@ class TestDialogos(_Base):
         v = self.w.values()
         self.assertEqual(v["projection"], "mercator")
         self.assertEqual(v["map_stride"], 3)
-        self.assertEqual(v["download_resolution"], "0p50")
-        self.assertTrue(v["download_extra_levels"])
+        self.assertEqual(v["cache_max_mb"], 123)
         self.assertEqual(v["engine"], "wgrib2")
         self.assertEqual(v["wgrib2_path"], "/no/existe/wgrib2")
+        self.assertEqual(v["sources"]["gfs"]["params"]["resolucion"], "0p50")
         from app.grib_engines import find_wgrib2
         # La ruta no existe: sólo se encuentra si hay wgrib2 en el PATH / WGRIB2
         esperado = "Encontrado" if find_wgrib2() else "no encontrado"
         self.assertIn(esperado, self.w.lbl_wgrib2.text())
+        # Fuentes: lista con el GFS habilitado; destildar lo deshabilita
+        self.assertEqual(self.w.lst_sources.count(), len(__import__("app.sources", fromlist=["SOURCES"]).SOURCES))
+        item = self.w.lst_sources.item(0)
+        self.assertEqual(item.data(Qt.ItemDataRole.UserRole), "gfs")
+        item.setCheckState(Qt.CheckState.Unchecked)
+        self.assertFalse(self.w.values()["sources"]["gfs"]["enabled"])
+        item.setCheckState(Qt.CheckState.Checked)
         # Cambios
         self.w._select_color("#5B8C5A")
         self.assertEqual(self.w.selected_color(), "#5B8C5A")
         self.w.rb_engine["eccodes"].setChecked(True)
         self.w.chk_fill.setChecked(True)
-        # A 1,00° no hay niveles intermedios: la casilla se apaga
-        self.w.cb_res.setCurrentIndex(self.w.cb_res.findData("1p00"))
-        self.assertFalse(self.w.chk_extra_levels.isEnabled())
         v = self.w.values()
         self.assertEqual(v["accent_color"], "#5B8C5A")
         self.assertEqual(v["engine"], "eccodes")
         self.assertTrue(v["map_fill"])
-        self.assertFalse(v["download_extra_levels"])
+        self.assertTrue(v["sources"]["gfs"]["enabled"])
         self.w.accept()
         self.assertFalse(self.w.isVisible())
 
@@ -165,7 +170,8 @@ class TestDialogos(_Base):
         _app.processEvents()
         vals = dict(self.w._cfg)
         vals.update({"accent_color": "#C0674D", "map_grid": True, "map_stride": 4,
-                     "projection": "mercator", "download_resolution": "1p00",
+                     "projection": "mercator", "cache_max_days": 7,
+                     "sources": {"gfs": {"enabled": True, "params": {"resolucion": "1p00"}}},
                      "engine": "eccodes"})
         self.w.apply_settings(vals)
         self.assertTrue(self.w.panel.chk_grid.isChecked())
@@ -174,7 +180,9 @@ class TestDialogos(_Base):
         saved = config.load_config()
         self.assertEqual(saved["accent_color"], "#C0674D")
         self.assertEqual(saved["projection"], "mercator")
-        self.assertEqual(saved["download_resolution"], "1p00")
+        self.assertEqual(saved["cache_max_days"], 7)
+        self.assertEqual(saved["sources"]["gfs"]["params"]["resolucion"], "1p00")
+        self.assertEqual(self.w.cb_source.currentData(), "gfs")
         self.assertTrue(saved["map_grid"])
         # Tocar CONFIG en el panel persiste el nuevo valor inicial
         self.w.panel.chk_extra.setChecked(True)
@@ -260,58 +268,111 @@ class TestPantallaCompleta(_Base):
 
 
 class TestDialogoDescarga(_Base):
-    def test_abre_y_arma_spec(self):
+    def _cfg(self, **kw):
+        cfg = dict(config.DEFAULTS)
+        cfg.update(kw)
+        return cfg
+
+    def test_abre_y_arma_job(self):
         from app.dialogs.download_dialog import DownloadDialog
         from app.dialogs.glass_dialog import GlassDialog
-        self.w = DownloadDialog(None, dest_dir=self._tmp.name, region=(4.0, -64.0, -90.0, -22.0))
+        self.w = DownloadDialog(None, cfg=self._cfg(), dest_dir=self._tmp.name,
+                                region=(4.0, -64.0, -90.0, -22.0))
         self.assertIsInstance(self.w, GlassDialog)
         self.w.show()
         _app.processEvents()
         self.assertTrue(self.w.isVisible())
-        spec = self.w.spec()
-        self.assertIsNone(spec.validate())
-        self.assertEqual(spec.hours, [6, 9, 12])
-        # Sin pedir intermedios, sus casillas están deshabilitadas y vacías
-        self.assertFalse(self.w.level_checks[275].isEnabled())
-        self.assertNotIn(275, spec.levels)
-        # Con intermedios, "Los del visor" suma 275/225/175
-        self.w.chk_extra.setChecked(True)
-        self.assertTrue(self.w.level_checks[275].isEnabled())
-        self.w._set_viewer_levels()
-        self.assertEqual(self.w.spec().extra_levels, [275, 225, 175])
-        # A 1,00° se apagan
-        self.w.res.setCurrentIndex(self.w.res.findData("1p00"))
-        self.assertFalse(self.w.chk_extra.isEnabled())
-        self.assertEqual(self.w.spec().extra_levels, [])
-        self.w.res.setCurrentIndex(self.w.res.findData("0p25"))
-        self.assertEqual(set(spec.variables), {"UGRD", "VGRD", "TMP"})
-        self.assertEqual(spec.levels[0], 850)
-        self.assertEqual(spec.resolution, "0p25")
-        self.assertEqual(spec.region, (4.0, -64.0, -90.0, -22.0))
-        self.assertEqual(spec.dest_dir, self._tmp.name)
+        self.assertEqual(self.w.source.key, "gfs")
+        self.assertEqual(self.w.cb_run.count(), 12)
+        job = self.w.job()
+        self.assertIsNone(self.w.source.validate(job))
+        self.assertEqual(job.steps, [6, 9, 12])
+        self.assertEqual(set(job.variables), {"UGRD", "VGRD", "TMP"})
+        self.assertEqual(job.levels[0], 850)
+        self.assertEqual(job.params["resolucion"], "0p25")
+        self.assertEqual(job.region, (4.0, -64.0, -90.0, -22.0))
+        self.assertEqual(job.dest_dir, self._tmp.name)
+        self.assertIn("3 plazo(s)", self.w.lbl_steps.text())
+        # Plazos que la fuente no ofrece (cada 1 h hasta 120, cada 3 h después)
+        self.w.h_from.setValue(121); self.w.h_to.setValue(125); self.w.h_step.setValue(1)
+        self.assertIn("no ofrece", self.w.lbl_steps.text())
+        self.assertIn("no ofrece", self.w.source.validate(self.w.job()))
+        self.w.h_from.setValue(6); self.w.h_to.setValue(12); self.w.h_step.setValue(3)
         # Todo el globo deshabilita la zona
         self.w.chk_global.setChecked(True)
         self.assertFalse(self.w.lat_n.isEnabled())
-        self.assertIsNone(self.w.spec().region)
+        self.assertIsNone(self.w.job().region)
+        # Sin pedir intermedios, sus casillas están deshabilitadas y vacías
+        self.assertFalse(self.w.level_checks[275].isEnabled())
+        self.assertNotIn(275, job.levels)
+        # Con intermedios (parámetro de la fuente), "Los del visor" suma 275/225/175
+        self.w.form.widget("niveles_intermedios").setChecked(True)
+        self.assertTrue(self.w.level_checks[275].isEnabled())
+        self.w._set_viewer_levels()
+        self.assertEqual(self.w.job().params["niveles_intermedios"], True)
+        self.assertEqual([lv for lv in self.w.job().levels if lv in (275, 225, 175)], [275, 225, 175])
+        # A 1,00° se apagan
+        res = self.w.form.widget("resolucion")
+        res.setCurrentIndex(res.findData("1p00"))
+        self.assertFalse(self.w.level_checks[275].isEnabled())
+        self.assertIn("1,00°", self.w.source.validate(self.w.job()))
+        # Salvo que se baje siempre 0,25° y se regrille
+        self.w.form.widget("solo_0p25").setChecked(True)
+        self.assertTrue(self.w.level_checks[275].isEnabled())
+        self.w._set_viewer_levels()
+        self.assertIsNone(self.w.source.validate(self.w.job()))
+        self.assertIn("desde_0p25", self.w.source.default_basename(self.w.job()))
         # Niveles: ninguno → inválido
         self.w._set_levels([])
-        self.assertIn("nivel", self.w.spec().validate().lower())
+        self.assertIn("nivel", self.w.source.validate(self.w.job()).lower())
         self.w.reject()
 
     def test_valores_iniciales_de_preferencias(self):
         from app.dialogs.download_dialog import DownloadDialog
-        d = {"download_resolution": "0p50", "download_extra_levels": True,
-             "download_merge": False, "download_open": False,
-             "download_h_from": 0, "download_h_to": 24, "download_h_step": 6}
-        self.w = DownloadDialog(None, dest_dir=self._tmp.name, defaults=d)
-        spec = self.w.spec()
-        self.assertEqual(spec.resolution, "0p50")
-        self.assertEqual(spec.hours, [0, 6, 12, 18, 24])
-        self.assertFalse(spec.merge)
+        cfg = self._cfg(download_merge=False, download_open=False, download_h_from=0,
+                        download_h_to=24, download_h_step=6,
+                        sources={"gfs": {"enabled": True, "params": {"resolucion": "0p50",
+                                                                     "niveles_intermedios": True}}})
+        self.w = DownloadDialog(None, cfg=cfg, dest_dir=self._tmp.name)
+        job = self.w.job()
+        self.assertEqual(job.params["resolucion"], "0p50")
+        self.assertEqual(job.steps, [0, 6, 12, 18, 24])
+        self.assertFalse(job.merge)
         self.assertFalse(self.w.chk_open.isChecked())
-        self.assertEqual(spec.extra_levels, [275, 225, 175])
-        self.assertIsNone(spec.validate())
+        self.assertEqual([lv for lv in job.levels if lv in (275, 225, 175)], [275, 225, 175])
+        self.assertIsNone(self.w.source.validate(job))
         self.w.reject()
+
+    def test_descarga_simulada_en_hilo(self):
+        """El hilo del diálogo baja con la fuente (fetch simulado), escribe el
+        archivo y la procedencia y acepta el diálogo."""
+        from app.dialogs.download_dialog import DownloadDialog
+        from app.dialogs import download_dialog as dd
+        from app.sources import gfs as gfs_src
+        from app.sources.cache import DownloadCache
+        cfg = self._cfg(download_h_from=6, download_h_to=6)
+        self.w = DownloadDialog(None, cfg=cfg, dest_dir=self._tmp.name)
+        self.w.show()
+        _app.processEvents()
+        old_fetch = gfs_src.gfs.fetch
+        gfs_src.gfs.fetch = lambda url, headers=None, chunk_cb=None, cancel=None, **k: b"GRIBxxxx"
+        old_cache = dd.DownloadDialog._cache
+        dd.DownloadDialog._cache = lambda self_: DownloadCache(os.path.join(self._tmp.name, "cache"))
+        try:
+            self.w._start()
+            for _ in range(200):
+                _app.processEvents()
+                if not self.w._worker.isRunning() and self.w.downloaded_paths:
+                    break
+                self.w._worker.wait(50)
+            _app.processEvents()
+        finally:
+            gfs_src.gfs.fetch = old_fetch
+            dd.DownloadDialog._cache = old_cache
+        self.assertEqual(len(self.w.downloaded_paths), 1)
+        path = self.w.downloaded_paths[0]
+        self.assertTrue(os.path.exists(path) and os.path.exists(path + ".json"))
+        self.assertTrue(os.path.basename(path).startswith("gfs_"))
 
     def test_ventana_abre_el_dialogo_con_el_dominio(self):
         from app.main_window import MainWindow
@@ -320,18 +381,23 @@ class TestDialogoDescarga(_Base):
         self.w = MainWindow()
         self.w.show()
         _app.processEvents()
+        self.assertEqual(self.w.cb_source.currentData(), "gfs")
+        self.assertIn("NOAA GFS", self.w.cb_source.currentText())
         r = _reader_sintetico([850, 700])
         r.path = os.path.join(self._tmp.name, "s.grib2")
         self.w.load_reader(r, r.path)
+        self.assertIn("archivo local", self.w.panel.lbl_source.text())
         capturado = {}
 
         class FakeDlg:
-            def __init__(self, parent, dest_dir=".", region=None, defaults=None):
+            def __init__(self, parent, cfg=None, dest_dir=".", region=None, source_key=None):
                 capturado["region"] = region
                 capturado["dest"] = dest_dir
-                capturado["defaults"] = defaults
+                capturado["cfg"] = cfg
+                capturado["source"] = source_key
                 self.downloaded_paths = []
                 self.open_after = False
+                self.source = None
 
             def enable_domain_button(self, region):
                 capturado["btn"] = region
@@ -341,9 +407,31 @@ class TestDialogoDescarga(_Base):
         old = dd.DownloadDialog
         dd.DownloadDialog = FakeDlg
         try:
-            self.w.download_gfs()
+            self.w.get_data()
         finally:
             dd.DownloadDialog = old
         self.assertEqual(capturado["region"], (10.0, -10.0, -60.0, -30.0))
         self.assertEqual(capturado["btn"], capturado["region"])
-        self.assertEqual(capturado["defaults"]["download_resolution"], "0p25")
+        self.assertEqual(capturado["source"], "gfs")
+        self.assertIs(capturado["cfg"], self.w._cfg)
+
+    def test_procedencia_en_status(self):
+        from app.main_window import MainWindow
+        from tests.test_grib_reader import _reader_sintetico
+        self.w = MainWindow()
+        self.w.show()
+        _app.processEvents()
+        r = _reader_sintetico([850, 700])
+        r.path = os.path.join(self._tmp.name, "s.grib2")
+        prov = {"fuente": "gfs", "nombre": "NOAA GFS", "modelo": "GFS (NCEP)",
+                "corrida": "2026-10-14T06:00Z", "resolucion_final": "1p00",
+                "resolucion_descargada": "0p25", "regrillado": "promedio"}
+        self.w.load_reader(r, r.path, prov)
+        txt = self.w.panel.lbl_source.text()
+        self.assertIn("NOAA GFS", txt)
+        self.assertIn("corrida 14/10 06Z", txt)
+        self.assertIn("+6 h", txt)
+        self.assertIn("(GFS)", txt)
+        self.assertIn("1,00° desde 0,25° (promedio)", txt)
+
+

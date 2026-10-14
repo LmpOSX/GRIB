@@ -63,13 +63,14 @@ class ControlPanel(QWidget):
 
         # ── STATUS ──
         lay = self._section("STATUS")
+        self.lbl_source = QLabel("FUENTE: --")
         self.lbl_run = QLabel("RUN: --")
         self.lbl_step = QLabel("STEP: --")
         self.lbl_valid_utc = QLabel("VALIDITY [--:-- – --:--] UTC")
         self.lbl_valid_loc = QLabel("LOCAL    [--:-- – --:--]")
         self.lbl_level = QLabel("LEVEL: --")
         self.lbl_level.setWordWrap(True)
-        for w in (self.lbl_run, self.lbl_step, self.lbl_valid_utc,
+        for w in (self.lbl_source, self.lbl_run, self.lbl_step, self.lbl_valid_utc,
                   self.lbl_valid_loc, self.lbl_level):
             w.setObjectName("StatusMono")
             w.setTextInteractionFlags(Qt.TextInteractionFlag.TextSelectableByMouse)
@@ -410,7 +411,9 @@ class ControlPanel(QWidget):
     # ── STATUS ───────────────────────────────────────────────────────────────
 
     def set_status_texts(self, run: str, step: str, valid_utc: str, valid_local: str,
-                         level: str):
+                         level: str, source: str = None):
+        if source is not None:
+            self.lbl_source.setText(source)
         self.lbl_run.setText(run)
         self.lbl_step.setText(step)
         self.lbl_valid_utc.setText(valid_utc)

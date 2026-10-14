@@ -4,8 +4,8 @@
 * Apariencia: color de acento (con vista previa en vivo) y transparencia.
 * Mapa: proyección y valores iniciales de CONFIG (Extra Info, grilla, fondo,
   densidad).
-* Descarga: resolución, niveles intermedios, horas y destino por defecto del
-  diálogo «Descargar GFS…».
+* Fuentes: habilitar cada fuente, sus parámetros, credenciales y prueba.
+* Descarga: plazos y destino por defecto de «Obtener datos…», caché.
 * Motor: biblioteca ecCodes o programa wgrib2 (con su ruta y un botón para
   probarlo).
 
@@ -27,6 +27,8 @@ from ..config import OPACITY_MAX
 from .. import gfs_download as gfs
 from ..grib_engines import ENGINES, ec, find_wgrib2, wgrib2_version
 from ..wind_plot import PROJECTIONS, HAVE_CARTOPY
+from ..sources import all_sources, source_config, set_source_config, source_label
+from ..sources.cache import DownloadCache
 
 
 class ColorPreview(QFrame):
@@ -62,7 +64,7 @@ class SettingsDialog(GlassDialog):
         ("#8A3A5F", "Bordo"),
     ]
 
-    TABS = ("Apariencia", "Mapa", "Descarga", "Motor")
+    TABS = ("Apariencia", "Mapa", "Fuentes", "Descarga", "Motor")
 
     def __init__(self, parent=None, cfg: dict = None):
         super().__init__(parent)
@@ -95,8 +97,9 @@ class SettingsDialog(GlassDialog):
         self.tabs = QTabWidget()
         self.tabs.addTab(self._tab_apariencia(), self.TABS[0])
         self.tabs.addTab(self._tab_mapa(), self.TABS[1])
-        self.tabs.addTab(self._tab_descarga(), self.TABS[2])
-        self.tabs.addTab(self._tab_motor(), self.TABS[3])
+        self.tabs.addTab(self._tab_fuentes(), self.TABS[2])
+        self.tabs.addTab(self._tab_descarga(), self.TABS[3])
+        self.tabs.addTab(self._tab_motor(), self.TABS[4])
         lay.addWidget(self.tabs, 1)
 
         btn_row = QHBoxLayout()
@@ -213,56 +216,120 @@ class SettingsDialog(GlassDialog):
         lay.addStretch()
         return w
 
+    # ── Fuentes ──
+    def _tab_fuentes(self):
+        from PyQt6.QtWidgets import QListWidget, QListWidgetItem
+        w, lay = self._page()
+        self._sub(lay, "Fuentes de datos (✓ FL = publica los niveles OACI por nivel de vuelo)")
+        # Borrador local de la configuración de fuentes (se aplica con Aplicar)
+        self._sources_wrapper = {"sources": dict(self._cfg.get("sources") or {})}
+        self.lst_sources = QListWidget()
+        for src in all_sources():
+            st = source_config(self._sources_wrapper, src.key)
+            kind = "altura" if src.kind == "altura" else "superficie"
+            item = QListWidgetItem(f"{source_label(src)}   —   {src.model}   [{kind}]"
+                                   + ("   🔑" if src.needs_credentials else ""))
+            item.setData(Qt.ItemDataRole.UserRole, src.key)
+            item.setFlags(item.flags() | Qt.ItemFlag.ItemIsUserCheckable)
+            item.setCheckState(Qt.CheckState.Checked if st["enabled"] else Qt.CheckState.Unchecked)
+            self.lst_sources.addItem(item)
+        self.lst_sources.itemDoubleClicked.connect(lambda _i: self._configure_source())
+        self.lst_sources.itemChanged.connect(self._on_source_checked)
+        lay.addWidget(self.lst_sources, 1)
+        row = QHBoxLayout()
+        b = QPushButton("Configurar…")
+        b.clicked.connect(self._configure_source)
+        row.addWidget(b)
+        row.addStretch()
+        lay.addLayout(row)
+        self._hint(lay, "La casilla habilita la fuente en el selector de la ventana. «Configurar…» "
+                        "abre sus parámetros por defecto, credenciales y «Probar conexión».")
+        return w
+
+    def _on_source_checked(self, item):
+        key = item.data(Qt.ItemDataRole.UserRole)
+        set_source_config(self._wrap(), key, enabled=item.checkState() == Qt.CheckState.Checked)
+
+    def _wrap(self):
+        """Diccionario con la clave 'sources': el borrador local."""
+        return self._sources_wrapper
+
+    def _configure_source(self):
+        from .source_config_dialog import SourceConfigDialog
+        from ..sources import get_source
+        item = self.lst_sources.currentItem()
+        if item is None:
+            return
+        key = item.data(Qt.ItemDataRole.UserRole)
+        src = get_source(key)
+        dlg = SourceConfigDialog(self, src, self._wrap())
+        if dlg.exec():
+            set_source_config(self._wrap(), key, enabled=dlg.enabled(), params=dlg.params())
+            item.setCheckState(Qt.CheckState.Checked if dlg.enabled() else Qt.CheckState.Unchecked)
+
     # ── Descarga ──
     def _tab_descarga(self):
         w, lay = self._page()
-        self._sub(lay, "Valores iniciales del diálogo «Descargar GFS…»")
+        self._sub(lay, "Valores iniciales del diálogo «Obtener datos…»")
         g = QGridLayout()
         g.setHorizontalSpacing(8)
-        g.addWidget(QLabel("Resolución"), 0, 0)
-        self.cb_res = QComboBox()
-        for r in gfs.RESOLUTIONS:
-            self.cb_res.addItem(r[1], r[0])
-        idx = self.cb_res.findData(self._cfg.get("download_resolution", "0p25"))
-        self.cb_res.setCurrentIndex(max(0, idx))
-        self.cb_res.currentIndexChanged.connect(self._on_res_changed)
-        g.addWidget(self.cb_res, 0, 1)
-        g.addWidget(QLabel("Horas: desde"), 1, 0)
+        g.addWidget(QLabel("Plazos: desde"), 0, 0)
         self.h_from = QSpinBox(); self.h_from.setRange(0, gfs.MAX_HOUR)
         self.h_from.setValue(int(self._cfg.get("download_h_from", 6)))
-        g.addWidget(self.h_from, 1, 1)
-        g.addWidget(QLabel("hasta"), 1, 2)
+        g.addWidget(self.h_from, 0, 1)
+        g.addWidget(QLabel("hasta"), 0, 2)
         self.h_to = QSpinBox(); self.h_to.setRange(0, gfs.MAX_HOUR)
         self.h_to.setValue(int(self._cfg.get("download_h_to", 12)))
-        g.addWidget(self.h_to, 1, 3)
-        g.addWidget(QLabel("cada"), 1, 4)
+        g.addWidget(self.h_to, 0, 3)
+        g.addWidget(QLabel("cada"), 0, 4)
         self.h_step = QSpinBox(); self.h_step.setRange(1, 24); self.h_step.setSuffix(" h")
         self.h_step.setValue(int(self._cfg.get("download_h_step", 3)))
-        g.addWidget(self.h_step, 1, 5)
+        g.addWidget(self.h_step, 0, 5)
         lay.addLayout(g)
-
-        self.chk_extra_levels = QCheckBox("Incluir niveles intermedios cada 25 hPa (875 … 125; "
-                                          "pgrb2b a 0,25°, pgrb2full a 0,50°)")
-        self.chk_extra_levels.setChecked(bool(self._cfg.get("download_extra_levels", False)))
-        lay.addWidget(self.chk_extra_levels)
-        self._hint(lay, "Con los intermedios, cada FL del visor queda a menos de 8 hPa de "
-                        "un nivel del archivo (F320 ≈ 275, F360 ≈ 225, F410 ≈ 175) y la "
-                        "interpolación en ln(p) es mínima. A 1,00° NOMADS no los filtra.")
-        self.chk_merge = QCheckBox("Unir los pasos en un solo archivo")
+        self.chk_merge = QCheckBox("Unir los plazos en un solo archivo")
         self.chk_merge.setChecked(bool(self._cfg.get("download_merge", True)))
         lay.addWidget(self.chk_merge)
         self.chk_open = QCheckBox("Abrir en el visor al terminar")
         self.chk_open.setChecked(bool(self._cfg.get("download_open", True)))
         lay.addWidget(self.chk_open)
-        self._on_res_changed()
+        self._hint(lay, "La resolución, el suavizado y los niveles de cada fuente se configuran "
+                        "en la pestaña Fuentes.")
+
+        self._sub(lay, "Caché de descargas (no se vuelve a bajar lo ya bajado)")
+        g = QGridLayout()
+        g.setHorizontalSpacing(8)
+        g.addWidget(QLabel("Tamaño máximo"), 0, 0)
+        self.cache_mb = QSpinBox(); self.cache_mb.setRange(0, 100000); self.cache_mb.setSuffix(" MB")
+        self.cache_mb.setSpecialValueText("sin límite")
+        self.cache_mb.setValue(int(self._cfg.get("cache_max_mb", 500)))
+        g.addWidget(self.cache_mb, 0, 1)
+        g.addWidget(QLabel("Conservar"), 0, 2)
+        self.cache_days = QSpinBox(); self.cache_days.setRange(0, 365); self.cache_days.setSuffix(" días")
+        self.cache_days.setSpecialValueText("siempre")
+        self.cache_days.setValue(int(self._cfg.get("cache_max_days", 3)))
+        g.addWidget(self.cache_days, 0, 3)
+        b = QPushButton("Vaciar caché")
+        b.clicked.connect(self._clear_cache)
+        g.addWidget(b, 0, 4)
+        lay.addLayout(g)
+        self.lbl_cache = QLabel("")
+        self.lbl_cache.setObjectName("Hint")
+        lay.addWidget(self.lbl_cache)
+        self._refresh_cache_label()
         lay.addStretch()
         return w
 
-    def _on_res_changed(self, *_):
-        ok = gfs.extra_levels_available(self.cb_res.currentData())
-        self.chk_extra_levels.setEnabled(ok)
-        if not ok:
-            self.chk_extra_levels.setChecked(False)
+    def _cache(self):
+        return DownloadCache(max_mb=self.cache_mb.value(), max_days=self.cache_days.value())
+
+    def _refresh_cache_label(self):
+        c = self._cache()
+        n = len(c.entries())
+        self.lbl_cache.setText(f"{n} archivo(s), {c.size_bytes() / 1e6:.1f} MB en {c.folder}")
+
+    def _clear_cache(self):
+        self._cache().clear()
+        self._refresh_cache_label()
 
     # ── Motor ──
     def _tab_motor(self):
@@ -377,8 +444,9 @@ class SettingsDialog(GlassDialog):
             "map_grid": self.chk_grid.isChecked(),
             "map_fill": self.chk_fill.isChecked(),
             "map_stride": int(self.spin_stride.value()),
-            "download_resolution": self.cb_res.currentData(),
-            "download_extra_levels": self.chk_extra_levels.isChecked(),
+            "sources": dict(self._wrap()["sources"]),
+            "cache_max_mb": int(self.cache_mb.value()),
+            "cache_max_days": int(self.cache_days.value()),
             "download_merge": self.chk_merge.isChecked(),
             "download_open": self.chk_open.isChecked(),
             "download_h_from": int(self.h_from.value()),

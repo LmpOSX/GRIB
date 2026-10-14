@@ -13,6 +13,17 @@ import urllib.error
 import urllib.parse
 import urllib.request
 
+GRIB_MAGIC = b"GRIB"
+
+
+def __getattr__(name):
+    """DownloadError / DownloadCancelled viven en sources.base; se resuelven
+    tarde para evitar la importación circular (sources.gfs importa este módulo)."""
+    if name in ("DownloadError", "DownloadCancelled"):
+        from .sources import base
+        return getattr(base, name)
+    raise AttributeError(name)
+
 NOMADS_BASE = "https://nomads.ncep.noaa.gov/cgi-bin/"
 
 # (clave, nombre, script del filtro, patrón del archivo,
@@ -66,7 +77,6 @@ def extra_levels_available(resolution):
 
 CYCLES = [0, 6, 12, 18]
 MAX_HOUR = 384
-GRIB_MAGIC = b"GRIB"
 AVAILABILITY_LAG_H = 4.5       # una corrida suele estar completa ~4–5 h después
 
 
@@ -193,10 +203,13 @@ def _ssl_context():
         return ssl.create_default_context()
 
 
-def fetch(url, timeout=120, chunk_cb=None, cancel=None):
+def fetch(url, timeout=120, chunk_cb=None, cancel=None, headers=None, max_bytes=None):
     """Baja una URL y devuelve los bytes. chunk_cb(recibidos, total_o_None)
-    informa el progreso; cancel() → True aborta con DownloadCancelled."""
-    req = urllib.request.Request(url, headers={"User-Agent": "VisorGRIB/2.0"})
+    informa el progreso; cancel() → True aborta con DownloadCancelled;
+    max_bytes corta la lectura (para probar conexión sin bajar todo)."""
+    hdrs = {"User-Agent": "VisorGRIB/2.0"}
+    hdrs.update(headers or {})
+    req = urllib.request.Request(url, headers=hdrs)
     with urllib.request.urlopen(req, timeout=timeout, context=_ssl_context()) as resp:
         total = resp.headers.get("Content-Length")
         total = int(total) if total and total.isdigit() else None
@@ -212,96 +225,23 @@ def fetch(url, timeout=120, chunk_cb=None, cancel=None):
             got += len(block)
             if chunk_cb is not None:
                 chunk_cb(got, total)
+            if max_bytes is not None and got >= max_bytes:
+                break
     return b"".join(chunks)
 
 
-class DownloadCancelled(Exception):
-    pass
-
-
-class DownloadError(Exception):
-    pass
-
-
 def download(spec, progress_cb=None, cancel=None, fetch_fn=fetch):
-    """Baja todos los pasos de la especificación y escribe los archivos.
+    """Compatibilidad: baja una DownloadSpec con la fuente GFS del esquema de
+    fuentes (caché desactivada, sin reintentos con espera). fetch_fn puede
+    tener la firma vieja fetch_fn(url, chunk_cb=None, cancel=None)."""
+    from .sources.gfs import GFSSource
+    from .sources.base import DownloadJob
 
-    progress_cb(indice_paso, n_pasos, mensaje, fraccion_total) informa el
-    avance; cancel() → True aborta. Devuelve la lista de rutas escritas
-    (una sola si se unen los pasos). Lanza DownloadError con un mensaje
-    claro ante 404 (corrida no disponible), respuestas que no son GRIB, etc.
-    """
-    err = spec.validate()
-    if err:
-        raise DownloadError(err)
-    os.makedirs(spec.dest_dir, exist_ok=True)
-    paths = spec.file_paths()
-    n = len(spec.hours)
-    written = []
-    out = None
-    try:
-        if spec.merge:
-            out = open(paths[0], "wb")
-        for i, fh in enumerate(spec.hours):
-            if cancel is not None and cancel():
-                raise DownloadCancelled()
-            msg = f"Paso +{fh} h ({i + 1} de {n})"
-            if progress_cb:
-                progress_cb(i, n, msg, i / n)
-            urls = build_urls(spec, fh)
-            parts = []
-            for k, (url, tag) in enumerate(urls):
-                if cancel is not None and cancel():
-                    raise DownloadCancelled()
-                sub = f"{msg}{' · ' + tag if tag else ''}"
-
-                def chunk_cb(got, total, _i=i, _k=k, _m=len(urls), _msg=sub):
-                    if progress_cb:
-                        frac = (got / total) if total else 0.0
-                        progress_cb(_i, n, f"{_msg}: {got / 1e6:.1f} MB",
-                                    (_i + (_k + frac) / _m) / n)
-
-                try:
-                    data = fetch_fn(url, chunk_cb=chunk_cb, cancel=cancel)
-                except urllib.error.HTTPError as exc:
-                    if exc.code == 404:
-                        raise DownloadError(
-                            f"El servidor no tiene el paso +{fh} h de la corrida "
-                            f"{spec.date:%Y-%m-%d} {spec.cycle:02d}Z (HTTP 404). "
-                            "Puede que la corrida todavía no esté publicada: probá la "
-                            "anterior o un paso menor.") from exc
-                    raise DownloadError(
-                        f"Error HTTP {exc.code} al bajar el paso +{fh} h: {exc.reason}") from exc
-                except urllib.error.URLError as exc:
-                    raise DownloadError(f"No se pudo conectar con NOMADS: {exc.reason}") from exc
-                if not data.startswith(GRIB_MAGIC):
-                    texto = data[:400].decode("utf-8", "replace")
-                    raise DownloadError(
-                        f"La respuesta del paso +{fh} h{' (' + tag + ')' if tag else ''} "
-                        "no es un GRIB (¿variables o niveles sin datos, o zona fuera de "
-                        f"rango?).\n{texto}")
-                parts.append(data)
-            data = b"".join(parts)
-            if spec.merge:
-                out.write(data)
-            else:
-                with open(paths[i], "wb") as fh_out:
-                    fh_out.write(data)
-                written.append(paths[i])
-        if spec.merge:
-            out.close()
-            out = None
-            written.append(paths[0])
-    except BaseException:
-        if out is not None:
-            out.close()
-        # Sin dejar archivos a medias
-        for p in ([paths[0]] if spec.merge else []):
-            try:
-                os.remove(p)
-            except OSError:
-                pass
-        raise
-    if progress_cb:
-        progress_cb(n, n, "Descarga completa", 1.0)
-    return written
+    def _fetch(url, headers=None, chunk_cb=None, cancel=None, **kw):
+        return fetch_fn(url, chunk_cb=chunk_cb, cancel=cancel)
+    extra = any(lv in EXTRA_LEVELS for lv in spec.levels)
+    job = DownloadJob(spec.date, spec.cycle, spec.hours, spec.variables, spec.levels,
+                      spec.region, spec.dest_dir, spec.basename, spec.merge,
+                      params={"resolucion": spec.resolution, "niveles_intermedios": extra})
+    return GFSSource().download(job, progress_cb=progress_cb, cancel=cancel, fetch_fn=_fetch,
+                                retry_wait=0, write_provenance=False)
