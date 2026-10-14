@@ -1,0 +1,47 @@
+# Python
+__pycache__/
+*.py[cod]
+*.pyo
+*.egg-info/
+dist/
+build/
+*.egg
+
+# Virtual environment
+.venv/
+venv/
+env/
+
+# IDE
+.idea/
+.vscode/
+*.swp
+*.swo
+*~
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Config local
+config.json
+
+# Datos de usuario (archivos GRIB y exportaciones), no fuente
+*.grib2
+*.grb2
+*.grib
+*.grb
+*.png
+*.csv
+!resources/*.png
+
+# py2app / installer artifacts
+dist/
+build/
+*.dmg
+
+# Carpeta de trabajo local (GRIB de prueba, borradores)
+trabajo/
+
+# Log de errores no controlados (modo desarrollo lo escribe junto a config.json)
+errores.log
