@@ -24,6 +24,7 @@ from PyQt6.QtGui import QColor, QPainter, QBrush
 
 from .glass_dialog import GlassDialog, add_shadow as _add_shadow
 from ..config import OPACITY_MAX
+from ..utils import MOD_KEY
 from .. import gfs_download as gfs
 from ..grib_engines import ENGINES, ec, find_wgrib2, wgrib2_version
 from ..wind_plot import PROJECTIONS, HAVE_CARTOPY, WIND_STYLES
@@ -223,6 +224,20 @@ class SettingsDialog(GlassDialog):
         row.addWidget(self.spin_stride)
         row.addStretch()
         lay.addLayout(row)
+        self._sub(lay, "Rótulos de Extra Info")
+        row = QHBoxLayout()
+        row.addWidget(QLabel("Tamaño (pt)"))
+        self.spin_label = QSpinBox()
+        self.spin_label.setRange(5, 16)
+        self.spin_label.setValue(int(self._cfg.get("map_label_size", 7)))
+        self.spin_label.setToolTip("Tamaño base de los números junto a cada punto; " +
+                                   MOD_KEY + " +/− lo escala junto con el resto del mapa")
+        row.addWidget(self.spin_label)
+        row.addStretch()
+        lay.addLayout(row)
+        self.chk_label_units = QCheckBox("Mostrar unidades (kt, °C)")
+        self.chk_label_units.setChecked(bool(self._cfg.get("map_label_units", True)))
+        lay.addWidget(self.chk_label_units)
         lay.addStretch()
         return w
 
@@ -499,6 +514,8 @@ class SettingsDialog(GlassDialog):
             "map_grid": self.chk_grid.isChecked(),
             "map_fill": self.chk_fill.isChecked(),
             "map_stride": int(self.spin_stride.value()),
+            "map_label_size": int(self.spin_label.value()),
+            "map_label_units": self.chk_label_units.isChecked(),
             "sources": dict(self._wrap()["sources"]),
             "cache_max_mb": int(self.cache_mb.value()),
             "cache_max_days": int(self.cache_days.value()),

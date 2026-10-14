@@ -57,6 +57,8 @@ DEFAULTS = {
     "map_grid": False,
     "map_fill": False,
     "map_stride": 1,
+    "map_label_size": 7,          # tamaño (pt) de los rótulos de Extra Info
+    "map_label_units": True,      # rótulos con unidad ("12 kt  −45 °C")
     # Fuentes de datos: última elegida y configuración por fuente
     "source": "gfs",
     "sources": {},                      # {clave: {"enabled": bool, "params": {...}}}

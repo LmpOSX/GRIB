@@ -175,8 +175,14 @@ class TranslucentCanvas(FigureCanvasQTAgg):
 MAX_BARBS = 2500        # barbas / flechas visibles como máximo (se ralea automáticamente)
 WIND_STYLES = [("barbas", "Barbas"), ("flechas", "Flechas (vectores)"), ("curvas", "Curvas (líneas de corriente)")]
 ARROW_LEN_IN = 0.24         # largo fijo de las flechas (pulgadas, a escala de fuente 1)
+BARB_LENGTH_PT = 5.5        # largo nominal de las barbas (puntos de matplotlib)
+BARB_PX_PER_PT = 3.1        # px que ocupa el asta por punto de `length` (a 72 dpi)
+GLYPH_MIN_FACTOR = 0.5      # al alejar, barbas y flechas se achican hasta la mitad y recién ahí se ralean
+GLYPH_FILL = 0.88           # fracción del espacio entre puntos que puede ocupar un glifo
+STREAM_NOMINAL_CELL_PX = 18.0   # curvas: por debajo de esta separación entre puntos se afinan
 CALM_KT = 0.5               # por debajo no hay dirección: sin flecha
 STREAM_ARROW_PX = 55.0      # separación entre flechas embebidas en las curvas (px)
+LABEL_SIZE_DEFAULT = 7      # tamaño base (pt) de los rótulos de Extra Info
 MAX_LABELS = 900        # rótulos de Extra Info visibles como máximo
 SETTLE_MS = 150         # espera tras el último cambio de vista para reconstruir
 
@@ -625,6 +631,8 @@ class WindPlot:
             mode        'viento' | 'temperatura' | 'ambos'
             show_wind   bool  (False = capa de viento deshabilitada)
             extra_info  bool  (velocidad/temperatura al lado de cada barba)
+            label_size  int   (pt base de los rótulos de Extra Info)
+            label_units bool  (rótulos con unidad: "12 kt −45 °C")
             wind_style  'barbas' | 'flechas' | 'curvas' (representación del viento)
             grid        bool  (grilla fina del archivo)
             fill        bool  (fondo de velocidad en contornos rellenos)
@@ -664,6 +672,8 @@ class WindPlot:
                 "extra": bool(opts.get("extra_info", False)) and show_wind,
                 "stride": max(1, int(opts.get("stride", 1))),
                 "style": opts.get("wind_style", "barbas"),
+                "label_size": max(4, int(opts.get("label_size", LABEL_SIZE_DEFAULT))),
+                "label_units": bool(opts.get("label_units", True)),
             }
 
             # Capa base (se conserva entre redibujos)
@@ -751,9 +761,50 @@ class WindPlot:
         first = ((start + step - 1) // step) * step
         return slice(first, stop, step)
 
+    def _cell_px(self):
+        """Píxeles entre dos puntos de grilla adyacentes en la vista actual
+        (el menor de los dos ejes), medido en el centro de la vista."""
+        d = self._data
+        lons, lats = d["lons"], d["lats"]
+        ext = self.get_extent()
+        try:
+            lon_c = float(np.clip((ext[0] + ext[1]) / 2.0, lons.min(), lons.max()))
+            lat_c = float(np.clip((ext[2] + ext[3]) / 2.0, lats.min(), lats.max()))
+        except Exception:
+            lon_c, lat_c = float(lons[len(lons) // 2]), float(lats[len(lats) // 2])
+        pl = np.array([lon_c, lon_c + d["dlon"], lon_c])
+        pa = np.array([lat_c, lat_c, lat_c + d["dlat"]])
+        if self.use_cartopy:
+            xy = self.proj.transform_points(self.data_crs, pl, pa)[:, :2]
+        else:
+            xy = np.column_stack([pl, pa])
+        if not np.isfinite(xy).all():
+            return 0.0
+        disp = self.ax.transData.transform(xy)
+        dx = float(np.hypot(*(disp[1] - disp[0])))
+        dy = float(np.hypot(*(disp[2] - disp[0])))
+        return max(0.0, min(dx, dy))
+
+    def _fit_glyph(self, nominal_px, cell_px, stride):
+        """Elige el factor de tamaño del glifo (1 = nominal) y el raleo para
+        que el glifo no ocupe más de GLYPH_FILL del espacio entre puntos: al
+        alejar primero se achica (hasta GLYPH_MIN_FACTOR) y sólo después se
+        ralea. Devuelve (factor, stride)."""
+        if cell_px <= 0 or nominal_px <= 0:
+            return 1.0, stride
+        room = GLYPH_FILL * cell_px * stride
+        if nominal_px <= room:
+            return 1.0, stride
+        f = max(GLYPH_MIN_FACTOR, room / nominal_px)
+        glyph = nominal_px * f
+        if glyph > room:
+            stride = max(stride, int(math.ceil(glyph / (GLYPH_FILL * cell_px))))
+        return f, stride
+
     def _refresh_view_layers(self):
-        """Reconstruye barbas y rótulos para los puntos visibles, con raleo
-        automático para no superar MAX_BARBS / MAX_LABELS."""
+        """Reconstruye la capa de viento y los rótulos para los puntos
+        visibles. Al alejar la vista los glifos se achican hasta un mínimo
+        y recién después se ralean (nunca más de MAX_BARBS / MAX_LABELS)."""
         d = self._data
         if d is None:
             return
@@ -766,6 +817,19 @@ class WindPlot:
         i0, i1, j0, j1 = self._visible_index_ranges()
         n_vis = max(1, (i1 - i0) * (j1 - j0))
         stride = max(d["stride"], int(math.ceil(math.sqrt(n_vis / MAX_BARBS))))
+        cell = self._cell_px()
+        scale = max(0.8, self.font_scale)
+        dpi = float(self.fig.dpi)
+        style = d.get("style", "barbas")
+        if style == "flechas":
+            nominal = ARROW_LEN_IN * scale * dpi
+        elif style == "barbas":
+            nominal = BARB_LENGTH_PT * scale * BARB_PX_PER_PT * dpi / 72.0
+        else:
+            nominal = 0.0
+        factor, stride = self._fit_glyph(nominal, cell, stride)
+        if style == "curvas" and cell > 0:
+            factor = float(np.clip(cell / STREAM_NOMINAL_CELL_PX, 0.45, 1.0))
         si = self._aligned_slice(i0, i1, stride)
         sj = self._aligned_slice(j0, j1, stride)
         lons, lats = d["lons"], d["lats"]
@@ -774,20 +838,32 @@ class WindPlot:
             return
 
         if d["draw_wind"]:
-            self._draw_wind(X, Y, sj, si, stride, i0, i1, j0, j1)
+            self._draw_wind(X, Y, sj, si, stride, i0, i1, j0, j1, factor)
 
         if d["extra"]:
+            fs = self._fs(d["label_size"])
+            fs_px = fs * dpi / 72.0
+            n_chars = 0
+            if d["draw_wind"]:
+                n_chars += 5 if d["label_units"] else 2
+            if d["draw_temp"]:
+                n_chars += 6 if d["label_units"] else 4
+            label_w = 0.62 * fs_px * (n_chars + 1)
+            label_h = 1.3 * fs_px
             n_barbs = X.size
             k = int(math.ceil(math.sqrt(n_barbs / MAX_LABELS)))
             stride_l = stride * max(1, k)
+            if cell > 0:
+                stride_l = max(stride_l, int(math.ceil(label_w / cell)), int(math.ceil(label_h / cell)))
             si_l = self._aligned_slice(i0, i1, stride_l)
             sj_l = self._aligned_slice(j0, j1, stride_l)
             Xl, Yl = np.meshgrid(lons[si_l], lats[sj_l])
             spd_s = d["spd"][sj_l, si_l] if d["draw_wind"] else None
             t_s = (d["t"][sj_l, si_l] - KELVIN) if d["draw_temp"] else None
-            off_x = 0.12 * d["dlon"] * stride_l
-            off_y = 0.12 * d["dlat"] * stride_l
-            fs = self._fs(6)
+            off_x = 0.15 * d["dlon"] * stride
+            off_y = 0.30 * d["dlat"] * stride       # por encima del glifo, que está centrado en el punto
+            u_kt = " kt" if d["label_units"] else ""
+            u_c = " °C" if d["label_units"] else "°"
             nj, ni = Xl.shape
             for jj in range(nj):
                 for ii in range(ni):
@@ -795,12 +871,12 @@ class WindPlot:
                     col = self.pal["text"]
                     if spd_s is not None and not np.ma.is_masked(spd_s[jj, ii]):
                         s_val = float(spd_s[jj, ii])
-                        parts.append(f"{s_val:.0f}")
+                        parts.append(f"{s_val:.0f}{u_kt}")
                         col = speed_color(s_val)
                     if t_s is not None and not np.isnan(t_s[jj, ii]):
-                        parts.append(f"{t_s[jj, ii]:.0f}°")
+                        parts.append(f"{t_s[jj, ii]:.0f}{u_c}")
                     if parts:
-                        txt = ax.text(Xl[jj, ii] + off_x, Yl[jj, ii] + off_y, " ".join(parts),
+                        txt = ax.text(Xl[jj, ii] + off_x, Yl[jj, ii] + off_y, "  ".join(parts),
                                       fontsize=fs, color=col, ha="left", va="bottom",
                                       zorder=6, **tr)
                         # Recorte al área del mapa (con cartopy sólo funciona por bbox)
@@ -808,32 +884,21 @@ class WindPlot:
                         txt.set_clip_on(True)
                         self._label_artists.append(txt)
 
-    def _draw_wind(self, X, Y, sj, si, stride, i0, i1, j0, j1):
+    def _draw_wind(self, X, Y, sj, si, stride, i0, i1, j0, j1, factor=1.0):
         """Capa de viento según el estilo: barbas, flechas (vectores) o
         curvas (líneas de corriente). Las tres usan la escala fija de colores
-        por velocidad."""
+        por velocidad. `factor` (≤ 1) achica los glifos al alejar la vista."""
         d = self._data
         ax = self.ax
         tr = self._tr()
         style = d.get("style", "barbas")
         if style == "curvas":
-            self._draw_streamlines(stride, i0, i1, j0, j1)
+            self._draw_streamlines(stride, i0, i1, j0, j1, factor)
             return
         if style == "flechas":
             # Flechas de largo fijo que apuntan hacia donde sopla el viento;
             # la velocidad va sólo en el color. Sin flecha donde hay calma.
-            # Se ralean además para que no se pisen: la separación entre
-            # puntos en píxeles debe superar el largo de la flecha.
-            scale = max(0.8, self.font_scale)
-            arrow_px = ARROW_LEN_IN * scale * self.fig.dpi
-            px_per_cell = ax.bbox.width / max(1, (i1 - i0))
-            need = int(math.ceil(arrow_px * 1.25 / max(px_per_cell, 1e-6)))
-            if need > stride:
-                si = self._aligned_slice(i0, i1, need)
-                sj = self._aligned_slice(j0, j1, need)
-                X, Y = np.meshgrid(d["lons"][si], d["lats"][sj])
-                if X.size == 0:
-                    return
+            scale = max(0.8, self.font_scale) * factor
             uk, vk, spd = d["uk"][sj, si], d["vk"][sj, si], d["spd"][sj, si]
             with np.errstate(all="ignore"):
                 mag = np.ma.masked_less(spd, CALM_KT)
@@ -844,16 +909,17 @@ class WindPlot:
             self._view_artists.append(ax.quiver(
                 X, Y, ue, ve, spd, cmap=SPEED_CMAP, norm=SPEED_NORM,
                 pivot="middle", scale_units="inches", scale=1.0 / (ARROW_LEN_IN * scale),
-                width=0.003, headwidth=3.5, headlength=4.5, headaxislength=4.0,
-                minlength=0.0, zorder=5, clip_on=True, **tr))
+                width=0.003 * max(0.55, factor), headwidth=3.5, headlength=4.5,
+                headaxislength=4.0, minlength=0.0, zorder=5, clip_on=True, **tr))
             return
         uk, vk, spd = d["uk"][sj, si], d["vk"][sj, si], d["spd"][sj, si]
         self._view_artists.append(ax.barbs(
             X, Y, uk, vk, spd, cmap=SPEED_CMAP, norm=SPEED_NORM,
-            length=5.5 * max(0.8, self.font_scale), linewidth=0.7, pivot="middle",
+            length=BARB_LENGTH_PT * max(0.8, self.font_scale) * factor,
+            linewidth=0.7 * max(0.55, factor), pivot="middle",
             flip_barb=(Y < 0), zorder=5, clip_on=True, **tr))
 
-    def _draw_streamlines(self, stride, i0, i1, j0, j1):
+    def _draw_streamlines(self, stride, i0, i1, j0, j1, factor=1.0):
         """Líneas de corriente (streamplot) coloreadas por velocidad.
         `Densidad` N baja la densidad de líneas (2 / N).
 
@@ -872,7 +938,7 @@ class WindPlot:
         if not np.isfinite(uk).any():
             return
         density = max(0.25, 2.0 / max(1, stride))
-        scale = max(0.8, self.font_scale)
+        scale = max(0.8, self.font_scale) * factor
         kw = dict(cmap=SPEED_CMAP, norm=SPEED_NORM, density=density, linewidth=1.1 * scale,
                   arrowsize=1.0 * scale, arrowstyle="->", zorder=5)
         patches_before = set(id(a) for a in ax.patches)

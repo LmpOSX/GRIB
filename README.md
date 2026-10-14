@@ -241,8 +241,10 @@ real salvo la cuantización del empaquetado). Por eso la fuente ofrece:
   corriente del campo con una flecha de sentido cada pocos centímetros);
   las tres usan la misma escala de colores por velocidad. Las flechas se
   ralean solas para no pisarse al alejar la vista.
-  `Extra Info` escribe la velocidad en kt (y la temperatura en °C) junto a
-  cada punto; `Grilla` dibuja la grilla lat/lon del archivo;
+  `Extra Info` escribe la velocidad (y la temperatura) junto a cada punto,
+  con unidades (`12 kt  −45 °C`) o sin ellas y con el tamaño que se elija
+  en Preferencias ▸ Mapa (además lo escala ⌘ +/−); los rótulos se ralean
+  para no pisarse; `Grilla` dibuja la grilla lat/lon del archivo;
   `Fondo de velocidad` rellena el mapa con la misma escala de colores;
   `Densidad` submuestrea las barbas o flechas cada N puntos (en curvas baja
   la densidad de líneas); `Update` redibuja y
@@ -264,9 +266,11 @@ dominio` la reinician. La vista siempre llena el área del mapa: al fijar el
 dominio o un recuadro se amplía en el sentido que haga falta.
 
 Para que el mapa responda rápido, las barbas o flechas y los rótulos de "Extra Info"
-se dibujan sólo para la zona visible y se ralean automáticamente cuando hay
-demasiados (al acercar la vista aparecen todos; `Densidad` fija el raleo
-mínimo). Mientras se arrastra el mapa se ocultan los rótulos y las etiquetas
+se dibujan sólo para la zona visible. Al alejar la vista las barbas y las
+flechas primero se achican (hasta la mitad del tamaño nominal) y las curvas
+se afinan, para conservar la mayor cantidad posible de celdas; recién
+cuando ya no entran se ralean (al acercar la vista aparecen todos;
+`Densidad` fija el raleo mínimo). Mientras se arrastra el mapa se ocultan los rótulos y las etiquetas
 de la grilla, que vuelven al soltar. Al mover el mouse sobre el mapa la barra inferior
 muestra lat/lon y, en el punto de grilla más cercano, velocidad (kt),
 dirección (°) y temperatura (°C).
@@ -451,7 +455,7 @@ con seis pestañas:
 
 * **Apariencia**: color de acento (presets o personalizado, con vista previa
   en vivo) y transparencia de la ventana.
-* **Mapa**: proyección y valores iniciales de CONFIG (Extra Info, grilla,
+* **Mapa**: proyección, valores iniciales de CONFIG (viento, Extra Info, grilla,
   fondo de velocidad, densidad).
 * **Fuentes**: lista de fuentes con su casilla de habilitación, tipo y
   `✓ FL`; `Configurar…` abre la fuente: parámetros por defecto (el mismo

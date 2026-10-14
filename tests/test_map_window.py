@@ -223,6 +223,49 @@ class TestCargaYRedibujo(_MapBase):
         self.assertTrue(np.allclose(mag[~mask], 1.0, atol=1e-6))
         self.assertTrue(mask.any())                  # el punto en calma quedó sin flecha
 
+    def test_rotulos_con_unidades_y_tamano(self):
+        """Extra Info muestra unidades si está configurado y usa el tamaño de
+        la configuración."""
+        self.w.panel.rb_var[2].click()                     # viento + temperatura
+        self.w.panel.chk_extra.setChecked(True)
+        self.w.plot.canvas.draw()
+        txts = [t.get_text() for t in self.w.plot._label_artists]
+        self.assertTrue(txts and all("kt" in t and "°C" in t for t in txts), txts[:3])
+        self.assertAlmostEqual(self.w.plot._label_artists[0].get_fontsize(), 7.0)
+        vals = dict(self.w._cfg); vals.update({"map_label_units": False, "map_label_size": 11})
+        self.w.apply_settings(vals)
+        self.w.plot.canvas.draw()
+        txts = [t.get_text() for t in self.w.plot._label_artists]
+        self.assertTrue(txts and all("kt" not in t and t.endswith("°") for t in txts), txts[:3])
+        self.assertAlmostEqual(self.w.plot._label_artists[0].get_fontsize(), 11.0)
+
+    def test_alejar_achica_los_glifos_antes_de_ralear(self):
+        """Al alejar la vista las flechas se acortan hasta la mitad y recién
+        después se ralean; al acercar vuelven al tamaño nominal."""
+        from matplotlib.quiver import Quiver
+        from app import wind_plot
+        plot = self.w.plot
+        self.w.panel.cb_style.setCurrentIndex(self.w.panel.cb_style.findData("flechas"))
+        plot.canvas.draw()
+        nominal = 1.0 / (wind_plot.ARROW_LEN_IN * max(0.8, plot.font_scale))
+        q = [a for a in plot._view_artists if isinstance(a, Quiver)][0]
+        self.assertAlmostEqual(q.scale, nominal)           # acercado: tamaño nominal
+        n_in = q.N
+        ax = plot.ax
+        x0, x1 = ax.get_xlim(); y0, y1 = ax.get_ylim()
+        ax.set_xlim(x0 - (x1 - x0) * 40, x1 + (x1 - x0) * 40)
+        ax.set_ylim(y0 - (y1 - y0) * 40, y1 + (y1 - y0) * 40)
+        plot._on_view_settled()
+        plot.canvas.draw()
+        q = [a for a in plot._view_artists if isinstance(a, Quiver)][0]
+        self.assertGreater(q.scale, nominal)               # flechas más cortas…
+        self.assertLessEqual(q.scale, nominal / wind_plot.GLYPH_MIN_FACTOR + 1e-9)   # …hasta el mínimo
+        self.assertLessEqual(q.N, n_in)                    # y raleadas si hizo falta
+        f, stride = plot._fit_glyph(24.0, 4.0, 1)
+        self.assertAlmostEqual(f, wind_plot.GLYPH_MIN_FACTOR)
+        self.assertGreater(stride, 1)
+        self.assertEqual(plot._fit_glyph(24.0, 40.0, 1), (1.0, 1))
+
     def test_curvas_con_densidad_y_sin_cartopy(self):
         from app import wind_plot
         self.w.panel.cb_style.setCurrentIndex(self.w.panel.cb_style.findData("curvas"))

@@ -719,7 +719,9 @@ class MainWindow(QMainWindow):
         keep_view = bool(keep_extent and self.plot.has_data)
         opts = dict(panel.options())
         opts.update({"mode": mode, "show_wind": self._layer_enabled,
-                     "keep_view": keep_view, "extent": None, "title": title})
+                     "keep_view": keep_view, "extent": None, "title": title,
+                     "label_size": self._cfg.get("map_label_size", 7),
+                     "label_units": self._cfg.get("map_label_units", True)})
         try:
             self.plot.draw(r.lats, r.lons, u, v, t, opts)
         except Exception as exc:
