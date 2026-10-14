@@ -51,6 +51,22 @@ DEFAULTS = {
     "recent_files": [],      # list[str] — most-recent first
     "last_directory": "",    # working directory for open/save dialogs
     "projection": "platecarree",   # clave de wind_plot.PROJECTIONS
+    # Mapa: valores iniciales de CONFIG del panel (se guardan al cambiarlos)
+    "map_extra_info": False,
+    "map_grid": False,
+    "map_fill": False,
+    "map_stride": 1,
+    # Descarga GFS: valores iniciales del diálogo
+    "download_resolution": "0p25",      # clave de gfs_download.RESOLUTIONS
+    "download_extra_levels": False,     # niveles intermedios cada 25 hPa (pgrb2b)
+    "download_merge": True,             # un solo archivo con todos los pasos
+    "download_open": True,              # abrir en el visor al terminar
+    "download_h_from": 6,
+    "download_h_to": 12,
+    "download_h_step": 3,
+    # Motor de lectura: 'eccodes' (biblioteca Python) o 'wgrib2' (programa externo)
+    "engine": "eccodes",
+    "wgrib2_path": "",                  # vacío = buscar en el PATH
 }
 
 OPACITY_MIN = 80

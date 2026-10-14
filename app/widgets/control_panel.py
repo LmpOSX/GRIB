@@ -374,6 +374,22 @@ class ControlPanel(QWidget):
             "stride": int(self.spin_stride.value()),
         }
 
+    def set_options(self, opts: dict):
+        """Fija Extra Info / Grilla / Fondo / Densidad sin emitir señales
+        (valores iniciales de la configuración o de Preferencias)."""
+        self._updating = True
+        try:
+            if "extra_info" in opts:
+                self.chk_extra.setChecked(bool(opts["extra_info"]))
+            if "grid" in opts:
+                self.chk_grid.setChecked(bool(opts["grid"]))
+            if "fill" in opts:
+                self.chk_fill.setChecked(bool(opts["fill"]))
+            if "stride" in opts:
+                self.spin_stride.setValue(max(1, min(10, int(opts["stride"]))))
+        finally:
+            self._updating = False
+
     def projection(self) -> str:
         return self.cb_proj.currentData() or "platecarree"
 

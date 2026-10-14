@@ -683,6 +683,37 @@ QScrollArea {{
 QScrollArea > QWidget > QWidget {{
     background: transparent;
 }}
+/* ── Pestañas (Preferencias) ── */
+QTabWidget::pane {{
+    background: {bg1};
+    border: 1px solid {brd};
+    border-radius: 8px;
+    top: -1px;
+}}
+QTabBar::tab {{
+    background: {bg2};
+    color: {txd};
+    border: 1px solid {brd};
+    border-bottom: none;
+    border-top-left-radius: 6px;
+    border-top-right-radius: 6px;
+    padding: 6px 14px;
+    margin-right: 2px;
+}}
+QTabBar::tab:selected {{
+    background: {bg1};
+    color: {txt};
+    font-weight: 600;
+    border-color: {accl};
+}}
+QTabBar::tab:hover:!selected {{
+    background: {hov};
+    color: {txt};
+}}
+QLabel#Hint {{
+    color: {txd};
+    font-size: {h3}px;
+}}
 """
     import sys as _sys
     if _sys.platform != 'darwin':

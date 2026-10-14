@@ -43,6 +43,61 @@ class TestURL(unittest.TestCase):
         self.assertIn("%2F00%2Fatmos", url)
 
 
+class TestNivelesIntermedios(unittest.TestCase):
+    def test_0p25_pide_dos_productos(self):
+        s = _spec(levels=[300, 275, 250, 225])
+        self.assertEqual(s.extra_levels, [275, 225])
+        self.assertEqual(s.main_levels, [300, 250])
+        urls = gfs.build_urls(s, 6)
+        self.assertEqual(len(urls), 2)
+        (u1, t1), (u2, t2) = urls
+        self.assertIn("filter_gfs_0p25.pl", u1)
+        self.assertEqual(t1, "")
+        q1 = urllib.parse.parse_qs(urllib.parse.urlparse(u1).query, keep_blank_values=True)
+        self.assertEqual(sorted(k for k in q1 if k.startswith("lev_")), ["lev_250_mb", "lev_300_mb"])
+        self.assertIn("filter_gfs_0p25b.pl", u2)
+        self.assertIn("gfs.t12z.pgrb2b.0p25.f006", u2)
+        self.assertEqual(t2, "niveles intermedios")
+        q2 = urllib.parse.parse_qs(urllib.parse.urlparse(u2).query, keep_blank_values=True)
+        self.assertEqual(sorted(k for k in q2 if k.startswith("lev_")), ["lev_225_mb", "lev_275_mb"])
+        self.assertEqual(q2["toplat"], ["4"])          # misma zona en los dos
+        self.assertEqual(gfs.build_url(s, 6), u1)
+
+    def test_0p50_un_solo_producto_con_intermedios(self):
+        s = _spec(resolution="0p50", levels=[300, 275])
+        urls = gfs.build_urls(s, 6)
+        self.assertEqual(len(urls), 1)
+        self.assertIn("pgrb2full.0p50", urls[0][0])
+        self.assertIn("lev_275_mb=on", urls[0][0])
+        self.assertIsNone(s.validate())
+
+    def test_1p00_no_tiene_intermedios(self):
+        s = _spec(resolution="1p00", levels=[300, 275])
+        self.assertIn("1,00°", s.validate())
+        self.assertIsNone(_spec(resolution="1p00", levels=[300]).validate())
+        self.assertIn("no ofrece", _spec(levels=[300, 290]).validate())
+        self.assertTrue(gfs.extra_levels_available("0p25"))
+        self.assertFalse(gfs.extra_levels_available("1p00"))
+        self.assertEqual(len(gfs.ALL_LEVELS), 42)
+        self.assertEqual(gfs.ALL_LEVELS[:4], [1000, 975, 950, 925])
+
+    def test_descarga_une_los_dos_productos(self):
+        tmp = tempfile.TemporaryDirectory()
+        try:
+            s = _spec(levels=[300, 275], hours=[6, 9], dest_dir=tmp.name)
+            pedidas = []
+
+            def fake_fetch(url, chunk_cb=None, cancel=None):
+                pedidas.append(url)
+                return b"GRIBb" if "pgrb2b" in url else b"GRIBa"
+            paths = gfs.download(s, fetch_fn=fake_fetch)
+            self.assertEqual(len(pedidas), 4)
+            with open(paths[0], "rb") as fh:
+                self.assertEqual(fh.read(), b"GRIBaGRIBb" * 2)
+        finally:
+            tmp.cleanup()
+
+
 class TestSpec(unittest.TestCase):
     def test_nombre_y_rutas(self):
         s = _spec(dest_dir="/tmp/x")

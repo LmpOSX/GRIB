@@ -15,11 +15,18 @@ import urllib.request
 
 NOMADS_BASE = "https://nomads.ncep.noaa.gov/cgi-bin/"
 
-# (clave, nombre, script del filtro, patrón del archivo)
+# (clave, nombre, script del filtro, patrón del archivo,
+#  script del producto "b" con los niveles intermedios, patrón de ese archivo)
+# A 0,25° los niveles intermedios (cada 25 hPa) están en un segundo producto,
+# pgrb2b, con su propio filtro. A 0,50° el producto pgrb2full ya los trae en
+# el mismo archivo. A 1,00° no existen.
 RESOLUTIONS = [
-    ("0p25", "0,25°", "filter_gfs_0p25.pl", "gfs.t{cyc:02d}z.pgrb2.0p25.f{fh:03d}"),
-    ("0p50", "0,50°", "filter_gfs_0p50.pl", "gfs.t{cyc:02d}z.pgrb2full.0p50.f{fh:03d}"),
-    ("1p00", "1,00°", "filter_gfs_1p00.pl", "gfs.t{cyc:02d}z.pgrb2.1p00.f{fh:03d}"),
+    ("0p25", "0,25°", "filter_gfs_0p25.pl", "gfs.t{cyc:02d}z.pgrb2.0p25.f{fh:03d}",
+     "filter_gfs_0p25b.pl", "gfs.t{cyc:02d}z.pgrb2b.0p25.f{fh:03d}"),
+    ("0p50", "0,50°", "filter_gfs_0p50.pl", "gfs.t{cyc:02d}z.pgrb2full.0p50.f{fh:03d}",
+     None, None),
+    ("1p00", "1,00°", "filter_gfs_1p00.pl", "gfs.t{cyc:02d}z.pgrb2.1p00.f{fh:03d}",
+     None, None),
 ]
 
 # Variables ofrecidas: (clave NOMADS, nombre)
@@ -35,8 +42,26 @@ VARIABLES = [
 PRESSURE_LEVELS = [1000, 975, 950, 925, 900, 850, 800, 750, 700, 650, 600, 550, 500,
                    450, 400, 350, 300, 250, 200, 150, 100, 70, 50, 30, 20, 10]
 
-# Niveles que usa el visor (los que existen en pgrb2; 275/225/175 no están)
+# Niveles intermedios (cada 25 hPa) del producto pgrb2b (0,25°) / pgrb2full (0,50°)
+EXTRA_LEVELS = [875, 825, 775, 725, 675, 625, 575, 525, 475, 425, 375, 325, 275,
+                225, 175, 125]
+
+ALL_LEVELS = sorted(PRESSURE_LEVELS + EXTRA_LEVELS, reverse=True)
+
+# Niveles que usa el visor: los de pgrb2 y, si se piden intermedios, los que
+# caen cerca de F320 / F360 / F410
 VIEWER_LEVELS = [850, 700, 600, 500, 400, 350, 300, 250, 200, 150, 100]
+VIEWER_EXTRA_LEVELS = [275, 225, 175]
+
+
+def resolution_info(key):
+    return next(r for r in RESOLUTIONS if r[0] == key)
+
+
+def extra_levels_available(resolution):
+    """True si la resolución ofrece los niveles intermedios cada 25 hPa."""
+    return resolution in ("0p25", "0p50")
+
 
 CYCLES = [0, 6, 12, 18]
 MAX_HOUR = 384
@@ -49,6 +74,8 @@ class DownloadSpec:
 
     def __init__(self, date, cycle, hours, variables, levels, resolution="0p25",
                  region=None, dest_dir=".", basename=None, merge=True):
+        """levels puede incluir niveles intermedios (EXTRA_LEVELS); a 0,25° se
+        piden al producto pgrb2b y se unen al mismo archivo."""
         self.date = date                      # datetime.date (UTC)
         self.cycle = int(cycle)               # 0, 6, 12, 18
         self.hours = sorted({int(h) for h in hours})
@@ -59,6 +86,15 @@ class DownloadSpec:
         self.dest_dir = dest_dir
         self.basename = basename or self.default_basename()
         self.merge = bool(merge)
+
+    @property
+    def extra_levels(self):
+        """Niveles pedidos que sólo existen en el producto de intermedios."""
+        return [lv for lv in self.levels if lv in EXTRA_LEVELS]
+
+    @property
+    def main_levels(self):
+        return [lv for lv in self.levels if lv in PRESSURE_LEVELS]
 
     def default_basename(self):
         return f"gfs_{self.date:%Y%m%d}_{self.cycle:02d}z_{self.resolution}"
@@ -77,6 +113,12 @@ class DownloadSpec:
             return "Elegí al menos un nivel de presión."
         if self.resolution not in {r[0] for r in RESOLUTIONS}:
             return "Resolución desconocida."
+        desconocidos = [lv for lv in self.levels if lv not in ALL_LEVELS]
+        if desconocidos:
+            return "Niveles que el GFS no ofrece: " + ", ".join(f"{lv}" for lv in desconocidos)
+        if self.extra_levels and not extra_levels_available(self.resolution):
+            return ("A 1,00° el GFS no ofrece los niveles intermedios (cada 25 hPa); "
+                    "elegí 0,25° o 0,50° o quitalos.")
         if self.region is not None:
             top, bottom, left, right = self.region
             if not (-90 <= bottom < top <= 90):
@@ -103,23 +145,42 @@ def latest_cycle(now=None):
     return ref.date(), cyc
 
 
-def build_url(spec, fh):
-    """URL del grib filter para una hora de pronóstico de la especificación."""
-    res = next(r for r in RESOLUTIONS if r[0] == spec.resolution)
-    _key, _name, script, pattern = res
+def _filter_url(spec, script, pattern, fh, levels):
     params = [
         ("dir", f"/gfs.{spec.date:%Y%m%d}/{spec.cycle:02d}/atmos"),
         ("file", pattern.format(cyc=spec.cycle, fh=fh)),
     ]
     for var in spec.variables:
         params.append((f"var_{var}", "on"))
-    for lv in spec.levels:
+    for lv in levels:
         params.append((f"lev_{lv}_mb", "on"))
     if spec.region is not None:
         top, bottom, left, right = spec.region
         params += [("subregion", ""), ("toplat", f"{top:g}"), ("leftlon", f"{left:g}"),
                    ("rightlon", f"{right:g}"), ("bottomlat", f"{bottom:g}")]
     return NOMADS_BASE + script + "?" + urllib.parse.urlencode(params)
+
+
+def build_urls(spec, fh):
+    """URLs del grib filter para una hora de pronóstico: una por producto
+    (pgrb2 y, si hay niveles intermedios a 0,25°, pgrb2b). Cada una viene
+    como (url, etiqueta)."""
+    _key, _name, script, pattern, script_b, pattern_b = resolution_info(spec.resolution)
+    extra = spec.extra_levels
+    if script_b is None or not extra:
+        # Un solo producto (a 0,50° pgrb2full ya incluye los intermedios)
+        levels = spec.levels if script_b is None else spec.main_levels
+        return [(_filter_url(spec, script, pattern, fh, levels), "")]
+    urls = []
+    if spec.main_levels:
+        urls.append((_filter_url(spec, script, pattern, fh, spec.main_levels), ""))
+    urls.append((_filter_url(spec, script_b, pattern_b, fh, extra), "niveles intermedios"))
+    return urls
+
+
+def build_url(spec, fh):
+    """URL del producto principal (compatibilidad)."""
+    return build_urls(spec, fh)[0][0]
 
 
 def _ssl_context():
@@ -182,33 +243,43 @@ def download(spec, progress_cb=None, cancel=None, fetch_fn=fetch):
         for i, fh in enumerate(spec.hours):
             if cancel is not None and cancel():
                 raise DownloadCancelled()
-            url = build_url(spec, fh)
             msg = f"Paso +{fh} h ({i + 1} de {n})"
             if progress_cb:
                 progress_cb(i, n, msg, i / n)
+            urls = build_urls(spec, fh)
+            parts = []
+            for k, (url, tag) in enumerate(urls):
+                if cancel is not None and cancel():
+                    raise DownloadCancelled()
+                sub = f"{msg}{' · ' + tag if tag else ''}"
 
-            def chunk_cb(got, total, _i=i, _msg=msg):
-                if progress_cb:
-                    frac = (got / total) if total else 0.0
-                    progress_cb(_i, n, f"{_msg}: {got / 1e6:.1f} MB", (_i + frac) / n)
+                def chunk_cb(got, total, _i=i, _k=k, _m=len(urls), _msg=sub):
+                    if progress_cb:
+                        frac = (got / total) if total else 0.0
+                        progress_cb(_i, n, f"{_msg}: {got / 1e6:.1f} MB",
+                                    (_i + (_k + frac) / _m) / n)
 
-            try:
-                data = fetch_fn(url, chunk_cb=chunk_cb, cancel=cancel)
-            except urllib.error.HTTPError as exc:
-                if exc.code == 404:
+                try:
+                    data = fetch_fn(url, chunk_cb=chunk_cb, cancel=cancel)
+                except urllib.error.HTTPError as exc:
+                    if exc.code == 404:
+                        raise DownloadError(
+                            f"El servidor no tiene el paso +{fh} h de la corrida "
+                            f"{spec.date:%Y-%m-%d} {spec.cycle:02d}Z (HTTP 404). "
+                            "Puede que la corrida todavía no esté publicada: probá la "
+                            "anterior o un paso menor.") from exc
                     raise DownloadError(
-                        f"El servidor no tiene el paso +{fh} h de la corrida "
-                        f"{spec.date:%Y-%m-%d} {spec.cycle:02d}Z (HTTP 404). "
-                        "Puede que la corrida todavía no esté publicada: probá la "
-                        "anterior o un paso menor.") from exc
-                raise DownloadError(f"Error HTTP {exc.code} al bajar el paso +{fh} h: {exc.reason}") from exc
-            except urllib.error.URLError as exc:
-                raise DownloadError(f"No se pudo conectar con NOMADS: {exc.reason}") from exc
-            if not data.startswith(GRIB_MAGIC):
-                texto = data[:400].decode("utf-8", "replace")
-                raise DownloadError(
-                    f"La respuesta del paso +{fh} h no es un GRIB (¿variables o "
-                    f"niveles sin datos, o zona fuera de rango?).\n{texto}")
+                        f"Error HTTP {exc.code} al bajar el paso +{fh} h: {exc.reason}") from exc
+                except urllib.error.URLError as exc:
+                    raise DownloadError(f"No se pudo conectar con NOMADS: {exc.reason}") from exc
+                if not data.startswith(GRIB_MAGIC):
+                    texto = data[:400].decode("utf-8", "replace")
+                    raise DownloadError(
+                        f"La respuesta del paso +{fh} h{' (' + tag + ')' if tag else ''} "
+                        "no es un GRIB (¿variables o niveles sin datos, o zona fuera de "
+                        f"rango?).\n{texto}")
+                parts.append(data)
+            data = b"".join(parts)
             if spec.merge:
                 out.write(data)
             else:

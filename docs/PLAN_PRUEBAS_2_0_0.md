@@ -121,6 +121,12 @@ detalle.
 | I8 | Casillas y radios | Marcar Extra Info y cambiar de variable | El indicador se pinta con el acento y además muestra el tilde (casillas) o el punto (radios). |
 | I9 | Botón verde (macOS) | Clic en el botón verde de la ventana | La ventana se maximiza sobre el escritorio (no entra al Space de pantalla completa) y conserva el desenfoque y la transparencia. |
 | I6 | Diálogos glass | Abrir Preferencias, Atajos y Acerca de | Fondo translúcido con desenfoque, barra de título nativa, contenido sin aplastar; Esc / Cerrar los cierran. |
+| I10 | Pestañas | `⚙` | Cuatro pestañas: Apariencia, Mapa, Descarga, Motor; se ven con el tema (pestaña activa resaltada con el acento). |
+| I11 | Mapa | Pestaña Mapa ▸ proyección Mercator, Grilla marcada, densidad 2 ▸ Aplicar, con archivo abierto | El mapa pasa a Mercator con grilla y barbas cada 2 puntos; el panel CONFIG refleja los valores; se conservan al reiniciar. |
+| I12 | CONFIG persiste | Marcar Extra Info en el panel, cerrar y reabrir la app | Extra Info arranca marcado; Preferencias ▸ Mapa lo muestra marcado. |
+| I13 | Descarga | Pestaña Descarga ▸ 0,50°, intermedios, horas 0–24 cada 6 ▸ Aplicar ▸ `Descargar GFS…` | El diálogo abre con esos valores. |
+| I14 | Motor wgrib2 ausente | Pestaña Motor ▸ wgrib2 con ruta vacía y sin wgrib2 en el PATH ▸ `Probar` ▸ Aplicar ▸ abrir un GRIB | `Probar` dice "no encontrado"; al abrir avisa "wgrib2 no disponible" y abre con ecCodes (inventario: `Motor: ecCodes`). |
+| I15 | Motor wgrib2 | Con un wgrib2 compilado: `Buscar…` ▸ `Probar` ▸ Aplicar con un archivo abierto | `Probar` muestra la versión; el archivo se reabre y el inventario dice `Motor: wgrib2 v3…`; barbas, STATUS y CSV idénticos a los de ecCodes. |
 
 ## J. Ayuda
 
@@ -142,6 +148,8 @@ detalle.
 | L7 | Cancelar | `Cancelar` durante la descarga | Se detiene, no queda archivo parcial, el diálogo sigue abierto. |
 | L8 | Validaciones | Sin variables, sin niveles o lat norte < sur | Aviso antes de empezar. |
 | L9 | Reemplazo | Bajar dos veces con el mismo nombre | Pregunta si reemplazar. |
+| L10 | Niveles intermedios | 0,25°, marcar `Incluir niveles intermedios`, `Los del visor`, descargar | Las casillas 875…125 se habilitan y "Los del visor" suma 275/225/175; el progreso muestra "· niveles intermedios" por paso; el inventario lista 14 niveles y F320 interpola entre 300 y 275 (STATUS). |
+| L11 | Intermedios a 1,00° | Elegir 1,00° con la casilla marcada | La casilla se apaga y las casillas intermedias se destildan; a 0,50° vuelve a habilitarse (un solo producto, pgrb2full). |
 
 ## K. Empaquetado (opcional)
 

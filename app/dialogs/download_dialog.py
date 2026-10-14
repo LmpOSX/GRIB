@@ -44,15 +44,18 @@ class _Worker(QThread):
 class DownloadDialog(GlassDialog):
     """Devuelve en `downloaded_paths` las rutas bajadas si se aceptó."""
 
-    def __init__(self, parent=None, dest_dir=".", region=None):
+    def __init__(self, parent=None, dest_dir=".", region=None, defaults=None):
+        """defaults: claves download_* de la configuración (Preferencias ▸ Descarga)."""
         super().__init__(parent)
         self.setWindowTitle("Descargar GFS")
-        self.setMinimumWidth(640)
+        self.setMinimumWidth(680)
         self.downloaded_paths = []
         self.open_after = True
         self._worker = None
         self._dest_dir = dest_dir
+        self._defaults = dict(defaults or {})
         self._build_ui()
+        self._apply_defaults()
         if region is not None:
             self.set_region(*region)
         self._set_latest_cycle()
@@ -113,21 +116,30 @@ class DownloadDialog(GlassDialog):
 
         # ── Variables y resolución ──
         self._section(lay, "Variables y resolución")
-        row = QHBoxLayout()
+        vg = QGridLayout()
+        vg.setHorizontalSpacing(12)
+        vg.setVerticalSpacing(2)
         self.var_checks = {}
-        for key, name in gfs.VARIABLES:
+        for k, (key, name) in enumerate(gfs.VARIABLES):
             c = QCheckBox(name)
             c.setChecked(key in ("UGRD", "VGRD", "TMP"))
             self.var_checks[key] = c
-            row.addWidget(c)
-        row.addStretch()
-        lay.addLayout(row)
+            vg.addWidget(c, k // 3, k % 3)
+        lay.addLayout(vg)
         row = QHBoxLayout()
         row.addWidget(QLabel("Resolución"))
         self.res = QComboBox()
-        for key, name, _s, _p in gfs.RESOLUTIONS:
-            self.res.addItem(name, key)
+        for r in gfs.RESOLUTIONS:
+            self.res.addItem(r[1], r[0])
+        self.res.currentIndexChanged.connect(self._on_res_changed)
         row.addWidget(self.res)
+        self.chk_extra = QCheckBox("Incluir niveles intermedios cada 25 hPa (pgrb2b)")
+        self.chk_extra.setToolTip("875 … 125 hPa: a 0,25° se bajan del producto pgrb2b y se "
+                                  "unen al mismo archivo; a 0,50° vienen en pgrb2full; a "
+                                  "1,00° no existen. Con ellos F320, F360 y F410 quedan a "
+                                  "menos de 4 hPa de un nivel del archivo.")
+        self.chk_extra.toggled.connect(self._on_extra_toggled)
+        row.addWidget(self.chk_extra)
         row.addStretch()
         lay.addLayout(row)
 
@@ -137,16 +149,19 @@ class DownloadDialog(GlassDialog):
         grid.setHorizontalSpacing(6)
         grid.setVerticalSpacing(2)
         self.level_checks = {}
-        cols = 9
-        for k, lv in enumerate(gfs.PRESSURE_LEVELS):
+        cols = 10
+        for k, lv in enumerate(gfs.ALL_LEVELS):
             c = QCheckBox(f"{lv}")
             c.setChecked(lv in gfs.VIEWER_LEVELS)
+            if lv in gfs.EXTRA_LEVELS:
+                c.setObjectName("ExtraLevel")
+                c.setEnabled(False)
             self.level_checks[lv] = c
             grid.addWidget(c, k // cols, k % cols)
         lay.addLayout(grid)
         row = QHBoxLayout()
-        for text, fn in (("Los del visor", lambda: self._set_levels(gfs.VIEWER_LEVELS)),
-                         ("Todos", lambda: self._set_levels(gfs.PRESSURE_LEVELS)),
+        for text, fn in (("Los del visor", self._set_viewer_levels),
+                         ("Todos", lambda: self._set_levels(gfs.ALL_LEVELS)),
                          ("Ninguno", lambda: self._set_levels([]))):
             b = QPushButton(text)
             b.clicked.connect(fn)
@@ -231,9 +246,47 @@ class DownloadDialog(GlassDialog):
         self.date.setDate(QDate(date.year, date.month, date.day))
         self.cycle.setCurrentIndex(gfs.CYCLES.index(cyc))
 
+    def _apply_defaults(self):
+        d = self._defaults
+        idx = self.res.findData(d.get("download_resolution", "0p25"))
+        self.res.setCurrentIndex(max(0, idx))
+        self.chk_extra.setChecked(bool(d.get("download_extra_levels", False)))
+        self._set_viewer_levels()
+        self.h_from.setValue(int(d.get("download_h_from", 6)))
+        self.h_to.setValue(int(d.get("download_h_to", 12)))
+        self.h_step.setValue(int(d.get("download_h_step", 3)))
+        self.chk_merge.setChecked(bool(d.get("download_merge", True)))
+        self.chk_open.setChecked(bool(d.get("download_open", True)))
+
+    def extra_levels_enabled(self):
+        return self.chk_extra.isChecked() and self.chk_extra.isEnabled()
+
+    def _on_res_changed(self, *_):
+        ok = gfs.extra_levels_available(self.res.currentData())
+        self.chk_extra.setEnabled(ok)
+        if not ok:
+            self.chk_extra.setChecked(False)
+        self._on_extra_toggled(self.chk_extra.isChecked())
+
+    def _on_extra_toggled(self, on):
+        """Las casillas de niveles intermedios sólo se pueden marcar si se
+        pidieron; al desmarcar la opción quedan destildadas."""
+        on = bool(on) and self.chk_extra.isEnabled()
+        for lv in gfs.EXTRA_LEVELS:
+            c = self.level_checks[lv]
+            c.setEnabled(on)
+            if not on:
+                c.setChecked(False)
+
+    def _set_viewer_levels(self):
+        levels = list(gfs.VIEWER_LEVELS)
+        if self.extra_levels_enabled():
+            levels += gfs.VIEWER_EXTRA_LEVELS
+        self._set_levels(levels)
+
     def _set_levels(self, levels):
         for lv, c in self.level_checks.items():
-            c.setChecked(lv in levels)
+            c.setChecked(lv in levels and (c.isEnabled() or lv not in gfs.EXTRA_LEVELS))
 
     def _on_global_toggled(self, on):
         for sb in (self.lat_n, self.lat_s, self.lon_w, self.lon_e):
@@ -292,6 +345,7 @@ class DownloadDialog(GlassDialog):
                     w.setEnabled(not busy)
         if not busy:
             self._on_global_toggled(self.chk_global.isChecked())
+            self._on_res_changed()
         self.btn_cancel.setText("Cancelar" if busy else "Cerrar")
 
     def _start(self):

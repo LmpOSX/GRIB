@@ -116,14 +116,103 @@ class TestMainWindow(_Base):
 class TestDialogos(_Base):
     def test_settings(self):
         from app.dialogs.settings_dialog import SettingsDialog
-        self.w = SettingsDialog(None, "#4A90D9", 180)
+        cfg = dict(config.DEFAULTS)
+        cfg.update({"accent_color": "#4A90D9", "opacity": 180, "projection": "mercator",
+                    "map_stride": 3, "download_resolution": "0p50",
+                    "download_extra_levels": True, "engine": "wgrib2",
+                    "wgrib2_path": "/no/existe/wgrib2"})
+        self.w = SettingsDialog(None, cfg=cfg)
         self.w.show()
         _app.processEvents()
         self.assertTrue(self.w.isVisible())
+        # Pestañas
+        self.assertEqual([self.w.tabs.tabText(i) for i in range(self.w.tabs.count())],
+                         list(SettingsDialog.TABS))
+        # Carga los valores actuales
+        v = self.w.values()
+        self.assertEqual(v["projection"], "mercator")
+        self.assertEqual(v["map_stride"], 3)
+        self.assertEqual(v["download_resolution"], "0p50")
+        self.assertTrue(v["download_extra_levels"])
+        self.assertEqual(v["engine"], "wgrib2")
+        self.assertEqual(v["wgrib2_path"], "/no/existe/wgrib2")
+        from app.grib_engines import find_wgrib2
+        # La ruta no existe: sólo se encuentra si hay wgrib2 en el PATH / WGRIB2
+        esperado = "Encontrado" if find_wgrib2() else "no encontrado"
+        self.assertIn(esperado, self.w.lbl_wgrib2.text())
+        # Cambios
         self.w._select_color("#5B8C5A")
         self.assertEqual(self.w.selected_color(), "#5B8C5A")
+        self.w.rb_engine["eccodes"].setChecked(True)
+        self.w.chk_fill.setChecked(True)
+        # A 1,00° no hay niveles intermedios: la casilla se apaga
+        self.w.cb_res.setCurrentIndex(self.w.cb_res.findData("1p00"))
+        self.assertFalse(self.w.chk_extra_levels.isEnabled())
+        v = self.w.values()
+        self.assertEqual(v["accent_color"], "#5B8C5A")
+        self.assertEqual(v["engine"], "eccodes")
+        self.assertTrue(v["map_fill"])
+        self.assertFalse(v["download_extra_levels"])
         self.w.accept()
         self.assertFalse(self.w.isVisible())
+
+    def test_ventana_aplica_preferencias(self):
+        """Aplicar Preferencias cambia tema, CONFIG del panel y proyección, y
+        persiste; las opciones del panel también se guardan al tocarlas."""
+        from app.main_window import MainWindow
+        self.w = MainWindow()
+        self.w.show()
+        _app.processEvents()
+        vals = dict(self.w._cfg)
+        vals.update({"accent_color": "#C0674D", "map_grid": True, "map_stride": 4,
+                     "projection": "mercator", "download_resolution": "1p00",
+                     "engine": "eccodes"})
+        self.w.apply_settings(vals)
+        self.assertTrue(self.w.panel.chk_grid.isChecked())
+        self.assertEqual(self.w.panel.spin_stride.value(), 4)
+        self.assertEqual(self.w.panel.projection(), "mercator")
+        saved = config.load_config()
+        self.assertEqual(saved["accent_color"], "#C0674D")
+        self.assertEqual(saved["projection"], "mercator")
+        self.assertEqual(saved["download_resolution"], "1p00")
+        self.assertTrue(saved["map_grid"])
+        # Tocar CONFIG en el panel persiste el nuevo valor inicial
+        self.w.panel.chk_extra.setChecked(True)
+        _app.processEvents()
+        self.assertTrue(config.load_config()["map_extra_info"])
+
+    def test_motor_wgrib2_ausente_cae_a_eccodes(self):
+        """Con motor wgrib2 configurado pero sin el programa, abrir un archivo
+        avisa y sigue con ecCodes."""
+        from app import grib_reader as gr
+        if gr.ec is None:
+            self.skipTest("sin eccodes")
+        from app.main_window import MainWindow
+        from app import main_window as mw
+        from tests.test_grib_reader import _escribir_grib_sintetico
+        path = os.path.join(self._tmp.name, "s.grib2")
+        _escribir_grib_sintetico(path)
+        self.w = MainWindow()
+        self.w._cfg["engine"] = "wgrib2"
+        self.w._cfg["wgrib2_path"] = os.path.join(self._tmp.name, "no_existe")
+        avisos = []
+        old_env = os.environ.pop("WGRIB2", None)
+        old_which, old_warn = mw.QMessageBox.warning, None
+        import shutil
+        old_sw = shutil.which
+        shutil.which = lambda *a, **k: None
+        mw.QMessageBox.warning = staticmethod(lambda *a, **k: avisos.append(a[1]))
+        try:
+            self.w.open_file(path)
+        finally:
+            mw.QMessageBox.warning = old_which
+            shutil.which = old_sw
+            if old_env is not None:
+                os.environ["WGRIB2"] = old_env
+        self.assertEqual(avisos, ["wgrib2 no disponible"])
+        self.assertIsNotNone(self.w._reader)
+        self.assertEqual(self.w._reader.engine, "eccodes")
+        self.assertIn("Motor: ecCodes", self.w._reader.inventory_text())
 
     def test_shortcuts(self):
         from app.dialogs.shortcuts_dialog import ShortcutsDialog, SHORTCUTS
@@ -182,6 +271,19 @@ class TestDialogoDescarga(_Base):
         spec = self.w.spec()
         self.assertIsNone(spec.validate())
         self.assertEqual(spec.hours, [6, 9, 12])
+        # Sin pedir intermedios, sus casillas están deshabilitadas y vacías
+        self.assertFalse(self.w.level_checks[275].isEnabled())
+        self.assertNotIn(275, spec.levels)
+        # Con intermedios, "Los del visor" suma 275/225/175
+        self.w.chk_extra.setChecked(True)
+        self.assertTrue(self.w.level_checks[275].isEnabled())
+        self.w._set_viewer_levels()
+        self.assertEqual(self.w.spec().extra_levels, [275, 225, 175])
+        # A 1,00° se apagan
+        self.w.res.setCurrentIndex(self.w.res.findData("1p00"))
+        self.assertFalse(self.w.chk_extra.isEnabled())
+        self.assertEqual(self.w.spec().extra_levels, [])
+        self.w.res.setCurrentIndex(self.w.res.findData("0p25"))
         self.assertEqual(set(spec.variables), {"UGRD", "VGRD", "TMP"})
         self.assertEqual(spec.levels[0], 850)
         self.assertEqual(spec.resolution, "0p25")
@@ -194,6 +296,21 @@ class TestDialogoDescarga(_Base):
         # Niveles: ninguno → inválido
         self.w._set_levels([])
         self.assertIn("nivel", self.w.spec().validate().lower())
+        self.w.reject()
+
+    def test_valores_iniciales_de_preferencias(self):
+        from app.dialogs.download_dialog import DownloadDialog
+        d = {"download_resolution": "0p50", "download_extra_levels": True,
+             "download_merge": False, "download_open": False,
+             "download_h_from": 0, "download_h_to": 24, "download_h_step": 6}
+        self.w = DownloadDialog(None, dest_dir=self._tmp.name, defaults=d)
+        spec = self.w.spec()
+        self.assertEqual(spec.resolution, "0p50")
+        self.assertEqual(spec.hours, [0, 6, 12, 18, 24])
+        self.assertFalse(spec.merge)
+        self.assertFalse(self.w.chk_open.isChecked())
+        self.assertEqual(spec.extra_levels, [275, 225, 175])
+        self.assertIsNone(spec.validate())
         self.w.reject()
 
     def test_ventana_abre_el_dialogo_con_el_dominio(self):
@@ -209,9 +326,10 @@ class TestDialogoDescarga(_Base):
         capturado = {}
 
         class FakeDlg:
-            def __init__(self, parent, dest_dir=".", region=None):
+            def __init__(self, parent, dest_dir=".", region=None, defaults=None):
                 capturado["region"] = region
                 capturado["dest"] = dest_dir
+                capturado["defaults"] = defaults
                 self.downloaded_paths = []
                 self.open_after = False
 
@@ -228,3 +346,4 @@ class TestDialogoDescarga(_Base):
             dd.DownloadDialog = old
         self.assertEqual(capturado["region"], (10.0, -10.0, -60.0, -30.0))
         self.assertEqual(capturado["btn"], capturado["region"])
+        self.assertEqual(capturado["defaults"]["download_resolution"], "0p25")

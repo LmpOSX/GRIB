@@ -1,7 +1,7 @@
 # -*- coding: utf-8 -*-
 """
-Lectura de archivos GRIB2 (ecCodes), inventario, cache de campos e
-interpolación vertical. Módulo sin interfaz gráfica: no importa Qt, Tk ni
+Lectura de archivos GRIB2 (motor ecCodes o wgrib2, ver grib_engines),
+inventario, cache de campos e interpolación vertical. Módulo sin interfaz gráfica: no importa Qt, Tk ni
 matplotlib, así se puede testear y reutilizar por separado.
 
 Contenido
@@ -11,7 +11,7 @@ Contenido
 * fl_to_hpa, speed_dir_from_uv, speed_color, fmt_dt.
 * normalize_grid / orient_values: reordenamiento de la grilla (longitudes
   0–360 → −180..180, latitudes ascendentes).
-* GribMessage, GribStep, GribReader.
+* GribStep, GribReader (GribMessage y los motores viven en grib_engines).
 """
 
 import datetime as dt
@@ -20,15 +20,10 @@ import os
 
 import numpy as np
 
-# ---------------------------------------------------------------------------
-# Dependencia opcional: ecCodes
-# ---------------------------------------------------------------------------
-try:
-    import eccodes as ec
-    ECCODES_ERROR = None
-except Exception as _exc:  # pragma: no cover - depende del entorno
-    ec = None
-    ECCODES_ERROR = str(_exc)
+from .grib_engines import (  # noqa: F401 - reexportados para quien importe de aquí
+    ec, ECCODES_ERROR, ECCODES_HELP, WGRIB2_HELP, ENGINES, EngineUnavailable,
+    GribMessage, make_backend, find_wgrib2, wgrib2_version,
+)
 
 # ---------------------------------------------------------------------------
 # Constantes de dominio
@@ -43,16 +38,6 @@ FLIGHT_LEVELS = [50, 100, 140, 180, 240, 270, 300, 320, 340, 360, 390, 410, 450,
 SPEED_BINS = [0, 10, 20, 30, 40, 50]
 SPEED_COLORS = ["#00e5ff", "#3b7bff", "#2ecc40", "#ffe600", "#ff8c00", "#ff2a2a"]
 SPEED_LABELS = ["0–9 kt", "10–19 kt", "20–29 kt", "30–39 kt", "40–49 kt", "≥50 kt"]
-
-ECCODES_HELP = (
-    "No se pudo importar el módulo 'eccodes'.\n\n"
-    "Instalación recomendada:\n"
-    "  pip install eccodes          (incluye la biblioteca en ruedas recientes)\n"
-    "Si pip no alcanza:\n"
-    "  conda install -c conda-forge eccodes python-eccodes\n"
-    "  o en macOS: brew install eccodes && pip install eccodes\n"
-    "  o en Debian/Ubuntu: sudo apt install libeccodes0 && pip install eccodes\n"
-)
 
 
 # ---------------------------------------------------------------------------
@@ -138,19 +123,6 @@ def orient_values(values, nj, ni, flip_lat, lon_order):
 # ---------------------------------------------------------------------------
 # Lectura de GRIB
 # ---------------------------------------------------------------------------
-class GribMessage:
-    """Metadatos mínimos de un mensaje GRIB (sin los valores)."""
-
-    __slots__ = ("index", "offset", "var", "short_name", "name", "units",
-                 "type_of_level", "level", "level_hpa", "step_range",
-                 "end_step", "data_date", "data_time", "run", "valid",
-                 "ni", "nj", "grid_type")
-
-    def __init__(self):
-        for name in self.__slots__:
-            setattr(self, name, None)
-
-
 class GribStep:
     """Un paso de pronóstico: rango de paso, hora de validez y ventana."""
 
@@ -181,9 +153,10 @@ class GribReader:
 
     VAR_NAMES = {"u": "UGRD (u)", "v": "VGRD (v)", "t": "TMP (t)"}
 
-    def __init__(self, path):
-        if ec is None:
-            raise RuntimeError(ECCODES_HELP)
+    def __init__(self, path, engine="eccodes", wgrib2_path=""):
+        """engine: 'eccodes' (biblioteca Python) o 'wgrib2' (programa externo,
+        opcionalmente con su ruta). Lanza EngineUnavailable si no está."""
+        self.backend = make_backend(engine, wgrib2_path)
         if not os.path.isfile(path):
             raise FileNotFoundError(f"No existe el archivo: {path}")
         self.path = path
@@ -202,111 +175,25 @@ class GribReader:
         self._flip_lat = False
         self._scan()
 
-    # ------------------------------------------------------------------ util
-    @staticmethod
-    def _get(gid, key, default=None, kind=None):
-        """Lee una clave de ecCodes devolviendo default si no existe."""
-        try:
-            if kind == "long":
-                return ec.codes_get_long(gid, key)
-            if kind == "double":
-                return ec.codes_get_double(gid, key)
-            if kind == "str":
-                return ec.codes_get_string(gid, key)
-            return ec.codes_get(gid, key)
-        except Exception:
-            return default
-
-    @classmethod
-    def _classify(cls, gid):
-        """Devuelve 'u', 'v', 't' o None según el parámetro del mensaje.
-        Usa shortName y, como respaldo, discipline/category/number GRIB2."""
-        short = cls._get(gid, "shortName", "", "str")
-        if short in ("u", "v", "t"):
-            return short
-        upper = short.upper()
-        if upper in ("UGRD", "U"):
-            return "u"
-        if upper in ("VGRD", "V"):
-            return "v"
-        if upper in ("TMP", "T"):
-            return "t"
-        disc = cls._get(gid, "discipline", -1, "long")
-        cat = cls._get(gid, "parameterCategory", -1, "long")
-        num = cls._get(gid, "parameterNumber", -1, "long")
-        if (disc, cat, num) == (0, 2, 2):
-            return "u"
-        if (disc, cat, num) == (0, 2, 3):
-            return "v"
-        if (disc, cat, num) == (0, 0, 0):
-            return "t"
-        return None
-
-    @staticmethod
-    def _parse_datetime(date_int, time_int):
-        """dataDate (YYYYMMDD) + dataTime (HHMM) -> datetime UTC."""
-        try:
-            date_int = int(date_int)
-            time_int = int(time_int)
-            return dt.datetime(date_int // 10000, (date_int // 100) % 100,
-                               date_int % 100, time_int // 100, time_int % 100,
-                               tzinfo=dt.timezone.utc)
-        except Exception:
-            return None
+    @property
+    def engine(self):
+        """Clave del motor en uso ('eccodes' o 'wgrib2')."""
+        backend = getattr(self, "backend", None)
+        return backend.key if backend is not None else "eccodes"
 
     # ------------------------------------------------------------------ scan
     def _scan(self):
-        """Recorre todos los mensajes del archivo y arma el inventario."""
-        n_total = 0
-        with open(self.path, "rb") as fh:
-            while True:
-                gid = ec.codes_grib_new_from_file(fh)
-                if gid is None:
-                    break
-                try:
-                    n_total += 1
-                    msg = GribMessage()
-                    msg.index = n_total
-                    msg.offset = self._get(gid, "offset", None, "long")
-                    msg.short_name = self._get(gid, "shortName", "?", "str")
-                    msg.name = self._get(gid, "name", "?", "str")
-                    msg.units = self._get(gid, "units", "", "str")
-                    msg.type_of_level = self._get(gid, "typeOfLevel", "?", "str")
-                    msg.level = self._get(gid, "level", None, "double")
-                    msg.step_range = str(self._get(gid, "stepRange", "0", "str"))
-                    msg.end_step = self._get(gid, "endStep", None, "long")
-                    msg.data_date = self._get(gid, "dataDate", None, "long")
-                    msg.data_time = self._get(gid, "dataTime", None, "long")
-                    msg.run = self._parse_datetime(msg.data_date, msg.data_time)
-                    msg.valid = self._parse_datetime(
-                        self._get(gid, "validityDate", None, "long"),
-                        self._get(gid, "validityTime", None, "long"))
-                    msg.ni = self._get(gid, "Ni", None, "long")
-                    msg.nj = self._get(gid, "Nj", None, "long")
-                    msg.grid_type = self._get(gid, "gridType", "?", "str")
-                    msg.var = self._classify(gid)
-
-                    # Nivel en hPa (isobaricInhPa o isobaricInPa)
-                    if msg.type_of_level == "isobaricInhPa" and msg.level is not None:
-                        msg.level_hpa = float(msg.level)
-                    elif msg.type_of_level == "isobaricInPa" and msg.level is not None:
-                        msg.level_hpa = float(msg.level) / 100.0
-                    else:
-                        msg.level_hpa = None
-
-                    # La grilla se toma del primer mensaje con grilla regular
-                    if not self.grid and msg.ni and msg.nj:
-                        self._read_grid(gid, msg)
-
-                    self.messages.append(msg)
-                finally:
-                    ec.codes_release(gid)
-
-        if n_total == 0:
+        """Pide al motor los metadatos de todos los mensajes y arma el
+        inventario, los pasos y el índice de campos útiles."""
+        self.messages, grid = self.backend.scan(self.path)
+        if not self.messages:
             raise ValueError("El archivo no contiene mensajes GRIB válidos.")
-        if not self.grid:
+        if grid is None:
             raise ValueError("No se encontró una grilla regular (Ni/Nj) en el archivo; "
                              "sólo se soportan grillas lat/lon regulares.")
+        self.lats, self.lons, self._lon_order, self._flip_lat = normalize_grid(
+            grid.lat1d, grid.lon1d)
+        self.grid = grid.as_dict()
 
         # Pasos: ordenados por hora de validez (y por stepRange como respaldo)
         step_keys = {}
@@ -348,27 +235,6 @@ class GribReader:
                 "El archivo no contiene campos U/V/T en niveles de presión "
                 "(typeOfLevel isobaricInhPa) sobre la grilla principal.")
 
-    def _read_grid(self, gid, msg):
-        """Lee la descripción de la grilla y prepara el reordenamiento
-        (latitudes ascendentes, longitudes -180..180 ascendentes)."""
-        ni, nj = int(msg.ni), int(msg.nj)
-        lats = np.asarray(ec.codes_get_double_array(gid, "latitudes")).reshape(nj, ni)
-        lons = np.asarray(ec.codes_get_double_array(gid, "longitudes")).reshape(nj, ni)
-        self.lats, self.lons, self._lon_order, self._flip_lat = normalize_grid(
-            lats[:, 0], lons[0, :])
-        self.grid = {
-            "grid_type": msg.grid_type,
-            "ni": ni,
-            "nj": nj,
-            "lat_first": self._get(gid, "latitudeOfFirstGridPointInDegrees", float(lats[0, 0]), "double"),
-            "lon_first": self._get(gid, "longitudeOfFirstGridPointInDegrees", float(lons[0, 0]), "double"),
-            "lat_last": self._get(gid, "latitudeOfLastGridPointInDegrees", float(lats[-1, -1]), "double"),
-            "lon_last": self._get(gid, "longitudeOfLastGridPointInDegrees", float(lons[-1, -1]), "double"),
-            "di": self._get(gid, "iDirectionIncrementInDegrees", None, "double"),
-            "dj": self._get(gid, "jDirectionIncrementInDegrees", None, "double"),
-            "j_positive": self._get(gid, "jScansPositively", None, "long"),
-        }
-
     def _compute_windows(self):
         """Calcula la ventana de validez de cada paso. Si el stepRange es un
         rango 'a-b' se usa directamente; si no, va desde la validez del paso
@@ -394,20 +260,9 @@ class GribReader:
 
     # ------------------------------------------------------------- lectura
     def _read_values(self, msg):
-        """Lee los valores de un mensaje (por offset) y los devuelve como
+        """Lee los valores de un mensaje con el motor y los devuelve como
         array (nj, ni) orientado con latitudes y longitudes ascendentes."""
-        with open(self.path, "rb") as fh:
-            fh.seek(int(msg.offset))
-            gid = ec.codes_grib_new_from_file(fh)
-            if gid is None:
-                raise IOError(f"No se pudo releer el mensaje {msg.index}")
-            try:
-                values = np.asarray(ec.codes_get_double_array(gid, "values"), dtype=float)
-                if self._get(gid, "bitmapPresent", 0, "long"):
-                    missing = self._get(gid, "missingValue", 9999.0, "double")
-                    values = np.where(values == missing, np.nan, values)
-            finally:
-                ec.codes_release(gid)
+        values = self.backend.read(self.path, msg)
         return orient_values(values, self.grid["nj"], self.grid["ni"],
                              self._flip_lat, self._lon_order)
 
@@ -489,6 +344,9 @@ class GribReader:
         g = self.grid
         lines = []
         lines.append(f"Archivo: {os.path.basename(self.path)}")
+        backend = getattr(self, "backend", None)      # el lector sintético de tests no tiene
+        if backend is not None:
+            lines.append(f"Motor: {backend.label()}")
         lines.append(f"Mensajes: {len(self.messages)}  (útiles: {len(self.index)})")
         run = self.run_time()
         lines.append(f"Corrida: {fmt_dt(run)} UTC" if run else "Corrida: desconocida")

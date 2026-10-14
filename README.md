@@ -101,8 +101,11 @@ servidor sólo lo pedido:
 * **Horas de pronóstico**: desde / hasta / cada N h (por ejemplo 6 a 12
   cada 3 → +6, +9, +12, los tres pasos del panel TIME).
 * **Variables**: viento U y V, temperatura, altura geopotencial y humedad.
-* **Niveles de presión**: los del producto pgrb2 (1000 … 10 hPa), con
-  atajos "Los del visor", "Todos" y "Ninguno".
+* **Niveles de presión**: los del producto pgrb2 (1000 … 10 hPa) y, si se
+  marca `Incluir niveles intermedios cada 25 hPa`, también 875 … 125 hPa
+  (producto pgrb2b a 0,25°, incluidos en pgrb2full a 0,50°; a 1,00° no
+  existen). Atajos "Los del visor" (que suma 275/225/175 con los
+  intermedios), "Todos" y "Ninguno".
 * **Resolución**: 0,25°, 0,50° o 1,00°.
 * **Zona**: latitudes norte/sur y longitudes oeste/este (o todo el globo);
   con un archivo abierto, "Dominio del archivo abierto" copia su recuadro.
@@ -112,9 +115,15 @@ servidor sólo lo pedido:
 La descarga corre en segundo plano con barra de progreso y se puede
 cancelar. Si la corrida todavía no está publicada el servidor responde 404
 y el diálogo lo explica; una respuesta que no es GRIB (variables o niveles
-sin datos) también se informa. Nota: los niveles 275, 225 y 175 hPa no
-existen en el producto pgrb2 del GFS; el visor interpola entre los
-disponibles.
+sin datos) también se informa. Los valores iniciales del diálogo
+(resolución, intermedios, horas, unir pasos, abrir al terminar) se fijan en
+Preferencias ▸ Descarga.
+
+Ningún nivel del GFS coincide exactamente con la presión ISA de un FL salvo
+F340 (250 hPa) y F530 (100 hPa); con los intermedios cada FL del visor queda
+a menos de 8 hPa de un nivel del archivo (F320 ≈ 275, F360 ≈ 225, F410 ≈
+175) y la interpolación en ln(p) es mínima. Sin ellos, F320, F360 y F410
+caen a mitad de camino entre niveles separados 50 hPa.
 
 ### Panel de la derecha
 
@@ -138,7 +147,9 @@ disponibles.
   `Fondo de velocidad` rellena el mapa con la misma escala de colores;
   `Densidad` submuestrea las barbas cada N puntos; `Update` redibuja y
   `Disable`/`Enable` oculta o muestra la capa de datos. Cualquier cambio de
-  radio, botón de nivel, combo o casilla redibuja automáticamente.
+  radio, botón de nivel, combo o casilla redibuja automáticamente, y las
+  casillas y la densidad quedan guardadas como valores iniciales (también
+  editables en Preferencias ▸ Mapa).
 * **RECUADRO**: lat/lon mín/máx (Enter aplica) y `Todo el dominio`.
 * **INVENTARIO**: corrida, pasos, variables, niveles y grilla del archivo.
 
@@ -202,6 +213,34 @@ recientes) se guarda en `config.json` junto al código en desarrollo y en
 (Windows) o `~/.config/Visor GRIB` (Linux) cuando está empaquetada. Los
 errores no controlados se registran en `errores.log` en la misma carpeta.
 
+## Preferencias
+
+`⚙` en la barra de acciones o Vista ▸ Preferencias… (⌘,) abre un diálogo
+con cuatro pestañas:
+
+* **Apariencia**: color de acento (presets o personalizado, con vista previa
+  en vivo) y transparencia de la ventana.
+* **Mapa**: proyección y valores iniciales de CONFIG (Extra Info, grilla,
+  fondo de velocidad, densidad).
+* **Descarga**: resolución, niveles intermedios, horas, unir pasos y abrir al
+  terminar, como valores iniciales de `Descargar GFS…`.
+* **Motor**: cómo se leen los GRIB2. `ecCodes` usa la biblioteca Python
+  incluida en `requirements.txt`; `wgrib2` ejecuta el programa de NOAA como
+  proceso externo (inventario con `-s -T -VT -nxny`, grilla con `-grid` y
+  valores con `-order raw -no_header -bin`), útil para contrastar o cuando
+  ecCodes no puede instalarse. La ruta puede dejarse vacía (se busca en el
+  PATH o en la variable `WGRIB2`) o indicarse con `Buscar…`; `Probar` muestra
+  la versión. Si el motor elegido no está, abrir un archivo avisa y sigue
+  con ecCodes. Ambos motores entregan los mismos campos (diferencias del
+  orden de 1e-5 por el float32 de wgrib2) y el inventario indica cuál se
+  usó. wgrib2 no viene en Homebrew; se compila desde
+  <https://ftp.cpc.ncep.noaa.gov/wd51we/wgrib2/wgrib2.tgz> (`make` con
+  `CC=clang` y las opciones USE_NETCDF3/USE_IPOLATES/USE_OPENJPEG… en 0) o se
+  instala con `conda install -c conda-forge wgrib2`.
+
+Cancelar devuelve el tema que había; Aplicar guarda todo en `config.json`.
+Si cambia el motor con un archivo abierto, se reabre con el nuevo.
+
 ## Tests
 
 ```bash
@@ -209,10 +248,13 @@ QT_QPA_PLATFORM=offscreen python -m unittest discover -s tests -p "test_*.py"
 ```
 
 Cubren el lector (ISA, viento, colores, grilla, ln(p), lectura de un GRIB2
-sintético generado con ecCodes), la ventana y los diálogos en offscreen, y
+sintético generado con ecCodes), el parseo de la salida de wgrib2, la
+descarga con niveles intermedios, la ventana y los diálogos en offscreen, y
 que cambiar nivel, paso, variable u opción redibuja sobre un lector
 sintético. Si hay un `.grib2` real en la carpeta del proyecto se suma un
-test de inventario (se salta si no existe).
+test de inventario, y si hay un `wgrib2` en el PATH (o en la variable
+`WGRIB2`) se compara la lectura completa de los dos motores; ambos se saltan
+si no están.
 
 ## Empaquetado macOS
 

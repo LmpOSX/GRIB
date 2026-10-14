@@ -230,6 +230,7 @@ class MainWindow(QMainWindow):
         side_lay.setSpacing(8)
         self.panel = ControlPanel()
         self.panel.set_projection(self._cfg.get("projection", "platecarree"))
+        self.panel.set_options(self._map_options_from_cfg())
         self.plot.set_projection(self.panel.projection())
         side_lay.addWidget(self.panel)
         inv_frame = QFrame()
@@ -250,7 +251,7 @@ class MainWindow(QMainWindow):
         self.panel.step_changed.connect(lambda _i: self.redraw())
         self.panel.level_changed.connect(self.redraw)
         self.panel.variable_changed.connect(lambda _m: self.redraw())
-        self.panel.options_changed.connect(self.redraw)
+        self.panel.options_changed.connect(self._on_panel_options_changed)
         self.panel.update_clicked.connect(self.redraw)
         self.panel.layer_toggled.connect(self.toggle_layer)
         self.panel.extent_applied.connect(self.apply_extent)
@@ -263,6 +264,19 @@ class MainWindow(QMainWindow):
         self.plot.canvas.mpl_connect("motion_notify_event", self._on_motion)
         self.plot.canvas.mpl_connect("draw_event", self._on_draw)
         self.plot.canvas.mpl_connect("scroll_event", self._on_scroll)
+
+    def _map_options_from_cfg(self) -> dict:
+        c = self._cfg
+        return {"extra_info": c.get("map_extra_info", False), "grid": c.get("map_grid", False),
+                "fill": c.get("map_fill", False), "stride": c.get("map_stride", 1)}
+
+    def _on_panel_options_changed(self):
+        """CONFIG del panel: se guarda como valor inicial y se redibuja."""
+        o = self.panel.options()
+        self._cfg.update({"map_extra_info": o["extra_info"], "map_grid": o["grid"],
+                          "map_fill": o["fill"], "map_stride": o["stride"]})
+        save_config(self._cfg)
+        self.redraw()
 
     def _build_action_bar(self) -> QWidget:
         bar = QFrame()
@@ -461,14 +475,24 @@ class MainWindow(QMainWindow):
 
     def open_file(self, path: str):
         """Abre un GRIB2 (también desde el Finder o la línea de comandos)."""
-        from .grib_reader import GribReader, ec, ECCODES_HELP
-        if ec is None:
-            QMessageBox.critical(self, "eccodes no disponible", ECCODES_HELP)
-            return
-        self.set_status(f"Leyendo {os.path.basename(path)} …")
+        from .grib_reader import GribReader, EngineUnavailable, ec
+        engine = self._cfg.get("engine", "eccodes")
+        self.set_status(f"Leyendo {os.path.basename(path)} ({engine}) …")
         QApplication.processEvents()
         try:
-            reader = GribReader(path)
+            try:
+                reader = GribReader(path, engine=engine,
+                                    wgrib2_path=self._cfg.get("wgrib2_path", ""))
+            except EngineUnavailable as exc:
+                if engine == "wgrib2" and ec is not None:
+                    # El motor elegido no está: se avisa y se sigue con ecCodes
+                    QMessageBox.warning(self, "wgrib2 no disponible",
+                                        f"{exc}\nSe abre el archivo con ecCodes.")
+                    reader = GribReader(path, engine="eccodes")
+                else:
+                    QMessageBox.critical(self, "Motor de lectura no disponible", str(exc))
+                    self.set_status("Motor de lectura no disponible.")
+                    return
         except Exception as exc:
             traceback.print_exc()
             QMessageBox.critical(self, "Error al abrir el archivo",
@@ -492,7 +516,9 @@ class MainWindow(QMainWindow):
             r = self._reader
             region = (float(r.lats.max()), float(r.lats.min()),
                       float(r.lons.min()), float(r.lons.max()))
-        dlg = DownloadDialog(self, dest_dir=working_dir(self._cfg), region=region)
+        defaults = {k: v for k, v in self._cfg.items() if k.startswith("download_")}
+        dlg = DownloadDialog(self, dest_dir=working_dir(self._cfg), region=region,
+                             defaults=defaults)
         if region is not None:
             dlg.enable_domain_button(region)
         if dlg.exec() and dlg.downloaded_paths:
@@ -814,15 +840,32 @@ class MainWindow(QMainWindow):
     def _open_settings(self):
         saved_color = self._cfg["accent_color"]
         saved_opacity = self._cfg.get("opacity", 180)
-        dlg = SettingsDialog(self, current_color=saved_color,
-                             current_opacity=saved_opacity)
+        dlg = SettingsDialog(self, cfg=self._cfg)
         dlg.theme_changed.connect(self._apply_theme)
         dlg.opacity_changed.connect(lambda v: self._apply_theme(opacity=v))
         if dlg.exec():
-            self._apply_theme(dlg.selected_color(), opacity=dlg.selected_opacity())
-            save_config(self._cfg)
+            self.apply_settings(dlg.values())
         else:
             self._apply_theme(saved_color, opacity=saved_opacity)
+
+    def apply_settings(self, values: dict):
+        """Aplica y guarda lo elegido en Preferencias: tema, proyección,
+        valores de CONFIG del panel, descarga y motor."""
+        old_proj = self._cfg.get("projection", "platecarree")
+        old_engine = (self._cfg.get("engine", "eccodes"), self._cfg.get("wgrib2_path", ""))
+        self._cfg.update(values)
+        self._apply_theme(values.get("accent_color"), opacity=values.get("opacity"))
+        self.panel.set_options(self._map_options_from_cfg())
+        if values.get("projection", old_proj) != old_proj:
+            self.panel.set_projection(values["projection"])
+            self.set_projection(values["projection"])     # redibuja y guarda
+        elif self._reader is not None:
+            self.redraw()
+        save_config(self._cfg)
+        new_engine = (self._cfg.get("engine", "eccodes"), self._cfg.get("wgrib2_path", ""))
+        if new_engine != old_engine and self._path and os.path.exists(self._path):
+            # El motor se usa al abrir: se reabre el archivo actual con el nuevo
+            self.open_file(self._path)
 
     # ── Geometría ─────────────────────────────────────────────────────────────
 
