@@ -1,133 +1,176 @@
-# grib_viewer – Visor de viento y temperatura GRIB2 (GFS)
+# Visor GRIB – Viento y temperatura GRIB2 (GFS)
 
-Programa de escritorio en Python (tkinter + matplotlib + cartopy opcional) para
-visualizar archivos GRIB2 con componentes de viento (UGRD/VGRD) y temperatura
-(TMP) en niveles de presión, con un panel de controles al estilo de un sistema
-ATC: selección de paso (Current / Next / Advanced), nivel de vuelo (F050…F530
-convertido a presión ISA e interpolado en ln(p)), barbas coloreadas por
-velocidad, contornos de temperatura, "Extra Info", grilla, zoom/pan y
-exportación a PNG/CSV.
+Aplicación de escritorio (Python 3.14 + PyQt6 + matplotlib + cartopy
+opcional) para visualizar archivos GRIB2 con componentes de viento
+(UGRD/VGRD) y temperatura (TMP) en niveles de presión, con un panel de
+controles al estilo de un sistema ATC: selección de paso (Current / Next /
+Advanced), nivel de vuelo (F050…F530 convertido a presión ISA e interpolado
+en ln p), barbas coloreadas por velocidad, contornos de temperatura, "Extra
+Info", grilla, zoom/pan y exportación a PNG/CSV.
 
-Todo el código está en un único archivo: `grib_viewer.py`.
+La interfaz usa la base gráfica compartida con otras apps del autor: ventana
+translúcida con desenfoque nativo en macOS (opaca en Windows/Linux), tema
+generado a partir de un color de acento, diálogos "glass", configuración
+persistente, hoja de atajos, zoom de fuente y captura de errores a log.
 
-## Requisitos
+## Estructura
 
-* Python 3.9 o superior con **tkinter**.
-* `numpy`, `matplotlib`, `eccodes` (bindings Python de ecCodes).
-* `cartopy` (opcional: costas y fronteras a 50 m; sin él el mapa se dibuja
-  sin costas y se avisa).
-* `certifi` (opcional: evita errores de certificado SSL cuando cartopy
-  descarga las costas de Natural Earth por primera vez).
+```
+main.py                     arranque (QApplication, FileOpen de macOS, argv)
+app/
+  grib_reader.py            lectura GRIB2 (ecCodes), inventario, cache, ISA, ln(p)
+  wind_plot.py              mapa matplotlib (QtAgg) + cartopy opcional
+  main_window.py            ventana principal: mapa, panel, menús, atajos
+  config.py, theme.py, platform_blur.py, crash_guard.py, utils.py
+  widgets/                  control_panel, inventory_panel, welcome_widget
+  dialogs/                  glass_dialog, settings_dialog, shortcuts_dialog, about_dialog
+tests/                      unittest (lector, ventana y mapa en offscreen)
+docs/PLAN_PRUEBAS_2_0_0.md  plan de pruebas manual
+scripts/build.sh, setup.py  .app + DMG con py2app (macOS)
+```
 
-## Instalación en macOS
+## Instalación
+
+### Entorno `Grib` (pyenv, Python 3.14)
+
+El archivo `.python-version` fija el entorno `Grib`. Si todavía no existe:
 
 ```bash
-# 1) Python con tkinter (el de python.org o el de Homebrew con python-tk)
-brew install python@3.12 python-tk@3.12
-
-# 2) Entorno virtual
-python3.12 -m venv venv
-source venv/bin/activate
+pyenv install 3.14.3
+pyenv virtualenv 3.14.3 Grib
+cd /ruta/al/proyecto         # .python-version activa el entorno solo
+python --version             # Python 3.14.3
 pip install --upgrade pip
-
-# 3) Dependencias
 pip install -r requirements.txt
+python -c "import PyQt6, eccodes, cartopy, matplotlib; print('ok')"
 ```
 
-Si `pip install eccodes` no encuentra la biblioteca nativa (error
-"Cannot find the ecCodes library"), instalarla con Homebrew o conda:
+Si el shell no reconoce el entorno, inicializar pyenv primero:
 
 ```bash
-# Opción A: Homebrew
-brew install eccodes
-pip install eccodes          # o: pip install --no-binary eccodes eccodes
-# Si aún no la encuentra, indicar la ruta:
-export ECCODES_DIR=$(brew --prefix eccodes)
-
-# Opción B: conda / mamba (incluye cartopy, que a veces es difícil con pip)
-conda create -n grib python=3.12 -c conda-forge eccodes python-eccodes \
-    cartopy matplotlib numpy tk certifi
-conda activate grib
+eval "$(pyenv init -)"
 ```
 
-Si al dibujar aparece un error `CERTIFICATE_VERIFY_FAILED` (Python de
-python.org en macOS), instalar `certifi` (`pip install certifi`) o ejecutar
-una vez `/Applications/Python 3.x/Install Certificates.command`.
+### Dependencias nativas
 
-## Instalación en Linux (Debian / Ubuntu)
+* **ecCodes**: `pip install eccodes` trae la biblioteca en las ruedas
+  recientes. Si no la encuentra ("Cannot find the ecCodes library"):
 
-```bash
-# 1) tkinter y, opcionalmente, la biblioteca ecCodes del sistema
-sudo apt update
-sudo apt install python3-tk python3-venv libeccodes0 libeccodes-dev
+  ```bash
+  # macOS
+  brew install eccodes && pip install eccodes
+  export ECCODES_DIR=$(brew --prefix eccodes)     # si aún no la encuentra
 
-# 2) Entorno virtual
-python3 -m venv venv
-source venv/bin/activate
-pip install --upgrade pip
+  # Debian / Ubuntu
+  sudo apt install libeccodes0 libeccodes-dev && pip install eccodes
 
-# 3) Dependencias
-pip install -r requirements.txt
-```
+  # Alternativa: conda / mamba
+  conda create -n grib python=3.12 -c conda-forge eccodes python-eccodes \
+      cartopy matplotlib numpy pyqt certifi
+  ```
 
-Si pip no alcanza para `eccodes` o `cartopy` (faltan ruedas para la
-arquitectura o la versión de Python), usar conda:
+* **cartopy** es opcional: sin él el mapa se dibuja sin costas ni fronteras y
+  la app lo avisa. La primera vez que se dibuja un mapa descarga las costas de
+  Natural Earth a 50 m (hace falta conexión). Si aparece
+  `CERTIFICATE_VERIFY_FAILED`, instalar `certifi` (ya está en
+  `requirements.txt`) o ejecutar `Install Certificates.command` del Python
+  de python.org.
 
-```bash
-conda create -n grib python=3.12 -c conda-forge eccodes python-eccodes \
-    cartopy matplotlib numpy tk certifi
-conda activate grib
-```
-
-En Fedora / RHEL: `sudo dnf install python3-tkinter eccodes eccodes-devel`.
+* **macOS**: `pyobjc-framework-Cocoa` (en `requirements.txt`) da el desenfoque
+  nativo y el nombre de la app en la barra de menú. Sin él la ventana queda
+  opaca.
 
 ## Uso
 
 ```bash
-python grib_viewer.py                      # abre la ventana vacía
-python grib_viewer.py FDP_MULTI.grib2      # abre directamente un archivo
+python main.py                        # abre la bienvenida
+python main.py FDP_MULTI.grib2        # abre directamente un archivo
 ```
 
-Panel de la derecha:
+También se abre un `.grib2` con doble clic en el Finder cuando la app está
+empaquetada (`scripts/build.sh`).
 
-* **Abrir GRIB...**: selecciona un archivo `*.grib2 *.grb2 *.grib *.grb`.
-  Al abrirlo se muestra el inventario (corrida, pasos y validez, variables,
-  niveles, grilla) en el panel INVENTARIO.
-* **STATUS**: corrida, paso seleccionado, ventana de validez en UTC y en la
-  hora local del sistema, nivel elegido y si fue interpolado o extrapolado
-  (nivel más cercano).
+### Panel de la derecha
+
+* **STATUS**: corrida, paso, ventana de validez en UTC y en hora local, nivel
+  elegido y si fue interpolado en ln(p) o extrapolado (nivel más cercano).
 * **TIME**: `Current (+0)`, `Next (+1)`, `Advanced (+2)` eligen el 1.°, 2.° y
-  3.° paso del archivo. Si hay más de tres pasos aparece un combo con todos.
+  3.° paso del archivo, con su hora de validez al lado. Si hay más de tres
+  pasos aparece un combo con todos.
 * **LEVEL**: botones F050…F530. El FL se convierte a presión con la atmósfera
-  estándar ISA y U, V y T se interpolan linealmente en ln(p) entre los niveles
-  del archivo. Si el FL cae fuera del rango de niveles se usa el nivel más
-  cercano y STATUS lo indica como "extrapolado". El combo "Nivel de presión"
-  permite elegir un nivel del archivo sin interpolar.
+  estándar ISA (`p = 1013.25·(1 − 6.8756e-6·h)^5.2559` hasta 36 089 ft,
+  isotérmica arriba) y U, V y T se interpolan linealmente en ln(p) entre los
+  niveles del archivo. Fuera del rango se usa el nivel más cercano y STATUS
+  lo marca como "extrapolado". El combo "Nivel de presión" elige un nivel
+  del archivo sin interpolar.
 * **VARIABLE**: Viento (barbas), Temperatura (contornos cada 2 °C) o ambas.
-* **CONFIG**: `Extra Info` escribe la velocidad en kt (y la temperatura en °C
-  si corresponde) junto a cada barba; `Grilla` dibuja la grilla lat/lon del
-  archivo; `Fondo de velocidad` rellena el mapa con la misma escala de
-  colores; `Densidad` submuestrea las barbas cada N puntos; `Update` redibuja
-  y `Disable`/`Enable` oculta o muestra la capa de datos. Cambiar un radio,
-  un botón de nivel o un checkbox redibuja automáticamente.
-* **RECUADRO**: lat/lon mín/máx para fijar la vista; `Todo el dominio`
-  vuelve a la grilla completa. También funcionan el zoom y el pan de la
-  barra de matplotlib.
-* **Exportar PNG / CSV**: guarda la vista actual o una tabla con lat, lon,
-  u, v, velocidad (kt), dirección (°) y T (°C) del nivel y paso actuales.
-* Barra inferior: lat/lon, velocidad, dirección y temperatura bajo el cursor.
+* **CONFIG**: `Extra Info` escribe la velocidad en kt (y la temperatura en
+  °C) junto a cada barba; `Grilla` dibuja la grilla lat/lon del archivo;
+  `Fondo de velocidad` rellena el mapa con la misma escala de colores;
+  `Densidad` submuestrea las barbas cada N puntos; `Update` redibuja y
+  `Disable`/`Enable` oculta o muestra la capa de datos. Cualquier cambio de
+  radio, botón de nivel, combo o casilla redibuja automáticamente.
+* **RECUADRO**: lat/lon mín/máx (Enter aplica) y `Todo el dominio`.
+* **INVENTARIO**: corrida, pasos, variables, niveles y grilla del archivo.
+
+### Barra de acciones y mapa
+
+`Abrir GRIB…`, `Inicio` (vista inicial), `Zoom` (arrastrar un rectángulo),
+`Pan` (arrastrar el mapa), `Guardar PNG` y `⚙` (preferencias: color de
+acento y transparencia). Al mover el mouse sobre el mapa la barra inferior
+muestra lat/lon y, en el punto de grilla más cercano, velocidad (kt),
+dirección (°) y temperatura (°C).
 
 Escala de colores de las barbas: 0–9 kt cian, 10–19 azul, 20–29 verde,
-30–39 amarillo, 40–49 naranja, ≥50 rojo.
+30–39 amarillo, 40–49 naranja, ≥50 rojo. Conversiones: 1 m/s = 1.943844 kt;
+dirección meteorológica = (270 − atan2(v, u)) mod 360; T(°C) = T(K) −
+273.15. Las longitudes 0–360 se normalizan a −180…180 y las latitudes se
+reordenan de sur a norte si el archivo viene de norte a sur.
 
-Conversiones usadas: 1 m/s = 1.943844 kt; dirección meteorológica
-= (270 − atan2(v, u)) mod 360; T(°C) = T(K) − 273.15. Las longitudes 0–360
-se normalizan a −180…180 y las latitudes se reordenan de sur a norte si el
-archivo viene de norte a sur.
+### Atajos
+
+| Acción | macOS | Windows / Linux |
+|---|---|---|
+| Abrir GRIB… | ⌘ O | Ctrl O |
+| Exportar PNG… | ⌘ E | Ctrl E |
+| Exportar CSV… | ⌘ ⇧ E | Ctrl Shift E |
+| Cerrar archivo | ⌘ W | Ctrl W |
+| Salir | ⌘ Q | Ctrl Q |
+| Todo el dominio | ⌘ ⇧ 0 | Ctrl Shift 0 |
+| Actualizar | F5 | F5 |
+| Capa de datos activada / desactivada | ⌘ D | Ctrl D |
+| Preferencias… | ⌘ , | Ctrl , |
+| Agrandar / achicar / restablecer fuente | ⌘ + / ⌘ − / ⌘ 0 | Ctrl + / Ctrl − / Ctrl 0 |
+| Salir del modo Zoom / Pan | Esc | Esc |
+| Atajos de teclado | ⌘ / | Ctrl / |
+
+La configuración (color, transparencia, tamaño de fuente, geometría,
+recientes) se guarda en `config.json` junto al código en desarrollo y en
+`~/Library/Application Support/Visor GRIB/` (macOS), `%APPDATA%\Visor GRIB`
+(Windows) o `~/.config/Visor GRIB` (Linux) cuando está empaquetada. Los
+errores no controlados se registran en `errores.log` en la misma carpeta.
+
+## Tests
+
+```bash
+QT_QPA_PLATFORM=offscreen python -m unittest discover -s tests -p "test_*.py"
+```
+
+Cubren el lector (ISA, viento, colores, grilla, ln(p), lectura de un GRIB2
+sintético generado con ecCodes), la ventana y los diálogos en offscreen, y
+que cambiar nivel, paso, variable u opción redibuja sobre un lector
+sintético. Si hay un `.grib2` real en la carpeta del proyecto se suma un
+test de inventario (se salta si no existe).
+
+## Empaquetado macOS
+
+```bash
+scripts/build.sh      # genera iconos, "dist/Visor GRIB.app" y el DMG
+```
 
 ## Verificación con wgrib2
 
-1. Abrir el archivo: `python grib_viewer.py FDP_MULTI.grib2`.
+1. Abrir el archivo: `python main.py FDP_MULTI.grib2`.
 2. Elegir **Next (+1)** (segundo paso, por ejemplo +9 h) y el nivel **F100**.
    STATUS mostrará `F100 = 696.8 hPa (ISA)` interpolado entre 700 y 600 hPa;
    al estar a sólo 3 hPa de 700, los valores son prácticamente los del nivel

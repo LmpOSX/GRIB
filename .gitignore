@@ -45,3 +45,7 @@ trabajo/
 
 # Log de errores no controlados (modo desarrollo lo escribe junto a config.json)
 errores.log
+
+# Iconos generados por scripts/make_icon.py (los crea build.sh)
+*.icns
+resources/doc_icon.png

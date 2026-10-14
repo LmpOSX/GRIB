@@ -1,155 +1,161 @@
 #!/usr/bin/env python3
-"""Generate app icon (PNG → ICNS) for Presupuestador Pro."""
+"""Genera el icono de la app (PNG → ICNS) para Visor GRIB.
+
+Dibuja, sin dependencias externas, una barba de viento sobre un fondo
+azul oscuro con esquinas redondeadas; el icono de documento lleva además
+una hoja blanca detrás.
+"""
+import math
 import os
 import struct
 import zlib
 
 RESOURCES = os.path.join(os.path.dirname(__file__), "..", "resources")
 
+BG = (18, 40, 72, 255)         # azul oscuro (fondo de mapa)
+GRID = (40, 70, 110, 255)      # líneas de grilla
+WHITE = (255, 255, 255, 255)
+YELLOW = (255, 230, 0, 255)    # barba (30–39 kt en la escala del visor)
+CYAN = (0, 229, 255, 255)
+PAPER = (236, 240, 246, 255)
 
-def create_png(size: int) -> bytes:
-    """Create a simple budget-app icon as raw PNG bytes."""
-    # Colors
-    BG = (74, 144, 217, 255)       # accent blue
-    DARK = (30, 60, 100, 255)      # dark blue
-    WHITE = (255, 255, 255, 255)
-    GOLD = (220, 180, 50, 255)
 
-    pixels = [[BG] * size for _ in range(size)]
-
-    def fill_rect(x1, y1, x2, y2, color):
-        for y in range(max(0, y1), min(size, y2)):
-            for x in range(max(0, x1), min(size, x2)):
-                pixels[y][x] = color
-
-    def fill_circle(cx, cy, r, color):
-        for y in range(max(0, int(cy - r)), min(size, int(cy + r) + 1)):
-            for x in range(max(0, int(cx - r)), min(size, int(cx + r) + 1)):
-                if (x - cx) ** 2 + (y - cy) ** 2 <= r ** 2:
-                    pixels[y][x] = color
-
+def create_png(size: int, document: bool = False) -> bytes:
+    pixels = [[(0, 0, 0, 0)] * size for _ in range(size)]
     s = size
-    pad = s // 8
-
-    # Rounded-ish background (fill corners with transparent)
     r = s // 6
-    for y in range(s):
-        for x in range(s):
-            # corner check
-            corners = [
-                (r, r), (s - r - 1, r), (r, s - r - 1), (s - r - 1, s - r - 1)
-            ]
-            in_corner = False
-            for cx, cy in corners:
-                if ((x < r or x >= s - r) and (y < r or y >= s - r)):
-                    if (x - cx) ** 2 + (y - cy) ** 2 > r ** 2:
-                        pixels[y][x] = (0, 0, 0, 0)
-                        in_corner = True
-            if not in_corner:
-                pixels[y][x] = BG
 
-    # Document shape (white rectangle with fold)
-    dx1, dy1 = pad + s // 10, pad + s // 8
-    dx2, dy2 = s - pad - s // 10, s - pad - s // 8
-    fill_rect(dx1, dy1, dx2, dy2, WHITE)
-    # Corner fold
-    fold = s // 6
-    for fy in range(dy1, dy1 + fold):
-        for fx in range(dx2 - fold, dx2):
-            if (fx - (dx2 - fold)) + (fy - dy1) < fold:
-                pixels[fy][fx] = WHITE
-            else:
-                pixels[fy][fx] = (200, 210, 230, 255)
+    def put(x, y, color):
+        if 0 <= x < s and 0 <= y < s:
+            pixels[y][x] = color
 
-    # Horizontal lines (budget rows)
-    line_h = max(1, s // 40)
-    for i in range(4):
-        ly = dy1 + s // 5 + i * (s // 8)
-        fill_rect(dx1 + s // 12, ly, dx2 - s // 6, ly + line_h, DARK)
+    def fill_rounded_rect(x1, y1, x2, y2, rad, color):
+        for y in range(max(0, y1), min(s, y2)):
+            for x in range(max(0, x1), min(s, x2)):
+                cx = min(max(x, x1 + rad), x2 - 1 - rad)
+                cy = min(max(y, y1 + rad), y2 - 1 - rad)
+                if (x - cx) ** 2 + (y - cy) ** 2 <= rad ** 2:
+                    put(x, y, color)
 
-    # Dollar sign circle
-    cr = s // 7
-    cx, cy = s - pad - s // 6, s - pad - s // 5
-    fill_circle(cx, cy, cr, GOLD)
-    # $ sign (simple vertical lines)
-    bar_w = max(1, cr // 4)
-    fill_rect(cx - bar_w // 2, cy - cr + cr // 3, cx + bar_w // 2 + 1, cy + cr - cr // 3, DARK)
+    def line(x1, y1, x2, y2, width, color):
+        """Segmento grueso: pinta un disco por cada punto del trazo."""
+        length = max(1, int(math.hypot(x2 - x1, y2 - y1)))
+        rad = max(1, width // 2)
+        for i in range(length + 1):
+            t = i / length
+            cx = x1 + (x2 - x1) * t
+            cy = y1 + (y2 - y1) * t
+            for dy in range(-rad, rad + 1):
+                for dx in range(-rad, rad + 1):
+                    if dx * dx + dy * dy <= rad * rad:
+                        put(int(cx + dx), int(cy + dy), color)
 
-    # Encode as PNG
+    if document:
+        # Hoja blanca con la esquina doblada detrás del mapa
+        fill_rounded_rect(s // 8, s // 14, s - s // 8, s - s // 14, s // 20, PAPER)
+        fill_rounded_rect(s // 5, s // 4, s - s // 5, s - s // 6, r // 2, BG)
+        x0, y0, x1, y1 = s // 5, s // 4, s - s // 5, s - s // 6
+    else:
+        fill_rounded_rect(0, 0, s, s, r, BG)
+        x0, y0, x1, y1 = 0, 0, s, s
+
+    # Grilla tenue
+    w = max(1, s // 160)
+    step = (x1 - x0) // 4
+    for k in range(1, 4):
+        line(x0 + k * step, y0, x0 + k * step, y1, w, GRID)
+        line(x0, y0 + k * step, x1, y0 + k * step, w, GRID)
+
+    # Barba de viento (asta inclinada + bandera + dos plumas), como en el mapa
+    cx, cy = (x0 + x1) // 2, (y0 + y1) // 2
+    L = (x1 - x0) * 0.36
+    ang = math.radians(-55)
+    ux, uy = math.cos(ang), math.sin(ang)        # dirección del asta
+    px, py = -uy, ux                              # perpendicular (lado de las plumas)
+    tail = (cx - ux * L * 0.55, cy - uy * L * 0.55)
+    head = (cx + ux * L * 0.75, cy + uy * L * 0.75)
+    thick = max(2, s // 26)
+    line(int(tail[0]), int(tail[1]), int(head[0]), int(head[1]), thick, YELLOW)
+    # Bandera (50 kt): triángulo relleno en la punta
+    f_len = L * 0.38
+    fx, fy = head[0] - ux * f_len, head[1] - uy * f_len
+    tip = (head[0] + px * f_len * 0.9, head[1] + py * f_len * 0.9)
+    steps = int(f_len)
+    for i in range(steps + 1):
+        t = i / steps
+        ax_, ay_ = head[0] - ux * f_len * t, head[1] - uy * f_len * t
+        bx_, by_ = tip[0] - (tip[0] - fx) * t, tip[1] - (tip[1] - fy) * t
+        line(int(ax_), int(ay_), int(bx_), int(by_), max(1, thick // 2), YELLOW)
+    # Plumas (10 kt): dos trazos hacia el mismo lado
+    for k in (1, 2):
+        bx = head[0] - ux * (f_len + k * L * 0.22)
+        by = head[1] - uy * (f_len + k * L * 0.22)
+        line(int(bx), int(by), int(bx + px * L * 0.38), int(by + py * L * 0.38),
+             thick, YELLOW)
+    # Punto de la estación
+    line(int(tail[0]), int(tail[1]), int(tail[0]), int(tail[1]), thick * 2, CYAN)
+
+    # Codificar PNG
     raw = b""
     for row in pixels:
-        raw += b"\x00"  # filter byte
-        for r, g, b, a in row:
-            raw += struct.pack("BBBB", r, g, b, a)
+        raw += b"\x00"
+        for r_, g, b, a in row:
+            raw += struct.pack("BBBB", r_, g, b, a)
 
     def chunk(tag, data):
         c = tag + data
         return struct.pack(">I", len(data)) + c + struct.pack(">I", zlib.crc32(c) & 0xFFFFFFFF)
 
     ihdr = struct.pack(">IIBBBBB", size, size, 8, 6, 0, 0, 0)
-    compressed = zlib.compress(raw, 9)
-
     png = b"\x89PNG\r\n\x1a\n"
     png += chunk(b"IHDR", ihdr)
-    png += chunk(b"IDAT", compressed)
+    png += chunk(b"IDAT", zlib.compress(raw, 9))
     png += chunk(b"IEND", b"")
     return png
 
 
 def png_to_icns(png_path: str, icns_path: str):
-    """Convert PNG to ICNS using macOS sips + iconutil."""
+    """PNG → ICNS con sips + iconutil (macOS)."""
     import subprocess
     import tempfile
 
     with tempfile.TemporaryDirectory() as tmpdir:
         iconset = os.path.join(tmpdir, "app.iconset")
         os.makedirs(iconset)
-
-        sizes = [16, 32, 64, 128, 256, 512]
-        for sz in sizes:
+        for sz in (16, 32, 64, 128, 256, 512):
             out = os.path.join(iconset, f"icon_{sz}x{sz}.png")
-            subprocess.run([
-                "sips", "-z", str(sz), str(sz), png_path, "--out", out
-            ], capture_output=True)
-            # @2x
+            subprocess.run(["sips", "-z", str(sz), str(sz), png_path, "--out", out],
+                           capture_output=True)
             if sz <= 256:
                 out2x = os.path.join(iconset, f"icon_{sz}x{sz}@2x.png")
-                sz2 = sz * 2
-                subprocess.run([
-                    "sips", "-z", str(sz2), str(sz2), png_path, "--out", out2x
-                ], capture_output=True)
-
-        subprocess.run(["iconutil", "-c", "icns", iconset, "-o", icns_path],
-                       check=True)
+                subprocess.run(["sips", "-z", str(sz * 2), str(sz * 2), png_path,
+                                "--out", out2x], capture_output=True)
+        subprocess.run(["iconutil", "-c", "icns", iconset, "-o", icns_path], check=True)
 
 
 def main():
     os.makedirs(RESOURCES, exist_ok=True)
 
-    # Generate 1024x1024 PNG
     png_path = os.path.join(RESOURCES, "app_icon.png")
     with open(png_path, "wb") as f:
         f.write(create_png(1024))
-    print(f"Created {png_path}")
-
-    # Convert to ICNS
-    icns_path = os.path.join(RESOURCES, "PresupuestadorPro.icns")
+    print(f"Creado {png_path}")
+    icns_path = os.path.join(RESOURCES, "VisorGRIB.icns")
     try:
         png_to_icns(png_path, icns_path)
-        print(f"Created {icns_path}")
+        print(f"Creado {icns_path}")
     except Exception as e:
-        print(f"Could not create .icns (need macOS): {e}")
+        print(f"No se pudo crear el .icns (hace falta macOS): {e}")
 
-    # Also create a document icon (same but with .ppto label feel)
     doc_png = os.path.join(RESOURCES, "doc_icon.png")
     with open(doc_png, "wb") as f:
-        f.write(create_png(512))
-    doc_icns = os.path.join(RESOURCES, "PptoDocument.icns")
+        f.write(create_png(512, document=True))
+    doc_icns = os.path.join(RESOURCES, "GribDocument.icns")
     try:
         png_to_icns(doc_png, doc_icns)
-        print(f"Created {doc_icns}")
+        print(f"Creado {doc_icns}")
     except Exception as e:
-        print(f"Could not create doc .icns: {e}")
+        print(f"No se pudo crear el .icns de documento: {e}")
 
 
 if __name__ == "__main__":
