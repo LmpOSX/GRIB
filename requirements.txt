@@ -1,0 +1,16 @@
+# Dependencias del visor GRIB (entorno pyenv "Grib", Python 3.14)
+#   pyenv virtualenv 3.14.3 Grib && pip install -r requirements.txt
+
+# Interfaz gráfica (base compartida con Presupuestador Pro)
+PyQt6>=6.6.0
+pyobjc-framework-Cocoa>=10.0; sys_platform == "darwin"   # desenfoque nativo y nombre de la app en macOS
+
+# Datos y mapa
+numpy>=1.24
+matplotlib>=3.7
+eccodes>=2.37        # bindings Python de ecCodes (las ruedas recientes incluyen la biblioteca)
+cartopy>=0.22        # opcional: costas y fronteras; el programa funciona sin él
+certifi>=2024.2.2    # opcional: certificados para la descarga de costas de Natural Earth
+
+# Empaquetado macOS (.app + DMG)
+py2app>=0.28; sys_platform == "darwin"
