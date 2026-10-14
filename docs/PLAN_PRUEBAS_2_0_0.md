@@ -79,15 +79,16 @@ detalle.
 
 | # | Caso | Pasos | Resultado esperado |
 |---|---|---|---|
-| G1 | Zoom | Clic en `Zoom`, arrastrar un rectángulo | Acerca; el botón queda marcado; Esc lo desmarca y sale del modo. |
-| G2 | Pan | Clic en `Pan`, arrastrar | Desplaza el mapa; Esc sale. |
+| G1 | Zoom con rueda | Girar la rueda sobre el mapa | Acerca / aleja alrededor del cursor, sin botones ni modos. |
+| G2 | Pan por arrastre | Arrastrar el mapa con el botón izquierdo | Cursor de mano abierta sobre el mapa, cerrada al arrastrar; el mapa sigue al mouse. |
+| G19 | El mapa llena el área | Abrir un archivo, redimensionar la ventana, aplicar un recuadro | No quedan franjas vacías a los costados ni arriba/abajo: la vista se amplía para ocupar todo el canvas y el dominio sigue completo. |
 | G3 | Inicio | Tras zoom, clic en `Inicio` | Vuelve a la vista inicial. |
 | G4 | Recuadro | Escribir lat/lon mín/máx y Enter (o "Aplicar recuadro") | La vista se ajusta; con valores inválidos aparece un aviso. |
 | G5 | Recuadro sincronizado | Hacer zoom con el mouse | Los campos lat/lon reflejan la vista actual. |
 | G6 | Todo el dominio | Botón o ⌘⇧0 | Vuelve a la grilla completa. |
 | G7 | Cambio de nivel con zoom | Hacer zoom y cambiar de FL, paso, variable, Extra Info, grilla o densidad | La vista se mantiene en todos los casos. |
 | G15 | Rueda del mouse | Girar la rueda sobre el mapa | Acerca/aleja alrededor del cursor; `Inicio` vuelve a la vista completa. |
-| G16 | Fluidez del pan | Densidad 1 + Extra Info + grilla, arrastrar con `Pan` | El mapa sigue al mouse sin trabarse; los rótulos y las etiquetas de la grilla desaparecen durante el arrastre y vuelven al soltar (≈0,2 s). |
+| G16 | Fluidez del pan | Densidad 1 + Extra Info + grilla, arrastrar el mapa | El mapa sigue al mouse sin trabarse; los rótulos y las etiquetas de la grilla desaparecen durante el arrastre y vuelven al soltar (≈0,2 s). |
 | G17 | Raleo automático | Vista completa con densidad 1 | Barbas y rótulos raleados pero legibles; al acercar aparecen todos los puntos; el cambio no "salta" entre vistas. |
 | G18 | Fluidez en proyecciones | Repetir G16 en estereográfica | Mismo comportamiento. |
 | G8 | Hover | Mover el mouse sobre el mapa | La barra inferior muestra lat/lon, punto de grilla, viento kt / dirección y T °C; fuera de la grilla sólo lat/lon. |
@@ -117,6 +118,7 @@ detalle.
 | I4 | Zoom de fuente | ⌘+ / ⌘− / ⌘0 con un archivo abierto | El texto de la interfaz crece / achica / vuelve a 13 y también el título, las etiquetas, la leyenda y los rótulos del mapa; el panel lateral se ensancha y no se corta; persiste al reiniciar. |
 | I7 | Mapa translúcido | Bajar la transparencia con un archivo abierto | El fondo del mapa deja ver el escritorio desenfocado; las barbas y costas siguen nítidas; el PNG exportado sale con fondo opaco. |
 | I5 | Escala de barbas | Cambiar el acento | Los colores de las barbas (cian…rojo) y de los contornos de temperatura no cambian. |
+| I8 | Casillas y radios | Marcar Extra Info y cambiar de variable | El indicador se pinta con el acento y además muestra el tilde (casillas) o el punto (radios). |
 | I6 | Diálogos glass | Abrir Preferencias, Atajos y Acerca de | Fondo translúcido con desenfoque, barra de título nativa, contenido sin aplastar; Esc / Cerrar los cierran. |
 
 ## J. Ayuda

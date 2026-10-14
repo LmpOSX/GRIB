@@ -130,13 +130,10 @@ class MainWindow(QMainWindow):
             save_config(self._cfg)
 
     def _on_escape(self):
-        """Único atajo Escape: sale del modo Zoom / Pan del mapa."""
-        mode = self._toolbar_mode()
-        if mode == "ZOOM":
-            self._toolbar.zoom()
-        elif mode == "PAN":
-            self._toolbar.pan()
-        self._sync_map_buttons()
+        """Único atajo Escape de la ventana: devuelve el foco al mapa (el pan
+        por arrastre y el zoom con la rueda no tienen modo que cancelar)."""
+        if self._reader is not None:
+            self.plot.canvas.setFocus()
 
     # ── Interfaz ──────────────────────────────────────────────────────────────
 
@@ -206,6 +203,13 @@ class MainWindow(QMainWindow):
         # propios en la barra de acciones.
         self._toolbar = NavigationToolbar2QT(self.plot.canvas, map_frame)
         self._toolbar.hide()
+        # Sólo se usa su historial de vistas (Inicio); su manejador de
+        # movimiento cambiaría el cursor que fija el pan por arrastre.
+        try:
+            self.plot.canvas.mpl_disconnect(self._toolbar._id_drag)
+        except Exception:
+            pass
+        self.plot.on_view_push = self._toolbar.push_current
         self._main_lay.addWidget(map_frame, 1)
 
         # ── Panel derecho con scroll ──
@@ -302,56 +306,19 @@ class MainWindow(QMainWindow):
         """Botones del mapa en la barra de acciones (reemplazan la toolbar de
         matplotlib, que queda oculta)."""
         self._btn_home = QPushButton("Inicio")
-        self._btn_home.setToolTip("Volver a la vista inicial del mapa")
+        self._btn_home.setToolTip("Volver a la vista inicial del mapa "
+                                  "(arrastrar = pan, rueda = zoom)")
         self._btn_home.clicked.connect(self._map_home)
-        self._btn_zoom = QPushButton("Zoom")
-        self._btn_zoom.setObjectName("MapBtn")
-        self._btn_zoom.setCheckable(True)
-        self._btn_zoom.setToolTip("Zoom: arrastrar un rectángulo sobre el mapa (Esc para salir)")
-        self._btn_zoom.clicked.connect(self._map_zoom)
-        self._btn_pan = QPushButton("Pan")
-        self._btn_pan.setObjectName("MapBtn")
-        self._btn_pan.setCheckable(True)
-        self._btn_pan.setToolTip("Pan: arrastrar el mapa (Esc para salir)")
-        self._btn_pan.clicked.connect(self._map_pan)
         self._btn_png = QPushButton("Guardar PNG")
         self._btn_png.setToolTip("Exportar la vista actual a PNG (Ctrl+E)")
         self._btn_png.clicked.connect(self.export_png)
-        for b in (self._btn_home, self._btn_zoom, self._btn_pan):
-            lay.addWidget(b)
+        lay.addWidget(self._btn_home)
         lay.addWidget(self._action_sep())
         lay.addWidget(self._btn_png)
 
-    # ── Toolbar de matplotlib (oculta) ───────────────────────────────────────
-
-    def _toolbar_mode(self) -> str:
-        mode = getattr(self._toolbar, "mode", None)
-        name = getattr(mode, "name", None)
-        if name:
-            return name
-        text = str(mode or "")
-        if "zoom" in text and "rect" in text:
-            return "ZOOM"
-        if "pan" in text:
-            return "PAN"
-        return "NONE"
-
-    def _sync_map_buttons(self):
-        mode = self._toolbar_mode()
-        self._btn_zoom.setChecked(mode == "ZOOM")
-        self._btn_pan.setChecked(mode == "PAN")
-
     def _map_home(self):
+        """Vista inicial (historial de la toolbar oculta de matplotlib)."""
         self._toolbar.home()
-        self._sync_map_buttons()
-
-    def _map_zoom(self):
-        self._toolbar.zoom()
-        self._sync_map_buttons()
-
-    def _map_pan(self):
-        self._toolbar.pan()
-        self._sync_map_buttons()
 
     # ── Menús ────────────────────────────────────────────────────────────────
 
@@ -613,7 +580,6 @@ class MainWindow(QMainWindow):
         if not keep_view:
             # Vista nueva: reinicia el historial de zoom/pan de la toolbar
             self._toolbar.update()
-            self._sync_map_buttons()
 
     def _update_status_panel(self, step, step_idx, info, u, v, t):
         run = self._reader.run_time()
@@ -684,7 +650,6 @@ class MainWindow(QMainWindow):
         self.plot.set_extent([float(r.lons.min()), float(r.lons.max()),
                               float(r.lats.min()), float(r.lats.max())])
         self._toolbar.update()
-        self._sync_map_buttons()
 
     def _on_draw(self, _event):
         """Tras cada dibujo (zoom/pan incluidos) refleja la extensión en los

@@ -210,6 +210,13 @@ class WindPlot:
         self._settle_timer.setSingleShot(True)
         self._settle_timer.setInterval(SETTLE_MS)
         self._settle_timer.timeout.connect(self._on_view_settled)
+        # Pan por arrastre con el botón izquierdo (sin modo ni botón aparte)
+        self._panning = False
+        self.on_view_push = None        # callable: guarda la vista antes de moverla (Inicio)
+        self.canvas.mpl_connect("button_press_event", self._on_press)
+        self.canvas.mpl_connect("motion_notify_event", self._on_motion)
+        self.canvas.mpl_connect("button_release_event", self._on_release)
+        self.canvas.mpl_connect("resize_event", self._on_resize)
         self._make_axes()
         self._style_axes()
         self.draw_empty()
@@ -221,7 +228,7 @@ class WindPlot:
             self.ax = self.fig.add_subplot(1, 1, 1, projection=self.proj)
         else:
             self.ax = self.fig.add_subplot(1, 1, 1)
-        self.fig.subplots_adjust(left=0.06, right=0.99, top=0.95, bottom=0.07)
+        self.fig.subplots_adjust(left=0.045, right=0.995, top=0.955, bottom=0.055)
         self._base_artists, self._gridliners = [], []
         self._static_artists, self._view_artists, self._label_artists = [], [], []
         self._base_key = None
@@ -310,7 +317,8 @@ class WindPlot:
             return None
 
     def set_extent(self, extent):
-        """Fija la extensión [lonmin, lonmax, latmin, latmax]."""
+        """Fija la extensión [lonmin, lonmax, latmin, latmax] y la amplía en
+        el sentido que haga falta para llenar el área del mapa."""
         lon0, lon1, lat0, lat1 = extent
         if lon1 <= lon0 or lat1 <= lat0:
             return
@@ -319,7 +327,41 @@ class WindPlot:
         else:
             self.ax.set_xlim(lon0, lon1)
             self.ax.set_ylim(lat0, lat1)
+        self._fit_view_to_box()
         self.canvas.draw_idle()
+
+    def _fit_view_to_box(self):
+        """Amplía (nunca recorta) los límites actuales para que su proporción
+        coincida con la del área de los ejes: así el mapa, que mantiene la
+        escala igual en x e y, ocupa todo el canvas en vez de dejar franjas
+        vacías a los costados o arriba y abajo."""
+        ax = self.ax
+        try:
+            bw, bh = float(ax.bbox.width), float(ax.bbox.height)
+        except Exception:
+            return
+        if bw <= 1 or bh <= 1:
+            return
+        x0, x1 = ax.get_xlim()
+        y0, y1 = ax.get_ylim()
+        w, h = x1 - x0, y1 - y0
+        if w <= 0 or h <= 0:
+            return
+        box_aspect = bw / bh
+        if w / h < box_aspect:
+            # El área es más ancha que la vista: se ensancha en x
+            new_w = h * box_aspect
+            cx = (x0 + x1) / 2.0
+            ax.set_xlim(cx - new_w / 2.0, cx + new_w / 2.0)
+        else:
+            new_h = w / box_aspect
+            cy = (y0 + y1) / 2.0
+            ax.set_ylim(cy - new_h / 2.0, cy + new_h / 2.0)
+
+    def _on_resize(self, _event):
+        """Al cambiar el tamaño del canvas se vuelve a llenar el área."""
+        if self.has_data and not self._in_draw:
+            self._fit_view_to_box()
 
     def zoom_at(self, x, y, factor):
         """Acerca (factor < 1) o aleja (factor > 1) la vista alrededor del
@@ -331,6 +373,42 @@ class WindPlot:
         self.ax.set_xlim(x - (x - x0) * factor, x + (x1 - x) * factor)
         self.ax.set_ylim(y - (y - y0) * factor, y + (y1 - y) * factor)
         self.canvas.draw_idle()
+
+    # ----------------------------------------------------------- pan
+    def _on_press(self, event):
+        if (event.button != 1 or event.inaxes is not self.ax or not self.has_data
+                or event.dblclick):
+            return
+        if self.on_view_push is not None:
+            try:
+                self.on_view_push()
+            except Exception:
+                pass
+        self.ax.start_pan(event.x, event.y, 1)
+        self._panning = True
+        self.canvas.setCursor(Qt.CursorShape.ClosedHandCursor)
+
+    def _on_motion(self, event):
+        if not self._panning:
+            if self.has_data and event.inaxes is self.ax:
+                self.canvas.setCursor(Qt.CursorShape.OpenHandCursor)
+            elif self.canvas.cursor().shape() != Qt.CursorShape.ArrowCursor:
+                self.canvas.setCursor(Qt.CursorShape.ArrowCursor)
+            return
+        self.ax.drag_pan(1, None, event.x, event.y)
+        self.canvas.draw_idle()
+
+    def _on_release(self, event):
+        if not self._panning:
+            return
+        self._panning = False
+        try:
+            self.ax.end_pan()
+        except Exception:
+            pass
+        self.canvas.setCursor(Qt.CursorShape.OpenHandCursor
+                              if event.inaxes is self.ax else Qt.CursorShape.ArrowCursor)
+        self._settle_timer.start()
 
     def _on_lim_changed(self, _ax):
         """Cualquier cambio de vista (pan, zoom, rueda, Inicio): mientras
@@ -610,6 +688,7 @@ class WindPlot:
                     else:
                         ax.set_xlim(lon0, lon1)
                         ax.set_ylim(lat0, lat1)
+                    self._fit_view_to_box()
             self.has_data = True
 
             # Capa por vista: barbas y rótulos de lo visible

@@ -2,7 +2,14 @@
 Generates a full QSS glassmorphism theme from a single accent hex color.
 Background is intentionally translucent — blur is applied at the OS level.
 """
+import os
+
 from PyQt6.QtGui import QColor
+
+# Imágenes de los indicadores (tilde y punto) en resources/, referenciadas
+# por ruta absoluta en el stylesheet
+_RESOURCES = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))),
+                          "resources").replace("\\", "/")
 
 
 def _hex(color: QColor) -> str:
@@ -608,9 +615,6 @@ QPushButton#FLBtn:checked {{
     color: {txt};
     font-weight: 700;
 }}
-QPushButton#MapBtn:checked {{
-    background: {acc_solid};
-}}
 QCheckBox, QRadioButton {{
     color: {txt};
     background: transparent;
@@ -630,6 +634,15 @@ QRadioButton::indicator {{
 }}
 QCheckBox::indicator:checked, QRadioButton::indicator:checked {{
     background: {acc_solid};
+    border-color: {accl};
+}}
+QCheckBox::indicator:checked {{
+    image: url("{_RESOURCES}/check.svg");
+}}
+QRadioButton::indicator:checked {{
+    image: url("{_RESOURCES}/radio_dot.svg");
+}}
+QCheckBox::indicator:hover, QRadioButton::indicator:hover {{
     border-color: {accl};
 }}
 QPlainTextEdit {{

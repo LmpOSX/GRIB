@@ -187,13 +187,18 @@ class TestRecuadroYCursor(_MapBase):
         self.w.apply_extent(-55.0, -40.0, -8.0, 2.0)
         self.w.plot.canvas.draw()            # emite draw_event → entradas del recuadro
         _app.processEvents()
-        self.assertEqual(self.w.panel.ent_lonmin.text(), "-55.00")
-        self.assertEqual(self.w.panel.ent_latmax.text(), "2.00")
+        # La vista se amplía para llenar el área: el recuadro pedido queda contenido
+        self.assertLessEqual(float(self.w.panel.ent_lonmin.text()), -55.0)
+        self.assertGreaterEqual(float(self.w.panel.ent_lonmax.text()), -40.0)
+        self.assertLessEqual(float(self.w.panel.ent_latmin.text()), -8.0)
+        self.assertGreaterEqual(float(self.w.panel.ent_latmax.text()), 2.0)
+        self.assertLess(float(self.w.panel.ent_lonmax.text()), -20.0)   # pero no es el dominio entero
         self.w.full_extent()
         self.w.plot.canvas.draw()
         _app.processEvents()
-        self.assertEqual(self.w.panel.ent_lonmin.text(), "-60.00")
-        self.assertEqual(self.w.panel.ent_latmin.text(), "-10.00")
+        self.assertLessEqual(float(self.w.panel.ent_lonmin.text()), -60.0)
+        self.assertLessEqual(float(self.w.panel.ent_latmin.text()), -10.0)
+        self.assertGreaterEqual(float(self.w.panel.ent_latmax.text()), 10.0)
 
     def test_recuadro_desde_el_panel(self):
         p = self.w.panel
@@ -201,8 +206,14 @@ class TestRecuadroYCursor(_MapBase):
         p.ent_lonmin.setText("-58"); p.ent_lonmax.setText("-35")
         p._apply_extent()
         ext = self.w.plot.get_extent()
-        self.assertAlmostEqual(ext[0], -58.0, places=3)
-        self.assertAlmostEqual(ext[3], 1.0, places=3)
+        self.assertLessEqual(ext[0], -58.0 + 1e-6)
+        self.assertGreaterEqual(ext[1], -35.0 - 1e-6)
+        self.assertLessEqual(ext[2], -9.0 + 1e-6)
+        self.assertGreaterEqual(ext[3], 1.0 - 1e-6)
+        # y con la proporción del área del mapa
+        x0, x1 = self.w.plot.ax.get_xlim(); y0, y1 = self.w.plot.ax.get_ylim()
+        bb = self.w.plot.ax.bbox
+        self.assertAlmostEqual((x1 - x0) / (y1 - y0), bb.width / bb.height, places=3)
 
     def test_recuadro_invalido_avisa(self):
         avisos = []
@@ -225,16 +236,40 @@ class TestRecuadroYCursor(_MapBase):
         txt_fuera = self.w.cursor_text(100.0, 80.0)
         self.assertNotIn("punto", txt_fuera)
 
-    def test_escape_sale_del_modo_zoom(self):
-        self.w._map_zoom()
-        self.assertTrue(self.w._btn_zoom.isChecked())
-        self.w._on_escape()
-        self.assertFalse(self.w._btn_zoom.isChecked())
-        self.assertEqual(self.w._toolbar_mode(), "NONE")
-        self.w._map_pan()
-        self.assertTrue(self.w._btn_pan.isChecked())
-        self.w._on_escape()
-        self.assertFalse(self.w._btn_pan.isChecked())
+    def test_pan_por_arrastre(self):
+        class E:
+            pass
+        plot = self.w.plot
+        x0, x1 = plot.ax.get_xlim()
+        # Botón izquierdo dentro del mapa: arrastre horizontal
+        e = E(); e.button = 1; e.inaxes = plot.ax; e.dblclick = False
+        e.x, e.y = 300, 300; e.xdata, e.ydata = -50.0, -2.0
+        plot._on_press(e)
+        self.assertTrue(plot._panning)
+        e2 = E(); e2.button = 1; e2.inaxes = plot.ax; e2.x, e2.y = 360, 300
+        plot._on_motion(e2)
+        plot._on_release(e2)
+        self.assertFalse(plot._panning)
+        nx0, nx1 = plot.ax.get_xlim()
+        self.assertLess(nx0, x0)                    # la vista se corrió hacia el oeste
+        self.assertAlmostEqual(nx1 - nx0, x1 - x0, places=6)   # sin cambiar el zoom
+        # Botón derecho o fuera del mapa: no arrastra
+        e3 = E(); e3.button = 3; e3.inaxes = plot.ax; e3.dblclick = False
+        plot._on_press(e3)
+        self.assertFalse(plot._panning)
+
+    def test_vista_llena_el_canvas(self):
+        plot = self.w.plot
+        x0, x1 = plot.ax.get_xlim()
+        y0, y1 = plot.ax.get_ylim()
+        bw, bh = plot.ax.bbox.width, plot.ax.bbox.height
+        self.assertAlmostEqual((x1 - x0) / (y1 - y0), bw / bh, places=3)
+        # El dominio completo sigue visible
+        ext = plot.get_extent()
+        self.assertLessEqual(ext[0], float(self.reader.lons.min()) + 1e-6)
+        self.assertGreaterEqual(ext[1], float(self.reader.lons.max()) - 1e-6)
+        self.assertLessEqual(ext[2], float(self.reader.lats.min()) + 1e-6)
+        self.assertGreaterEqual(ext[3], float(self.reader.lats.max()) - 1e-6)
 
 
 class TestExportar(_MapBase):

@@ -118,12 +118,13 @@ empaquetada (`scripts/build.sh`).
 
 ### Barra de acciones y mapa
 
-`Abrir GRIB…`, `Inicio` (vista inicial), `Zoom` (arrastrar un rectángulo),
-`Pan` (arrastrar el mapa), `Guardar PNG` y `⚙` (preferencias: color de
-acento y transparencia). La rueda del mouse acerca o aleja alrededor del
-cursor y Esc sale del modo Zoom / Pan. La vista (zoom y pan) se conserva al
-cambiar paso, nivel, variable u opciones; `Inicio` o `Todo el dominio` la
-reinician.
+`Abrir GRIB…`, `Inicio` (vista inicial), `Guardar PNG` y `⚙` (preferencias:
+color de acento y transparencia). El mapa se mueve arrastrándolo con el
+botón izquierdo (cursor de mano) y se acerca o aleja con la rueda del mouse
+alrededor del cursor; no hay modos ni botones de zoom/pan. La vista se
+conserva al cambiar paso, nivel, variable u opciones; `Inicio` o `Todo el
+dominio` la reinician. La vista siempre llena el área del mapa: al fijar el
+dominio o un recuadro se amplía en el sentido que haga falta.
 
 Para que el mapa responda rápido, las barbas y los rótulos de "Extra Info"
 se dibujan sólo para la zona visible y se ralean automáticamente cuando hay
@@ -158,8 +159,8 @@ reordenan de sur a norte si el archivo viene de norte a sur.
 | Capa de datos activada / desactivada | ⌘ D | Ctrl D |
 | Preferencias… | ⌘ , | Ctrl , |
 | Agrandar / achicar / restablecer fuente | ⌘ + / ⌘ − / ⌘ 0 | Ctrl + / Ctrl − / Ctrl 0 |
+| Desplazar el mapa | Arrastrar | Arrastrar |
 | Acercar / alejar alrededor del cursor | Rueda | Rueda |
-| Salir del modo Zoom / Pan | Esc | Esc |
 | Atajos de teclado | ⌘ / | Ctrl / |
 
 La configuración (color, transparencia, tamaño de fuente, geometría,

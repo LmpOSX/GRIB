@@ -64,6 +64,8 @@ OPTIONS = {
     "resources": [
         "resources/VisorGRIB.icns",
         "resources/GribDocument.icns",
+        "resources/check.svg",
+        "resources/radio_dot.svg",
     ],
 }
 
