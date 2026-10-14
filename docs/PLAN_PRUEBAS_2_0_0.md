@@ -85,7 +85,11 @@ detalle.
 | G4 | Recuadro | Escribir lat/lon mín/máx y Enter (o "Aplicar recuadro") | La vista se ajusta; con valores inválidos aparece un aviso. |
 | G5 | Recuadro sincronizado | Hacer zoom con el mouse | Los campos lat/lon reflejan la vista actual. |
 | G6 | Todo el dominio | Botón o ⌘⇧0 | Vuelve a la grilla completa. |
-| G7 | Cambio de nivel con zoom | Hacer zoom y cambiar de FL | La vista se mantiene. |
+| G7 | Cambio de nivel con zoom | Hacer zoom y cambiar de FL, paso, variable, Extra Info, grilla o densidad | La vista se mantiene en todos los casos. |
+| G15 | Rueda del mouse | Girar la rueda sobre el mapa | Acerca/aleja alrededor del cursor; `Inicio` vuelve a la vista completa. |
+| G16 | Fluidez del pan | Densidad 1 + Extra Info + grilla, arrastrar con `Pan` | El mapa sigue al mouse sin trabarse; los rótulos y las etiquetas de la grilla desaparecen durante el arrastre y vuelven al soltar (≈0,2 s). |
+| G17 | Raleo automático | Vista completa con densidad 1 | Barbas y rótulos raleados pero legibles; al acercar aparecen todos los puntos; el cambio no "salta" entre vistas. |
+| G18 | Fluidez en proyecciones | Repetir G16 en estereográfica | Mismo comportamiento. |
 | G8 | Hover | Mover el mouse sobre el mapa | La barra inferior muestra lat/lon, punto de grilla, viento kt / dirección y T °C; fuera de la grilla sólo lat/lon. |
 | G9 | Sin cartopy | Desinstalar cartopy temporalmente (`pip uninstall cartopy`) | El mapa se dibuja sin costas con el aviso; Acerca de lo indica. Reinstalar después. |
 | G11 | Proyección estereográfica | CONFIG ▸ Proyección ▸ "Estereográfica conforme (centro del dominio)" | El mapa se redibuja con meridianos convergentes, barbas rotadas, etiquetas de lat/lon en los bordes; el hover sigue mostrando lat/lon correctos; zoom, pan, Inicio y recuadro funcionan. |
@@ -110,7 +114,8 @@ detalle.
 | I1 | Color de acento | `⚙` ▸ preset Verde ▸ Aplicar | Toda la interfaz y el fondo del mapa cambian; se conserva al reiniciar. |
 | I2 | Vista previa y cancelar | `⚙` ▸ elegir color ▸ Cancelar | Vuelve al color anterior. |
 | I3 | Transparencia | Mover el deslizador con un archivo abierto | Toda la ventana cambia de opacidad en vivo, incluido el panel derecho (controles e inventario): con el valor mínimo se ve el escritorio desenfocado detrás; sólo el mapa queda opaco. |
-| I4 | Zoom de fuente | ⌘+ / ⌘− / ⌘0 | El texto de la interfaz crece / achica / vuelve a 13; persiste al reiniciar. |
+| I4 | Zoom de fuente | ⌘+ / ⌘− / ⌘0 con un archivo abierto | El texto de la interfaz crece / achica / vuelve a 13 y también el título, las etiquetas, la leyenda y los rótulos del mapa; el panel lateral se ensancha y no se corta; persiste al reiniciar. |
+| I7 | Mapa translúcido | Bajar la transparencia con un archivo abierto | El fondo del mapa deja ver el escritorio desenfocado; las barbas y costas siguen nítidas; el PNG exportado sale con fondo opaco. |
 | I5 | Escala de barbas | Cambiar el acento | Los colores de las barbas (cian…rojo) y de los contornos de temperatura no cambian. |
 | I6 | Diálogos glass | Abrir Preferencias, Atajos y Acerca de | Fondo translúcido con desenfoque, barra de título nativa, contenido sin aplastar; Esc / Cerrar los cierran. |
 

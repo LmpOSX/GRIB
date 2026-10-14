@@ -82,7 +82,14 @@ class MainWindow(QMainWindow):
         plot = getattr(self, "plot", None)
         if plot is None:
             return
+        # El panel lateral crece con el tamaño de fuente para no cortarse
+        scale = self._cfg.get("font_size", 13) / 13.0
+        self._side_scroll.setFixedWidth(int(PANEL_WIDTH * scale))
         p = generate_palette(self._cfg["accent_color"])
+        # Fuentes del mapa escaladas con el zoom de fuente (13 = tamaño base)
+        plot.set_font_scale(self._cfg.get("font_size", 13) / 13.0)
+        # Fondo del mapa con la misma transparencia que la ventana
+        plot.set_opacity(self._cfg.get("opacity", 180) / 255.0)
         plot.set_palette(
             bg=p["bg_data"].name(), ax_bg=p["bg_data"].name(),
             text=p["text_bright"].name(), text_dim=p["text_dim"].name(),
@@ -232,6 +239,7 @@ class MainWindow(QMainWindow):
         inv_lay.addWidget(self.inventory)
         side_lay.addWidget(inv_frame)
         scroll.setWidget(side)
+        self._side_scroll = scroll
         self._main_lay.addWidget(scroll)
 
         # ── Señales del panel: cualquier cambio redibuja solo ──
@@ -250,6 +258,7 @@ class MainWindow(QMainWindow):
         # ── Eventos del canvas ──
         self.plot.canvas.mpl_connect("motion_notify_event", self._on_motion)
         self.plot.canvas.mpl_connect("draw_event", self._on_draw)
+        self.plot.canvas.mpl_connect("scroll_event", self._on_scroll)
 
     def _build_action_bar(self) -> QWidget:
         bar = QFrame()
@@ -590,10 +599,10 @@ class MainWindow(QMainWindow):
                     "ambos": "Viento + Temperatura"}[mode]
         title = f"Corrida {fmt_dt(run)}Z  {step.label()}  |  {lvl_txt}  |  {mode_txt}"
 
-        extent = self.plot.get_extent() if (keep_extent and self.plot.has_data) else None
+        keep_view = bool(keep_extent and self.plot.has_data)
         opts = dict(panel.options())
         opts.update({"mode": mode, "show_wind": self._layer_enabled,
-                     "extent": extent, "title": title})
+                     "keep_view": keep_view, "extent": None, "title": title})
         try:
             self.plot.draw(r.lats, r.lons, u, v, t, opts)
         except Exception as exc:
@@ -601,7 +610,7 @@ class MainWindow(QMainWindow):
             QMessageBox.critical(self, "Error al dibujar",
                                  f"No se pudo dibujar el mapa:\n{exc}")
             return
-        if extent is None:
+        if not keep_view:
             # Vista nueva: reinicia el historial de zoom/pan de la toolbar
             self._toolbar.update()
             self._sync_map_buttons()
@@ -684,6 +693,17 @@ class MainWindow(QMainWindow):
             ext = self.plot.get_extent()
             if ext:
                 self.panel.set_extent_entries(ext)
+
+    def _on_scroll(self, event):
+        """Rueda del mouse: zoom alrededor del cursor (arriba acerca)."""
+        if event.inaxes is not self.plot.ax or not self.plot.has_data:
+            return
+        factor = 0.8 if event.button == "up" else 1.25
+        try:
+            self._toolbar.push_current()      # para que Inicio/atrás funcionen
+        except Exception:
+            pass
+        self.plot.zoom_at(event.xdata, event.ydata, factor)
 
     def _on_motion(self, event):
         """Lat/lon y valores bajo el cursor en la barra de estado."""

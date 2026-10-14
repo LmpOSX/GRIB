@@ -120,7 +120,16 @@ empaquetada (`scripts/build.sh`).
 
 `Abrir GRIB…`, `Inicio` (vista inicial), `Zoom` (arrastrar un rectángulo),
 `Pan` (arrastrar el mapa), `Guardar PNG` y `⚙` (preferencias: color de
-acento y transparencia). Al mover el mouse sobre el mapa la barra inferior
+acento y transparencia). La rueda del mouse acerca o aleja alrededor del
+cursor y Esc sale del modo Zoom / Pan. La vista (zoom y pan) se conserva al
+cambiar paso, nivel, variable u opciones; `Inicio` o `Todo el dominio` la
+reinician.
+
+Para que el mapa responda rápido, las barbas y los rótulos de "Extra Info"
+se dibujan sólo para la zona visible y se ralean automáticamente cuando hay
+demasiados (al acercar la vista aparecen todos; `Densidad` fija el raleo
+mínimo). Mientras se arrastra el mapa se ocultan los rótulos y las etiquetas
+de la grilla, que vuelven al soltar. Al mover el mouse sobre el mapa la barra inferior
 muestra lat/lon y, en el punto de grilla más cercano, velocidad (kt),
 dirección (°) y temperatura (°C).
 
@@ -149,6 +158,7 @@ reordenan de sur a norte si el archivo viene de norte a sur.
 | Capa de datos activada / desactivada | ⌘ D | Ctrl D |
 | Preferencias… | ⌘ , | Ctrl , |
 | Agrandar / achicar / restablecer fuente | ⌘ + / ⌘ − / ⌘ 0 | Ctrl + / Ctrl − / Ctrl 0 |
+| Acercar / alejar alrededor del cursor | Rueda | Rueda |
 | Salir del modo Zoom / Pan | Esc | Esc |
 | Atajos de teclado | ⌘ / | Ctrl / |
 

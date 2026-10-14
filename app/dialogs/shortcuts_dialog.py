@@ -22,6 +22,7 @@ SHORTCUTS = [
     ("Vista", "Achicar fuente", "Cmd − (o Alt −)"),
     ("Vista", "Tamaño de fuente normal", "Cmd 0 (o Alt 0)"),
     ("Mapa", "Zoom (arrastrar un rectángulo) / Pan (arrastrar)", "Botones Zoom y Pan"),
+    ("Mapa", "Acercar / alejar alrededor del cursor", "Rueda del mouse"),
     ("Mapa", "Salir del modo Zoom / Pan", "Esc"),
     ("Mapa", "Volver a la vista inicial", "Botón Inicio"),
     ("Mapa", "Valores bajo el cursor", "Mover el mouse sobre el mapa"),
