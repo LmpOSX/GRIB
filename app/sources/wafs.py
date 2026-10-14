@@ -107,7 +107,7 @@ class WAFSSource(Source):
         return reqs
 
     def fetch_request(self, req, fetch_fn, chunk_cb=None, cancel=None, retry_wait=1.5,
-                      max_bytes=None):
+                      max_bytes=None, status_cb=None):
         data = super().fetch_request(req, fetch_fn, chunk_cb, cancel, retry_wait, max_bytes)
         # Si la API devuelve el ítem como JSON (OGC API Features), se sigue el
         # enlace al GRIB2.

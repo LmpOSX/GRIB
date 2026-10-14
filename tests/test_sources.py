@@ -551,26 +551,141 @@ class TestECMWF(unittest.TestCase):
         llamadas = {}
 
         class FakeClient:
-            def __init__(self, source, model, resol):
-                llamadas["source"] = source
+            def __init__(self, source, reintentos, espera):
+                llamadas["source"], llamadas["reintentos"], llamadas["espera"] = source, reintentos, espera
 
             def retrieve(self, **kw):
                 llamadas["kw"] = kw
                 with open(kw["target"], "wb") as fh:
                     fh.write(b"GRIBecmwf")
         old = em._client
-        em._client = lambda source: FakeClient(source, "ifs", "0p25")
+        em._client = FakeClient
         try:
             s = em.ECMWFSource()
-            req = s.build_requests(_job(variables=["t"], levels=[500], params={"servidor": "azure"}), 9)[0]
+            req = s.build_requests(_job(variables=["t"], levels=[500],
+                                        params={"servidor": "azure", "reintentos": 7, "espera_s": 12}), 9)[0]
+            self.assertNotIn("reintentos", req.url)        # no altera la clave de caché
             data = s.fetch_request(req, None)
         finally:
             em._client = old
         self.assertEqual(data, b"GRIBecmwf")
         self.assertEqual(llamadas["source"], "azure")
+        self.assertEqual((llamadas["reintentos"], llamadas["espera"]), (7, 12))
         self.assertEqual((llamadas["kw"]["date"], llamadas["kw"]["time"], llamadas["kw"]["step"]),
                          ("20261014", 6, 9))
         self.assertEqual(llamadas["kw"]["levelist"], [500])
+
+    def test_parametros_de_reintento_por_defecto(self):
+        from app.sources.ecmwf import ECMWFSource, DEFAULT_RETRIES, DEFAULT_WAIT_S
+        s = ECMWFSource()
+        p = s.default_params()
+        self.assertEqual((p["reintentos"], p["espera_s"]), (DEFAULT_RETRIES, DEFAULT_WAIT_S))
+        self.assertLessEqual(DEFAULT_RETRIES, 20); self.assertLessEqual(DEFAULT_WAIT_S, 60)
+        kinds = {q.key: q.kind for q in s.params}
+        self.assertEqual((kinds["reintentos"], kinds["espera_s"]), ("int", "int"))
+
+    def test_cliente_real_recibe_la_politica(self):
+        try:
+            import ecmwf.opendata  # noqa: F401
+        except Exception:
+            self.skipTest("sin ecmwf-opendata")
+        from app.sources import ecmwf as em
+        c = em._client("aws", 4, 9)
+        self.assertEqual((c.maximum_retries, c.retry_after, c.use_server_retry_after), (4, 9, True))
+        import multiurl.retry as R
+        self.assertIs(R._logged_sleep, em._cancellable_sleep)
+
+    def test_mensajes_de_reintento_a_texto(self):
+        from app.sources.ecmwf import parse_retry_message as f
+        self.assertEqual(f("Recovering from HTTP error [503 Slow Down], attempt 1 of 10"),
+                         "servidor saturado (503 Slow Down), reintento 1 de 10")
+        self.assertEqual(f("Recovering from HTTP error [502 Bad Gateway], attempt 2 of 10"),
+                         "error del servidor (502 Bad Gateway), reintento 2 de 10")
+        self.assertIn("error de conexión", f("Recovering from connection error [boom], attempt 3 of 10"))
+        self.assertEqual(f("Retrying in 30 seconds"), "reintento en 30 s")
+        self.assertIsNone(f("Downloading https://x"))
+
+    def test_puente_a_la_ventana_de_avance_y_cancelacion(self):
+        import logging
+        from app.sources import ecmwf as em
+        from app.sources.base import DownloadCancelled
+        em._install_hooks()
+        estados = []
+        with em._retry_context(estados.append, lambda: False):
+            logging.getLogger("multiurl.retry").warning(
+                "Recovering from HTTP error [%s %s], attempt %s of %s", 503, "Slow Down", 1, 10)
+            em._cancellable_sleep(0.05)
+        self.assertEqual(estados[0], "servidor saturado (503 Slow Down), reintento 1 de 10")
+        self.assertTrue(any(e.startswith("servidor saturado: reintento en") for e in estados[1:]))
+        # Fuera del contexto no molesta
+        logging.getLogger("multiurl.retry").warning("Retrying in 120 seconds")
+        self.assertEqual(len([e for e in estados if "120" in e]), 0)
+        # Cancelar corta la espera enseguida
+        import time
+        t0 = time.monotonic()
+        with em._retry_context(None, lambda: True):
+            with self.assertRaises(DownloadCancelled):
+                em._cancellable_sleep(30)
+        self.assertLess(time.monotonic() - t0, 2)
+
+    def test_saturacion_persistente_explica(self):
+        from app.sources import ecmwf as em
+        from app.sources.base import DownloadError, DownloadCancelled
+
+        class Saturado:
+            def __init__(self, *a):
+                pass
+
+            def retrieve(self, **kw):
+                raise RuntimeError("503 Server Error: Slow Down for url: https://x")
+
+        class Cancelado(Saturado):
+            def retrieve(self, **kw):
+                raise DownloadCancelled()
+        old = em._client
+        s = em.ECMWFSource()
+        req = s.build_requests(_job(variables=["t"], levels=[500]), 6)[0]
+        try:
+            em._client = Saturado
+            with self.assertRaises(DownloadError) as cm:
+                s.fetch_request(req, None)
+            self.assertIn("saturado", str(cm.exception)); self.assertIn("10 reintentos", str(cm.exception))
+            em._client = Cancelado
+            with self.assertRaises(DownloadCancelled):
+                s.fetch_request(req, None)
+        finally:
+            em._client = old
+
+    def test_descarga_muestra_los_reintentos(self):
+        """El texto que emite la librería llega al progress_cb de la descarga."""
+        from app.sources import ecmwf as em
+        import logging
+
+        class Lento:
+            def __init__(self, *a):
+                pass
+
+            def retrieve(self, **kw):
+                logging.getLogger("multiurl.retry").warning(
+                    "Recovering from HTTP error [503 Slow Down], attempt 1 of 10")
+                with open(kw["target"], "wb") as fh:
+                    fh.write(b"GRIB" + b"\0" * 60)
+        old = em._client
+        tmp = tempfile.TemporaryDirectory()
+        mensajes = []
+        try:
+            em._client = Lento
+            s = em.ECMWFSource()
+            job = _job(variables=["t"], levels=[500], steps=[6], dest_dir=tmp.name, region=None)
+            s.download(job, progress_cb=lambda i, n, msg, frac: mensajes.append(msg),
+                       write_provenance=False)
+        except Exception:
+            pass
+        finally:
+            em._client = old
+            tmp.cleanup()
+        self.assertTrue(any("servidor saturado (503 Slow Down), reintento 1 de 10" in m for m in mensajes),
+                        mensajes)
 
 
 class TestSMN(unittest.TestCase):

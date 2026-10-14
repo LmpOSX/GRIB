@@ -114,7 +114,7 @@ class GenericSource(Source):
         return [Request(url, expect="netcdf" if p["formato"] == "netcdf" else "grib")]
 
     def fetch_request(self, req, fetch_fn, chunk_cb=None, cancel=None, retry_wait=1.5,
-                      max_bytes=None):
+                      max_bytes=None, status_cb=None):
         creds = self.credentials() or {}
         auth = creds.get("auth") or getattr(self, "_auth", None) or "ninguna"
         import time

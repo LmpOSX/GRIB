@@ -190,6 +190,7 @@ detalle.
 |---|---|---|---|
 | N1 | ECMWF | Fuente = ECMWF Open Data, `Obtener datos…`, 1 plazo, 2 niveles, zona de prueba | Baja por la librería (espejo AWS), recorta localmente, abre con FUENTE `ECMWF Open Data (IFS …)`; grilla 0,25° de la zona. |
 | N2 | ECMWF 06/18 | Corrida 06Z, plazo +96 | Aviso "no ofrece" (06/18 llegan a +90). |
+| N2b | ECMWF saturado | Preferencias ▸ Fuentes ▸ ECMWF: Reintentos = 2, Espera = 10 s; bajar justo después de una publicación (o con el espejo `data.ecmwf.int`) | La ventana de avance muestra `servidor saturado (503 Slow Down), reintento 1 de 2` y la cuenta regresiva `reintento en N s`; `Cancelar` corta la espera al instante; si se agotan, error "el servidor está saturado … tras 2 reintentos". En consola la librería sigue imprimiendo su barra y el aviso CC BY 4.0 (informativo). |
 | N3 | ICON | Fuente = DWD ICON global, 1 plazo, 2 niveles, U/V/T | Primera vez baja los pesos (44 MB) y luego un archivo por campo; abre con grilla 0,25° recortada; FUENTE `regrillado: vecino más cercano`. |
 | N4 | ICON corrida vieja | Elegir la 3.ª corrida del combo | 404 explicado (DWD sólo conserva la última por ciclo). |
 | N5 | SMN | Fuente = SMN Argentina WRF 4 km, 1 plazo, zona dentro del dominio | Baja ~38 MB, convierte a GRIB2 0,04°; el panel no muestra LEVEL; STATUS `LEVEL: superficie`; FUENTE `SMN …`; barbas de viento a 10 m y T a 2 m. |

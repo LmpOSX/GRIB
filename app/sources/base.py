@@ -200,9 +200,10 @@ class Source:
         return cr.get_all(self.key)
 
     def fetch_request(self, req, fetch_fn, chunk_cb=None, cancel=None, retry_wait=1.5,
-                      max_bytes=None):
+                      max_bytes=None, status_cb=None):
         """Obtiene los bytes de un Request. Por defecto HTTP(S) con reintentos;
-        las fuentes con otro transporte o cliente lo redefinen."""
+        las fuentes con otro transporte o cliente lo redefinen. `status_cb(texto)`
+        permite informar estados intermedios (reintentos, esperas) a la UI."""
         if max_bytes is not None:
             return fetch_fn(req.url, headers=req.headers, max_bytes=max_bytes)
         return fetch_with_retries(fetch_fn, req.url, headers=req.headers, chunk_cb=chunk_cb,
@@ -364,9 +365,12 @@ class Source:
                         if progress_cb:
                             frac = (got / total) if total else 0.0
                             progress_cb(_i, n, f"{_msg}: {got / 1e6:.1f} MB", (_i + (_k + frac) / _m) / n)
+                    def status_cb(text, _i=i, _k=k, _m=len(reqs), _msg=sub):
+                        if progress_cb:
+                            progress_cb(_i, n, f"{_msg}: {text}", (_i + _k / _m) / n)
                     try:
                         data = self.fetch_request(req, fetch_fn, chunk_cb=chunk_cb, cancel=cancel,
-                                                  retry_wait=retry_wait)
+                                                  retry_wait=retry_wait, status_cb=status_cb)
                     except DownloadCancelled:
                         raise
                     except DownloadError:

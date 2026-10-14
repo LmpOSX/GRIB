@@ -154,7 +154,7 @@ sin ese JSON se muestra como "archivo local (sin procedencia)".
 |---|---|---|---|---|---|---|---|
 | **NOAA GFS** | GFS (NCEP) vía NOMADS grib filter (`pgrb2` + `pgrb2b`) | altura: T, U, V, HGT, RH en 42 niveles isobáricos | 0,25° / 0,50° / 1,00°; recorte en el servidor; regrillado y suavizado local opcionales | 00/06/12/18; +0…+120 cada 1 h, +123…+384 cada 3 h | no | no (con los intermedios cubre los niveles OACI) | <https://nomads.ncep.noaa.gov/> |
 | **NOAA WAFS 0,25° (WIFS)** ✓ FL | WAFC Washington (o Londres), producto OACI de viento y temperatura en altura | altura: U/V, T, altura geopotencial en **FL050–FL600 cada 1000 ft** (56 niveles); el nivel del archivo coincide con el FL del visor | 0,25° global; recorte local; se filtran los FL pedidos | 00/06/12/18 (sólo la última); +6…+24 cada 1 h, +27…+48 cada 3 h, +54…+120 cada 6 h (archivos de tres plazos) | **sí**: clave de API de WIFS (Token, `X-API-Key`); cuenta aprobada por la autoridad meteorológica del Estado y la FAA | **sí** | <https://aviationweather.gov/wifs/users_guide/> |
-| **ECMWF Open Data** | IFS 0,25° (CC BY 4.0), librería oficial `ecmwf-opendata` | altura: u, v, t, gh, r en 13 niveles (1000…50 hPa) | 0,25° global; recorte local | 00/12 hasta +240 h (cada 3 h hasta +144, cada 6 h después); 06/18 hasta +90 h | no | no | <https://www.ecmwf.int/en/forecasts/datasets/open-data> |
+| **ECMWF Open Data** | IFS 0,25° (CC BY 4.0), librería oficial `ecmwf-opendata`; reintentos y espera ante «503 Slow Down» configurables | altura: u, v, t, gh, r en 13 niveles (1000…50 hPa) | 0,25° global; recorte local | 00/12 hasta +240 h (cada 3 h hasta +144, cada 6 h después); 06/18 hasta +90 h | no | no | <https://www.ecmwf.int/en/forecasts/datasets/open-data> |
 | **DWD ICON global** | ICON ~13 km, grilla icosaédrica regrillada localmente a 0,25° con los pesos de DWD (vecino más cercano, sin cdo) | altura: U, V, T, FI, RELHUM en 18 niveles (1000…30 hPa) | 0,25° tras regrillar; recorte local | 00/12 hasta +180 h, 06/18 hasta +120 h; cada 1 h hasta +78, cada 3 h después; sólo la última corrida de cada ciclo | no | no | <https://www.dwd.de/EN/ourservices/opendata/opendata.html> |
 | **SMN Argentina WRF 4 km** | WRF-ARW 4 km del SMN, NetCDF horario en AWS (`smn-ar-wrf`) | **superficie**: viento 10 m, T 2 m, HR 2 m (sin niveles: el visor oculta LEVEL) | Lambert 4 km convertido localmente a lat/lon 0,04–0,25° recortado a la zona (dominio 57S–12S / 94W–36W) | 00/06/12/18; +0…+72 cada 1 h (~38 MB por hora) | no | no | <https://odp-aws-smn.github.io/documentation_wrf_det/> |
 | **Fuente genérica (URL)** | servidor propio: plantilla de URL con `{YYYY} {MM} {DD} {HH} {FFF}` | lo que publique el servidor (GRIB2 se recorta; NetCDF sólo se valida y guarda) | según el archivo | ciclos y plazos configurables | opcional: ninguna, usuario/clave (HTTP básica, FTP, SFTP) o token (HTTP Bearer) | no | — |
@@ -174,6 +174,25 @@ responde `Too Many Requests` si se piden los índices a mano, de ahí la
 librería y el espejo AWS por defecto; ICON global sólo existe en
 icosaédrica, y los pesos `ICON_GLOBAL2WORLD_025_EASY` de DWD son de vecino
 más cercano con un enlace por punto, lo que permite aplicarlos con numpy.
+
+#### Fuente ECMWF Open Data: saturación del servidor y licencia
+
+Después de cada publicación el almacenamiento de ECMWF suele responder
+`503 Slow Down` (o `429`) a los tramos de bytes que pide la librería. Ésta
+trae una política de 500 reintentos cada 120 s que dejaría la descarga
+colgada sin explicación; la fuente la reemplaza por dos parámetros
+(Preferencias ▸ Fuentes ▸ ECMWF Open Data): **Reintentos** (10 por defecto)
+y **Espera entre reintentos** (30 s; si el servidor manda `Retry-After` se
+respeta). Cada reintento y la cuenta regresiva se muestran en la ventana de
+avance (`servidor saturado (503 Slow Down), reintento 2 de 10`, `reintento
+en 17 s`) y `Cancelar` corta la espera al instante. Si se agotan los
+reintentos, el error lo dice y sugiere esperar o subir el valor.
+
+La librería imprime por consola la barra de avance y, al terminar, el aviso
+`By downloading data from the ECMWF open data dataset, you agree to the
+terms: Attribution 4.0 International (CC BY 4.0)`. Es sólo informativo (no
+pide respuesta): los datos son CC BY 4.0 y corresponde atribuir a ECMWF al
+redistribuirlos.
 
 #### Fuente NOAA GFS: resolución y suavizado
 
