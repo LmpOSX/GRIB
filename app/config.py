@@ -46,8 +46,9 @@ DEFAULTS = {
     "opacity": 180,          # 80–255, controls background translucency
     "window_x": 100,
     "window_y": 100,
-    "window_w": 1400,
-    "window_h": 860,
+    "window_w": 1600,
+    "window_h": 1000,
+    "panel_visible": True,   # panel lateral de controles visible
     "recent_files": [],      # list[str] — most-recent first
     "last_directory": "",    # working directory for open/save dialogs
     "projection": "platecarree",   # clave de wind_plot.PROJECTIONS

@@ -19,6 +19,7 @@ SHORTCUTS = [
     ("Vista", "Todo el dominio", "Cmd Shift 0"),
     ("Vista", "Actualizar (redibujar)", "F5"),
     ("Vista", "Capa de datos activada / desactivada", "Cmd D"),
+    ("Vista", "Panel lateral (mostrar / ocultar)", "Cmd Shift P"),
     ("Vista", "Preferencias…", "Cmd ,"),
     ("Vista", "Agrandar fuente", "Cmd + (o Alt +)"),
     ("Vista", "Achicar fuente", "Cmd − (o Alt −)"),

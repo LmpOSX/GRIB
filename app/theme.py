@@ -103,7 +103,7 @@ def build_stylesheet(accent_hex: str, font_size: int = 13,
     acc   = _hex(p["accent"])
     accl  = _hex(p["accent_light"])
     hov   = _rgba(p["hover"], 100)
-    brd   = _rgba(p["border"], 80)
+    brd   = _rgba(p["border"], 150)
     txt   = _hex(p["text_bright"])
     txd   = _hex(p["text_dim"])
     acc_solid = _rgba(p["accent"], 230)
@@ -242,7 +242,7 @@ QScrollBar::add-line:horizontal, QScrollBar::sub-line:horizontal {{ width: 0; }}
 /* ── Buttons ── */
 QPushButton, QToolButton {{
     background: {bg2};
-    border: none;
+    border: 1px solid {brd};
     border-radius: 7px;
     padding: 5px 12px;
     color: {txt};
@@ -253,6 +253,10 @@ QPushButton:hover, QToolButton:hover {{
 }}
 QPushButton:pressed, QToolButton:pressed {{
     background: {acc_solid};
+}}
+QPushButton:checked {{
+    background: {acc_solid};
+    border-color: {accl};
 }}
 QToolButton::menu-indicator {{
     image: none;
@@ -283,7 +287,7 @@ QPushButton#DangerBtn:hover {{
 /* ── Inputs ── */
 QLineEdit, QTextEdit, QDoubleSpinBox, QSpinBox, QComboBox, QDateEdit {{
     background: {bg2};
-    border: none;
+    border: 1px solid {brd};
     border-radius: 6px;
     padding: 5px 10px;
     color: {txt};
@@ -336,7 +340,7 @@ QLabel#TotalLabel {{
 #GlassPanel {{
     background: {bg_dlg};
     border-radius: 14px;
-    border: none;
+    border: 1px solid {brd};
 }}
 
 /* ── Group box ── */
@@ -618,7 +622,7 @@ QLabel#StatusWarn {{
     font-weight: 600;
 }}
 QPushButton#FLBtn {{
-    padding: 4px 6px;
+    padding: 3px 6px;
     font-family: "Menlo", "Consolas", "DejaVu Sans Mono", monospace;
 }}
 QPushButton#FLBtn:checked {{

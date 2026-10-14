@@ -82,6 +82,9 @@ detalle.
 | F8 | Actualizar | Clic en `Actualizar` (barra de acciones) | Redibuja sin cambiar nada (también F5 y Vista ▸ Actualizar). |
 | F9 | Ocultar / Mostrar capa | Clic en `Ocultar capa` (barra de acciones) | Sólo mapa base, "Capa de datos deshabilitada" en el mapa y en STATUS; el botón pasa a `Mostrar capa` y Vista ▸ "Capa de datos desactivada"; ⌘D alterna. |
 | F14 | Menú Vista sincronizado | Vista ▸ Extra Info; luego destildar Extra Info en el panel; Vista ▸ Proyección ▸ Mercator | La casilla del panel sigue al menú y viceversa; el combo Proyección del panel pasa a Mercator y el mapa cambia. |
+| F16 | Panel sin scroll vertical | Ventana por defecto (1600×1000) | No aparece barra vertical en el panel; el INVENTARIO ocupa el alto restante y se desplaza por dentro; LEVEL tiene 16 botones (con F200 y F480) en cuatro filas completas. |
+| F17 | Ocultar panel | Clic en `▥` (barra de acciones) o ⌘⇧P | El panel desaparece y el mapa ocupa todo el ancho; el botón y Vista ▸ Panel lateral quedan destildados; al reiniciar sigue oculto; volver a clic lo muestra. |
+| F18 | Contraste | Mirar botones, combos, campos y tarjetas del panel | Tienen borde visible sobre el fondo; las líneas entre grupos se distinguen del fondo de la ventana. |
 | F15 | Panel sin recortes | Preferencias ▸ Apariencia ▸ tamaño de fuente 18; abrir un archivo ECMWF (nombre largo) | Ningún botón, combo ni campo queda fuera del panel; los combos recortan el texto largo con «…» y el desplegable lo muestra entero; STATUS va en la franja sobre el mapa. |
 
 ## G. Mapa, zoom y recuadro

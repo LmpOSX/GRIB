@@ -239,24 +239,25 @@ class MainWindow(QMainWindow):
         side.setMinimumWidth(0)
         side_lay = QVBoxLayout(side)
         side_lay.setContentsMargins(0, 0, 4, 0)
-        side_lay.setSpacing(10)
+        side_lay.setSpacing(8)
         self.plot.set_projection(self.panel.projection())
         side_lay.addWidget(self.panel)
         inv_frame = QFrame()
         inv_frame.setObjectName("GlassPanel")
         inv_lay = QVBoxLayout(inv_frame)
-        inv_lay.setContentsMargins(12, 8, 12, 10)
+        inv_lay.setContentsMargins(12, 6, 12, 8)
         inv_title = QLabel("INVENTARIO")
         inv_title.setObjectName("PanelTitle")
         inv_lay.addWidget(inv_title)
         self.inventory = InventoryPanel()
         inv_lay.addWidget(self.inventory)
-        side_lay.addWidget(inv_frame)
+        side_lay.addWidget(inv_frame, 1)        # el inventario absorbe el alto que sobra
         scroll.setWidget(side)
         self._side_scroll = scroll
         self._main_lay.addWidget(scroll)
 
         # ── Señales del panel: cualquier cambio redibuja solo ──
+        self._side_scroll.setVisible(bool(self._cfg.get("panel_visible", True)))
         self.panel.step_changed.connect(lambda _i: self.redraw())
         self.panel.level_changed.connect(self.redraw)
         self.panel.variable_changed.connect(lambda _m: self.redraw())
@@ -326,6 +327,14 @@ class MainWindow(QMainWindow):
 
         lay.addStretch()
 
+        self._btn_panel = QPushButton("▥")
+        self._btn_panel.setCheckable(True)
+        self._btn_panel.setChecked(bool(self._cfg.get("panel_visible", True)))
+        self._btn_panel.setToolTip("Mostrar u ocultar el panel lateral (Ctrl+Shift+P); "
+                                   "al ocultarlo el mapa ocupa todo el ancho")
+        self._btn_panel.setFixedWidth(32)
+        self._btn_panel.toggled.connect(self.set_panel_visible)
+        lay.addWidget(self._btn_panel)
         settings_btn = QPushButton("⚙")
         settings_btn.setToolTip("Preferencias (Ctrl+,)")
         settings_btn.setFixedWidth(32)
@@ -412,6 +421,10 @@ class MainWindow(QMainWindow):
                                            self.toggle_layer, "Ctrl+D")
         self._act_layer.setCheckable(True)
         self._act_layer.setChecked(True)
+        self._act_panel = self._add_action(vista, "Panel lateral", self.set_panel_visible,
+                                           "Ctrl+Shift+P")
+        self._act_panel.setCheckable(True)
+        self._act_panel.setChecked(bool(self._cfg.get("panel_visible", True)))
         vista.addSeparator()
         # Mismas opciones que el panel (VIENTO / MAPA), sincronizadas
         self._menu_proj = vista.addMenu("Proyección")
@@ -450,6 +463,19 @@ class MainWindow(QMainWindow):
         vista.addSeparator()
         act_prefs = self._add_action(vista, "Preferencias…", self._open_settings, "Ctrl+,")
         act_prefs.setMenuRole(QAction.MenuRole.PreferencesRole)
+
+    def set_panel_visible(self, visible: bool):
+        """Muestra u oculta el panel lateral; el mapa ocupa el ancho que
+        queda. Se guarda en la configuración."""
+        visible = bool(visible)
+        self._side_scroll.setVisible(visible)
+        for w in (self._btn_panel, self._act_panel):
+            w.blockSignals(True)
+            w.setChecked(visible)
+            w.blockSignals(False)
+        if self._cfg.get("panel_visible", True) != visible:
+            self._cfg["panel_visible"] = visible
+            save_config(self._cfg)
 
     def _sync_view_menu(self):
         """Refleja en el menú Vista lo que muestra el panel."""
@@ -1139,12 +1165,20 @@ class MainWindow(QMainWindow):
     # ── Geometría ─────────────────────────────────────────────────────────────
 
     def _restore_geometry(self):
-        self.setGeometry(
-            self._cfg.get("window_x", 100),
-            self._cfg.get("window_y", 100),
-            self._cfg.get("window_w", 1400),
-            self._cfg.get("window_h", 860),
-        )
+        """Geometría guardada, acotada a la pantalla disponible: si la
+        ventana no entra se achica, y si queda fuera se centra."""
+        x, y = self._cfg.get("window_x", 100), self._cfg.get("window_y", 100)
+        w, h = self._cfg.get("window_w", 1600), self._cfg.get("window_h", 1000)
+        screen = QApplication.primaryScreen()
+        if screen is not None:
+            avail = screen.availableGeometry()
+            w = min(w, avail.width())
+            h = min(h, avail.height())
+            if (x + w > avail.right() + 1 or y + h > avail.bottom() + 1
+                    or x < avail.left() or y < avail.top()):
+                x = avail.left() + (avail.width() - w) // 2
+                y = avail.top() + (avail.height() - h) // 2
+        self.setGeometry(x, y, w, h)
 
     def closeEvent(self, event):
         g = self.geometry()

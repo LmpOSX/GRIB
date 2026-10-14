@@ -33,7 +33,7 @@ MS_TO_KT = 1.943844          # m/s -> nudos
 KELVIN = 273.15              # K -> °C
 
 # Niveles de vuelo del panel de referencia
-FLIGHT_LEVELS = [50, 100, 140, 180, 240, 270, 300, 320, 340, 360, 390, 410, 450, 530]
+FLIGHT_LEVELS = [50, 100, 140, 180, 200, 240, 270, 300, 320, 340, 360, 390, 410, 450, 480, 530]
 
 # Escala de colores fija de velocidad (kt)
 SPEED_BINS = [0, 10, 20, 30, 40, 50]

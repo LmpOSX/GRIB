@@ -310,6 +310,29 @@ class TestCargaYRedibujo(_MapBase):
         self.assertIsNot(self.w.panel.status.parentWidget(), self.w.panel)
         self.assertTrue(self.w.panel.status.isVisible())
 
+    def test_panel_entra_en_el_alto_y_se_oculta(self):
+        """Con la ventana por defecto el panel no necesita scroll vertical
+        (el inventario absorbe el alto que sobra); el botón ▥ y Vista ▸
+        Panel lateral lo ocultan y el mapa se ensancha; persiste."""
+        w = self.w
+        w.resize(1600, 1000)
+        _app.processEvents()
+        side = w._side_scroll.widget()
+        self.assertLessEqual(side.minimumSizeHint().height(), w._side_scroll.viewport().height())
+        self.assertEqual(len(w.panel._fl_buttons), 16)
+        map_w = w.plot.canvas.width()
+        w._btn_panel.click()
+        _app.processEvents()
+        self.assertFalse(w._side_scroll.isVisible())
+        self.assertFalse(w._act_panel.isChecked())
+        self.assertGreater(w.plot.canvas.width(), map_w)
+        self.assertFalse(config.load_config()["panel_visible"])
+        w._act_panel.trigger()
+        _app.processEvents()
+        self.assertTrue(w._side_scroll.isVisible())
+        self.assertTrue(w._btn_panel.isChecked())
+        self.assertTrue(config.load_config()["panel_visible"])
+
     def test_menu_vista_sincronizado(self):
         """Vista ▸ Extra Info / Viento / Proyección reflejan y cambian el panel."""
         w = self.w

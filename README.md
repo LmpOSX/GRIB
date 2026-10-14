@@ -4,7 +4,7 @@ Aplicación de escritorio (Python 3.14 + PyQt6 + matplotlib + cartopy
 opcional) para visualizar archivos GRIB2 con componentes de viento
 (UGRD/VGRD) y temperatura (TMP) en niveles de presión, con un panel de
 controles al estilo de un sistema ATC: selección de paso (Current / Next /
-Advanced), nivel de vuelo (F050…F530 convertido a presión ISA e interpolado
+Advanced), nivel de vuelo (16 botones F050…F530 convertidos a presión ISA e interpolados
 en ln p), barbas coloreadas por velocidad, contornos de temperatura, "Extra
 Info", grilla, zoom/pan y exportación a PNG/CSV.
 
@@ -229,11 +229,16 @@ El panel de la derecha agrupa los controles por pregunta: *qué miro*
 sección separa sus grupos con una línea fina y un subtítulo; nada impone
 ancho (los combos recortan el texto largo y el desplegable lo muestra
 entero), así que el panel nunca se corta ni necesita scroll horizontal.
+Tampoco necesita scroll vertical: el INVENTARIO absorbe el alto que sobra
+y se desplaza por dentro. El botón `▥` de la barra de acciones (o Vista ▸
+Panel lateral, ⌘⇧P) oculta el panel y el mapa ocupa todo el ancho; la
+elección se recuerda. La ventana arranca en 1600×1000 (o lo que entre en
+la pantalla) y recuerda tamaño y posición.
 
 * **TIME**: `Current (+0)`, `Next (+1)`, `Advanced (+2)` eligen el 1.°, 2.° y
   3.° paso del archivo, con su hora de validez al lado. Si hay más de tres
   pasos aparece un combo con todos.
-* **LEVEL**: botones F050…F530. El FL se convierte a presión con la atmósfera
+* **LEVEL**: 16 botones F050…F530 (incluye F200 y F480). El FL se convierte a presión con la atmósfera
   estándar ISA (`p = 1013.25·(1 − 6.8756e-6·h)^5.2559` hasta 36 089 ft,
   isotérmica arriba) y U, V y T se interpolan linealmente en ln(p) entre los
   niveles del archivo. Fuera del rango se usa el nivel más cercano y STATUS

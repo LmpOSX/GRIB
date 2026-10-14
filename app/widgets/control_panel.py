@@ -53,8 +53,8 @@ class ControlPanel(QWidget):
         frame = QFrame()
         frame.setObjectName("GlassPanel")
         lay = QVBoxLayout(frame)
-        lay.setContentsMargins(12, 8, 12, 10)
-        lay.setSpacing(5)
+        lay.setContentsMargins(12, 6, 12, 8)
+        lay.setSpacing(4)
         lbl = QLabel(title)
         lbl.setObjectName("PanelTitle")
         lay.addWidget(lbl)
@@ -70,9 +70,9 @@ class ControlPanel(QWidget):
         f = QFrame()
         f.setObjectName("PanelSep")
         f.setFixedHeight(1)
-        lay.addSpacing(3)
+        lay.addSpacing(2)
         lay.addWidget(f)
-        lay.addSpacing(3)
+        lay.addSpacing(2)
 
     @staticmethod
     def _sub(lay, text):
@@ -125,7 +125,7 @@ class ControlPanel(QWidget):
     def _build(self):
         self._root = QVBoxLayout(self)
         self._root.setContentsMargins(0, 0, 0, 0)
-        self._root.setSpacing(10)
+        self._root.setSpacing(8)
         self._build_status()
 
         # ── TIME ──
@@ -289,7 +289,6 @@ class ControlPanel(QWidget):
         self.btn_disable.setToolTip("Ocultar / mostrar la capa de datos (Ctrl+D)")
         self.btn_disable.clicked.connect(self.layer_toggled.emit)
 
-        self._root.addStretch(1)
         self._update_level_hint()
 
     def _coord_entry(self, grid, text, r, c, lo, hi):

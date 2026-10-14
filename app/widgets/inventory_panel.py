@@ -11,7 +11,7 @@ class InventoryPanel(QPlainTextEdit):
         self.setReadOnly(True)
         self.setLineWrapMode(QPlainTextEdit.LineWrapMode.NoWrap)
         self.setFont(QFontDatabase.systemFont(QFontDatabase.SystemFont.FixedFont))
-        self.setMinimumHeight(200)
+        self.setMinimumHeight(60)      # toma el alto que sobra; scroll interno
         self.set_text("Sin archivo abierto.")
 
     def set_text(self, text: str):
