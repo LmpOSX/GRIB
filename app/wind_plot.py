@@ -174,7 +174,9 @@ class TranslucentCanvas(FigureCanvasQTAgg):
 # ---------------------------------------------------------------------------
 MAX_BARBS = 2500        # barbas / flechas visibles como máximo (se ralea automáticamente)
 WIND_STYLES = [("barbas", "Barbas"), ("flechas", "Flechas (vectores)"), ("curvas", "Curvas (líneas de corriente)")]
-ARROW_KT_PER_INCH = 150.0   # escala de las flechas: 50 kt ≈ 1/3 de pulgada
+ARROW_LEN_IN = 0.24         # largo fijo de las flechas (pulgadas, a escala de fuente 1)
+CALM_KT = 0.5               # por debajo no hay dirección: sin flecha
+STREAM_ARROW_PX = 55.0      # separación entre flechas embebidas en las curvas (px)
 MAX_LABELS = 900        # rótulos de Extra Info visibles como máximo
 SETTLE_MS = 150         # espera tras el último cambio de vista para reconstruir
 
@@ -817,16 +819,35 @@ class WindPlot:
         if style == "curvas":
             self._draw_streamlines(stride, i0, i1, j0, j1)
             return
-        uk, vk, spd = d["uk"][sj, si], d["vk"][sj, si], d["spd"][sj, si]
         if style == "flechas":
-            # Flechas apuntando hacia donde sopla el viento, largo ∝ velocidad.
+            # Flechas de largo fijo que apuntan hacia donde sopla el viento;
+            # la velocidad va sólo en el color. Sin flecha donde hay calma.
+            # Se ralean además para que no se pisen: la separación entre
+            # puntos en píxeles debe superar el largo de la flecha.
+            scale = max(0.8, self.font_scale)
+            arrow_px = ARROW_LEN_IN * scale * self.fig.dpi
+            px_per_cell = ax.bbox.width / max(1, (i1 - i0))
+            need = int(math.ceil(arrow_px * 1.25 / max(px_per_cell, 1e-6)))
+            if need > stride:
+                si = self._aligned_slice(i0, i1, need)
+                sj = self._aligned_slice(j0, j1, need)
+                X, Y = np.meshgrid(d["lons"][si], d["lats"][sj])
+                if X.size == 0:
+                    return
+            uk, vk, spd = d["uk"][sj, si], d["vk"][sj, si], d["spd"][sj, si]
+            with np.errstate(all="ignore"):
+                mag = np.ma.masked_less(spd, CALM_KT)
+                ue = uk / mag
+                ve = vk / mag
+            if ue.count() == 0:
+                return
             self._view_artists.append(ax.quiver(
-                X, Y, uk, vk, spd, cmap=SPEED_CMAP, norm=SPEED_NORM,
-                pivot="middle", scale_units="inches",
-                scale=ARROW_KT_PER_INCH / max(0.8, self.font_scale),
-                width=0.0035, headwidth=3.5, headlength=4.5, headaxislength=4.0,
-                minlength=0.5, zorder=5, clip_on=True, **tr))
+                X, Y, ue, ve, spd, cmap=SPEED_CMAP, norm=SPEED_NORM,
+                pivot="middle", scale_units="inches", scale=1.0 / (ARROW_LEN_IN * scale),
+                width=0.003, headwidth=3.5, headlength=4.5, headaxislength=4.0,
+                minlength=0.0, zorder=5, clip_on=True, **tr))
             return
+        uk, vk, spd = d["uk"][sj, si], d["vk"][sj, si], d["spd"][sj, si]
         self._view_artists.append(ax.barbs(
             X, Y, uk, vk, spd, cmap=SPEED_CMAP, norm=SPEED_NORM,
             length=5.5 * max(0.8, self.font_scale), linewidth=0.7, pivot="middle",
@@ -854,6 +875,7 @@ class WindPlot:
         scale = max(0.8, self.font_scale)
         kw = dict(cmap=SPEED_CMAP, norm=SPEED_NORM, density=density, linewidth=1.1 * scale,
                   arrowsize=1.0 * scale, arrowstyle="->", zorder=5)
+        patches_before = set(id(a) for a in ax.patches)
         try:
             if self.use_cartopy:
                 proj = ax.projection
@@ -897,13 +919,76 @@ class WindPlot:
             import logging
             logging.getLogger(__name__).warning("Líneas de corriente: %s", exc)
             return
-        for art in (sp.lines, sp.arrows):
-            try:
-                art.set_clip_box(ax.bbox)
-                art.set_clip_on(True)
-            except Exception:
-                pass
-            self._view_artists.append(art)
+        # streamplot agrega sus flechas al eje por fuera de lo que devuelve:
+        # se quitan (quedarían huérfanas al cambiar de estilo o de vista) y
+        # se reemplazan por flechas propias, a intervalos regulares.
+        for a in list(ax.patches):
+            if id(a) not in patches_before:
+                try:
+                    a.remove()
+                except Exception:
+                    pass
+        try:
+            sp.lines.set_clip_box(ax.bbox)
+            sp.lines.set_clip_on(True)
+        except Exception:
+            pass
+        self._view_artists.append(sp.lines)
+        self._view_artists.extend(self._stream_arrows(sp.lines, scale))
+
+    def _stream_arrows(self, lc, scale):
+        """Flechas de sentido embebidas en las líneas de corriente, una cada
+        STREAM_ARROW_PX píxeles de cada trayectoria, del color de la
+        velocidad local. Las trayectorias se reconstruyen encadenando los
+        segmentos consecutivos de la LineCollection."""
+        from matplotlib.patches import FancyArrowPatch
+        ax = self.ax
+        segs = lc.get_segments()
+        vals = lc.get_array()
+        if not len(segs):
+            return []
+        vals = np.asarray(np.ma.filled(vals, np.nan), dtype=float) if vals is not None \
+            else np.full(len(segs), np.nan)
+        trajs = []
+        cur = [segs[0][0], segs[0][1]]
+        curv = [vals[0]]
+        for k in range(1, len(segs)):
+            if np.allclose(segs[k][0], cur[-1]):
+                cur.append(segs[k][1])
+                curv.append(vals[k])
+            else:
+                trajs.append((np.asarray(cur), np.asarray(curv)))
+                cur = [segs[k][0], segs[k][1]]
+                curv = [vals[k]]
+        trajs.append((np.asarray(cur), np.asarray(curv)))
+        spacing = STREAM_ARROW_PX * scale
+        out = []
+        for pts, v in trajs:
+            if len(pts) < 3:
+                continue
+            disp = ax.transData.transform(pts)
+            d = np.hypot(np.diff(disp[:, 0]), np.diff(disp[:, 1]))
+            cum = np.concatenate([[0.0], np.cumsum(d)])
+            total = cum[-1]
+            if total < spacing * 0.6:
+                targets = [total / 2.0]
+            else:
+                n = int(total // spacing)
+                off = (total - n * spacing) / 2.0
+                targets = [off + spacing * (i + 0.5) for i in range(max(1, n))]
+            for t in targets:
+                i = int(np.searchsorted(cum, t)) - 1
+                i = max(0, min(i, len(pts) - 2))
+                val = v[min(i, len(v) - 1)]
+                color = SPEED_CMAP(SPEED_NORM(val)) if np.isfinite(val) else self.pal["text"]
+                arr = FancyArrowPatch(tuple(pts[i]), tuple(pts[i + 1]), arrowstyle="->",
+                                      mutation_scale=11.0 * scale, color=color,
+                                      linewidth=1.1 * scale, zorder=6, transform=ax.transData)
+                arr.set_clip_box(ax.bbox)
+                arr.set_clip_on(True)
+                ax.add_patch(arr)
+                out.append(arr)
+        return out
 
     def save_png(self, path, dpi=150):
         """Guarda la vista actual con fondo opaco (el alfa es sólo para la

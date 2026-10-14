@@ -185,6 +185,44 @@ class TestCargaYRedibujo(_MapBase):
         self.w.plot.canvas.draw()
         self.assertEqual(self.w.plot._view_artists, [])
 
+    def test_cambiar_de_estilo_no_deja_huerfanos(self):
+        """Las flechas que streamplot agrega al eje por su cuenta se quitan al
+        cambiar de estilo o de vista (antes quedaban dibujadas)."""
+        from matplotlib.patches import FancyArrowPatch
+        ax = self.w.plot.ax
+        for key in ("curvas", "flechas", "curvas", "barbas"):
+            self.w.panel.cb_style.setCurrentIndex(self.w.panel.cb_style.findData(key))
+            self.w.plot.canvas.draw()
+        self.assertEqual([a for a in ax.patches if isinstance(a, FancyArrowPatch)], [])
+        self.w.panel.cb_style.setCurrentIndex(self.w.panel.cb_style.findData("curvas"))
+        self.w.plot.canvas.draw()
+        n1 = len([a for a in ax.patches if isinstance(a, FancyArrowPatch)])
+        self.assertGreater(n1, 0)
+        self.w.panel.btn_update.click()
+        self.w.plot.canvas.draw()
+        n2 = len([a for a in ax.patches if isinstance(a, FancyArrowPatch)])
+        self.assertEqual(n2, n1)        # redibujar no acumula flechas
+        # Las flechas embebidas son más que las trayectorias (varias por línea)
+        self.assertEqual(len(self.w.plot._view_artists), n1 + 1)
+
+    def test_flechas_solo_direccion(self):
+        """Las flechas tienen largo fijo (vectores unitarios) y no se dibujan
+        en calma."""
+        from matplotlib.quiver import Quiver
+        for lv in self.reader.levels:                       # calma en un punto
+            self.reader.cache[(0, "u", float(lv))][0, 0] = 0.0
+            self.reader.cache[(0, "v", float(lv))][0, 0] = 0.0
+        self.w.redraw()
+        self.w.panel.cb_style.setCurrentIndex(self.w.panel.cb_style.findData("flechas"))
+        self.w.plot.canvas.draw()
+        q = [a for a in self.w.plot._view_artists if isinstance(a, Quiver)][0]
+        # Quiver guarda U/V rellenos con 1 donde están enmascarados y la
+        # máscara aparte (Umask): el punto en calma debe estar enmascarado.
+        mask = np.asarray(q.Umask, dtype=bool)
+        mag = np.hypot(np.asarray(q.U), np.asarray(q.V))
+        self.assertTrue(np.allclose(mag[~mask], 1.0, atol=1e-6))
+        self.assertTrue(mask.any())                  # el punto en calma quedó sin flecha
+
     def test_curvas_con_densidad_y_sin_cartopy(self):
         from app import wind_plot
         self.w.panel.cb_style.setCurrentIndex(self.w.panel.cb_style.findData("curvas"))

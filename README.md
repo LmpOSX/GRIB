@@ -236,9 +236,11 @@ real salvo la cuantización del empaquetado). Por eso la fuente ofrece:
   Estereográfica polar sur o norte, Mercator o Lambert conforme (requieren
   cartopy; la elección se guarda en la configuración). `Viento` elige la
   representación: **Barbas** (convención meteorológica, en kt), **Flechas**
-  (vectores que apuntan hacia donde sopla el viento, con largo proporcional
-  a la velocidad) o **Curvas** (líneas de corriente del campo, con flechas
-  de sentido); las tres usan la misma escala de colores por velocidad.
+  (de largo fijo, apuntan hacia donde sopla el viento; la velocidad va
+  sólo en el color y donde hay calma no hay flecha) o **Curvas** (líneas de
+  corriente del campo con una flecha de sentido cada pocos centímetros);
+  las tres usan la misma escala de colores por velocidad. Las flechas se
+  ralean solas para no pisarse al alejar la vista.
   `Extra Info` escribe la velocidad en kt (y la temperatura en °C) junto a
   cada punto; `Grilla` dibuja la grilla lat/lon del archivo;
   `Fondo de velocidad` rellena el mapa con la misma escala de colores;

@@ -73,8 +73,8 @@ detalle.
 | F5 | Grilla | Marcar | Grilla fina de 1° (o la del archivo) además de meridianos/paralelos cada 10°. |
 | F6 | Fondo de velocidad | Marcar | Contornos rellenos con la misma escala, semitransparentes. |
 | F7 | Densidad | Poner 2 y 3 | Barbas cada 2 / 3 puntos; redibuja al cambiar. |
-| F8 | Flechas | CONFIG ▸ Viento ▸ Flechas (vectores) | Flechas que apuntan hacia donde sopla el viento, largo proporcional a la velocidad y color de la escala fija; se rotan en estereográfica; Densidad las ralea; Extra Info sigue rotulando. |
-| F9 | Curvas | CONFIG ▸ Viento ▸ Curvas (líneas de corriente) | Líneas de corriente continuas con flechas de sentido, coloreadas por velocidad; en estereográfica siguen la proyección; Densidad 4 muestra menos líneas; al hacer zoom se recalculan sobre la vista; el PNG las incluye. |
+| F8 | Flechas | CONFIG ▸ Viento ▸ Flechas (vectores) | Flechas de largo fijo que apuntan hacia donde sopla el viento, color de la escala fija, sin flecha en calma; se rotan en estereográfica; al alejar se ralean solas para no pisarse; Densidad las ralea más; Extra Info sigue rotulando. |
+| F9 | Curvas | CONFIG ▸ Viento ▸ Curvas (líneas de corriente) | Líneas de corriente continuas con varias flechas de sentido por línea, coloreadas por velocidad; al pasar a Barbas o Flechas y volver no queda ninguna flecha suelta; en estereográfica siguen la proyección; Densidad 4 muestra menos líneas; al hacer zoom se recalculan sobre la vista; el PNG las incluye. |
 | F10 | Estilo persistente | Elegir Curvas, reiniciar; Preferencias ▸ Mapa ▸ Viento = Barbas ▸ Aplicar | Arranca en Curvas; Preferencias cambia el panel y el mapa. |
 | F8 | Update | Clic | Redibuja sin cambiar nada (también F5). |
 | F9 | Disable / Enable | Clic en Disable | Sólo mapa base, "Capa de datos deshabilitada" en el mapa y en STATUS; el botón pasa a Enable y Vista ▸ "Capa de datos desactivada"; ⌘D alterna. |
