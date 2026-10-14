@@ -1,6 +1,6 @@
 # -*- coding: utf-8 -*-
 """Panel derecho de controles del visor, imitando el panel de un sistema ATC:
-STATUS, TIME, LEVEL, VARIABLE, CONFIG y RECUADRO.
+franja STATUS (la ventana la pega al mapa) y secciones TIME, LEVEL, VARIABLE, VIENTO y MAPA.
 
 No conoce el lector ni el mapa: expone señales y el estado seleccionado; la
 ventana principal decide qué dibujar. Cualquier cambio de radio, botón de

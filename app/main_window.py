@@ -1117,7 +1117,7 @@ class MainWindow(QMainWindow):
 
     def apply_settings(self, values: dict):
         """Aplica y guarda lo elegido en Preferencias: tema, proyección,
-        valores de CONFIG del panel, descarga y motor."""
+        valores de VIENTO y MAPA del panel, descarga y motor."""
         old_proj = self._cfg.get("projection", "platecarree")
         old_engine = (self._cfg.get("engine", "eccodes"), self._cfg.get("wgrib2_path", ""))
         self._cfg.update(values)
