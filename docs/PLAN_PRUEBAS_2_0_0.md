@@ -119,6 +119,7 @@ detalle.
 | I7 | Mapa translúcido | Bajar la transparencia con un archivo abierto | El fondo del mapa deja ver el escritorio desenfocado; las barbas y costas siguen nítidas; el PNG exportado sale con fondo opaco. |
 | I5 | Escala de barbas | Cambiar el acento | Los colores de las barbas (cian…rojo) y de los contornos de temperatura no cambian. |
 | I8 | Casillas y radios | Marcar Extra Info y cambiar de variable | El indicador se pinta con el acento y además muestra el tilde (casillas) o el punto (radios). |
+| I9 | Botón verde (macOS) | Clic en el botón verde de la ventana | La ventana se maximiza sobre el escritorio (no entra al Space de pantalla completa) y conserva el desenfoque y la transparencia. |
 | I6 | Diálogos glass | Abrir Preferencias, Atajos y Acerca de | Fondo translúcido con desenfoque, barra de título nativa, contenido sin aplastar; Esc / Cerrar los cierran. |
 
 ## J. Ayuda

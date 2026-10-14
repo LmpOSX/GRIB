@@ -104,11 +104,17 @@ def main():
     # fondo del tema en vez de translúcida sobre el escritorio.
     from app.platform_blur import apply_blur
 
+    from app.platform_blur import disable_native_fullscreen
+
     def _blur_or_opaque():
         if not apply_blur(window):
             from app.theme import opaque_window_css
             window.setAttribute(Qt.WidgetAttribute.WA_TranslucentBackground, False)
             window.setStyleSheet(opaque_window_css(window._cfg["accent_color"]))
+        else:
+            # Con desenfoque, el botón verde maximiza (la pantalla completa
+            # nativa dejaría la ventana opaca sobre un Space negro)
+            disable_native_fullscreen(window)
     QTimer.singleShot(50, _blur_or_opaque)
 
     sys.exit(app.exec())

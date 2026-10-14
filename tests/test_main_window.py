@@ -156,3 +156,15 @@ class TestDialogos(_Base):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class TestPantallaCompleta(_Base):
+    def test_disable_native_fullscreen_fuera_de_mac(self):
+        from app import platform_blur
+        import platform as _pl
+        old = _pl.system
+        _pl.system = lambda: "Linux"
+        try:
+            self.assertFalse(platform_blur.disable_native_fullscreen(None))
+        finally:
+            _pl.system = old
