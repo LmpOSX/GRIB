@@ -33,7 +33,10 @@ from matplotlib.backends.backend_qtagg import FigureCanvasQTAgg  # noqa: E402
 from matplotlib.colors import BoundaryNorm, ListedColormap  # noqa: E402
 from matplotlib.figure import Figure  # noqa: E402
 from matplotlib.lines import Line2D  # noqa: E402
-from matplotlib.transforms import Bbox  # noqa: E402
+from matplotlib.transforms import Bbox, Affine2D  # noqa: E402
+from matplotlib.collections import PathCollection, LineCollection  # noqa: E402
+from matplotlib.textpath import TextPath  # noqa: E402
+from matplotlib.font_manager import FontProperties  # noqa: E402
 
 from PyQt6 import sip  # noqa: E402
 from PyQt6.QtCore import QPoint, Qt, QTimer  # noqa: E402
@@ -189,6 +192,161 @@ MAX_LABELS = 900        # rótulos de Extra Info visibles como máximo
 SETTLE_MS = 150         # espera tras el último cambio de vista para reconstruir
 
 
+def integrate_streamlines(xs, ys, u, v, density=2.0, step=0.5, max_steps=None,
+                          min_cells=3):
+    """Líneas de corriente del campo (u, v) sobre la grilla regular xs (nx),
+    ys (ny), integradas EN BLOQUE con numpy.
+
+    * Se trabaja en coordenadas de índice de grilla con el campo de
+      direcciones unitario (sólo importa hacia dónde apunta el viento), con
+      paso fijo `step` celdas y Runge-Kutta de orden 2 (punto medio) sobre
+      matrices (N semillas × 2) hacia adelante y hacia atrás.
+    * Las semillas son los centros de una grilla de ocupación de
+      30·densidad celdas por eje (como matplotlib). Se integran por rondas
+      (cuatro clases de paridad) todas las semillas de la ronda a la vez;
+      después, del centro hacia afuera, cada trayectoria se acepta hasta
+      donde entra en una celda ya ocupada o en una que ella misma ya
+      visitó (los remolinos cierran una sola vuelta) y se descarta si no
+      cubre `min_cells` celdas. Las rondas siguientes sólo integran las
+      semillas cuya celda sigue libre, que son pocas.
+    Devuelve una lista de arrays (n, 2) en coordenadas (x, y)."""
+    xs = np.asarray(xs, dtype=float)
+    ys = np.asarray(ys, dtype=float)
+    nx, ny = len(xs), len(ys)
+    if nx < 2 or ny < 2:
+        return []
+    u = np.asarray(u, dtype=float)
+    v = np.asarray(v, dtype=float)
+    dx = (xs[-1] - xs[0]) / (nx - 1)
+    dy = (ys[-1] - ys[0]) / (ny - 1)
+    with np.errstate(all="ignore"):
+        ui = u / dx
+        vi = v / dy
+        mag = np.hypot(ui, vi)
+        di = np.where(mag > 0, ui / mag, np.nan)
+        dj = np.where(mag > 0, vi / mag, np.nan)
+    mx = my = max(4, int(30 * density))          # como matplotlib: 30·densidad por eje
+    sx, sy = mx / (nx - 1), my / (ny - 1)
+
+    def cells_of(pts):
+        ci = np.clip((pts[:, 0] * sx).astype(int), 0, mx - 1)
+        cj = np.clip((pts[:, 1] * sy).astype(int), 0, my - 1)
+        return cj * mx + ci
+
+    def direction(p):
+        """Dirección unitaria interpolada (bilineal) en puntos de índice
+        (N, 2); la grilla es uniforme, así que el índice es floor()."""
+        px = np.nan_to_num(p[:, 0], nan=-1.0)     # NaN → fuera del dominio
+        py = np.nan_to_num(p[:, 1], nan=-1.0)
+        i0 = np.clip(np.floor(px).astype(int), 0, nx - 2)
+        j0 = np.clip(np.floor(py).astype(int), 0, ny - 2)
+        tx = (px - i0)[:, None]
+        ty = (py - j0)[:, None]
+        f00 = dir_field[j0, i0]
+        f01 = dir_field[j0, i0 + 1]
+        f10 = dir_field[j0 + 1, i0]
+        f11 = dir_field[j0 + 1, i0 + 1]
+        d = (f00 * (1 - tx) * (1 - ty) + f01 * tx * (1 - ty)
+             + f10 * (1 - tx) * ty + f11 * tx * ty)
+        m = np.hypot(d[:, 0], d[:, 1])
+        inside = (px >= 0) & (px <= nx - 1) & (py >= 0) & (py <= ny - 1)
+        with np.errstate(all="ignore"):
+            d = np.where(((m > 1e-9) & inside)[:, None], d / m[:, None], np.nan)
+        return d
+
+    dir_field = np.stack([di, dj], axis=-1)          # (ny, nx, 2)
+    if max_steps is None:
+        max_steps = int(0.8 * (nx + ny) / step)
+
+    def integrate(seeds, sign, stop_cells=None):
+        """Trayectorias (K+1, N, 2) desde `seeds` (N, 2); NaN tras terminar.
+        Con `stop_cells` (ocupación ya conocida) la trayectoria muere al
+        entrar en una celda ocupada: las rondas tardías son casi gratis."""
+        p = seeds.astype(float).copy()
+        out = np.full((max_steps + 1, len(p), 2), np.nan)
+        out[0] = p
+        alive = np.ones(len(p), dtype=bool)
+        for k in range(1, max_steps + 1):
+            idx = np.flatnonzero(alive)
+            if not len(idx):
+                break
+            pa = p[idx]
+            d1 = direction(pa) * sign
+            d2 = direction(pa + 0.5 * step * d1) * sign
+            q = pa + step * d2
+            okq = (np.isfinite(q).all(axis=1) & (q[:, 0] >= 0) & (q[:, 0] <= nx - 1)
+                   & (q[:, 1] >= 0) & (q[:, 1] <= ny - 1))
+            if stop_cells is not None:
+                qq = np.where(okq[:, None], q, 0.0)
+                okq &= ~stop_cells[cells_of(qq)]
+            alive[idx[~okq]] = False
+            q[~okq] = np.nan
+            p[idx] = q
+            out[k, idx] = q
+        return out
+
+    cx = (np.arange(mx) + 0.5) * (nx - 1) / mx
+    cy = (np.arange(my) + 0.5) * (ny - 1) / my
+    SX, SY = np.meshgrid(cx, cy)
+    seeds_all = np.column_stack([SX.ravel(), SY.ravel()])
+    dist = np.hypot(SX.ravel() - (nx - 1) / 2.0, SY.ravel() - (ny - 1) / 2.0)
+    order = np.argsort(dist, kind="stable")
+    ii = (np.arange(mx)[None, :] % 2 + 2 * (np.arange(my)[:, None] % 2)).ravel()
+    rounds = [order[ii[order] == r] for r in (0, 3, 1, 2)]
+
+    occupied = np.zeros(mx * my, dtype=bool)
+
+    def accept(pts, own):
+        """Recorta `pts` donde entra en una celda ocupada (por otras o por
+        el otro tramo de esta misma trayectoria) o vuelve a una celda que
+        ya recorrió. Devuelve (pts, celdas)."""
+        pts = pts[np.isfinite(pts).all(axis=1)]
+        if len(pts) < 2:
+            return pts, np.array([], dtype=int)
+        c = cells_of(pts)
+        change = np.ones(len(c), dtype=bool)
+        change[1:] = c[1:] != c[:-1]
+        seen_before = np.zeros(len(c), dtype=bool)
+        if len(c) > 1:
+            # celda ya recorrida antes por este tramo (reentrada)
+            order_c = np.argsort(c, kind="stable")
+            cs = c[order_c]
+            first = np.ones(len(c), dtype=bool)
+            first[1:] = cs[1:] != cs[:-1]
+            seen_before[order_c] = ~first
+        stop = np.flatnonzero(change & (occupied[c] | np.isin(c, own) | seen_before))
+        stop = stop[stop > 0]
+        if len(stop):
+            pts, c = pts[:stop[0]], c[:stop[0]]
+        return pts, c
+
+    trajs = []
+    empty = np.array([], dtype=int)
+    for rnd in rounds:
+        seed_cells = cells_of(seeds_all[rnd])
+        rnd = rnd[~occupied[seed_cells]]
+        if not len(rnd):
+            continue
+        seeds = seeds_all[rnd]
+        stop = occupied if trajs else None          # tras la 1.ª ronda, mueren en celdas ocupadas
+        fwd = integrate(seeds, +1.0, stop)          # (K+1, N, 2): todas a la vez
+        bwd = integrate(seeds, -1.0, stop)
+        for n in range(len(rnd)):
+            if occupied[cells_of(seeds[n:n + 1])[0]]:
+                continue
+            f_pts, f_cells = accept(fwd[:, n, :], empty)
+            b_pts, b_cells = accept(bwd[:, n, :], f_cells)
+            cells = np.unique(np.concatenate([f_cells, b_cells]))
+            if len(cells) < min_cells:
+                continue
+            pts = np.concatenate([b_pts[::-1], f_pts[1:]]) if len(b_pts) else f_pts
+            if len(pts) < 2:
+                continue
+            occupied[cells] = True
+            trajs.append(np.column_stack([xs[0] + pts[:, 0] * dx, ys[0] + pts[:, 1] * dy]))
+    return trajs
+
+
 def _sample_bilinear(x, y, field, qx, qy):
     """Muestreo bilineal de `field` (ny, nx) con ejes ascendentes `x`, `y`
     en los puntos `qx`, `qy` (arrays de igual forma). NaN fuera del dominio
@@ -240,7 +398,9 @@ class WindPlot:
         self._base_key = None
         self._static_artists = []       # contornos, leyenda, textos fijos
         self._view_artists = []         # barbas
-        self._label_artists = []        # rótulos de Extra Info
+        self._label_artists = []        # rótulos de Extra Info (una PathCollection)
+        self.label_texts = []           # textos de los rótulos visibles (inspección / tests)
+        self.label_fontsize = LABEL_SIZE_DEFAULT
         self._in_draw = False
         self._interacting = False
         self._settle_timer = QTimer()
@@ -897,48 +1057,98 @@ class WindPlot:
             self._draw_wind(X, Y, sj, si, stride, i0, i1, j0, j1, factor)
 
         if d["extra"]:
-            fs = self._fs(d["label_size"])
-            fs_px = fs * dpi / 72.0
-            n_chars = 0
-            if d["draw_wind"]:
-                n_chars += 5 if d["label_units"] else 2
-            if d["draw_temp"]:
-                n_chars += 6 if d["label_units"] else 4
-            label_w = 0.62 * fs_px * (n_chars + 1)
-            label_h = 1.3 * fs_px
-            n_barbs = X.size
-            k = int(math.ceil(math.sqrt(n_barbs / MAX_LABELS)))
-            stride_l = stride * max(1, k)
-            if cell > 0:
-                stride_l = max(stride_l, int(math.ceil(label_w / cell)), int(math.ceil(label_h / cell)))
-            si_l = self._aligned_slice(i0, i1, stride_l)
-            sj_l = self._aligned_slice(j0, j1, stride_l)
-            Xl, Yl = np.meshgrid(lons[si_l], lats[sj_l])
-            spd_s = d["spd"][sj_l, si_l] if d["draw_wind"] else None
-            t_s = (d["t"][sj_l, si_l] - KELVIN) if d["draw_temp"] else None
-            off_x = 0.15 * d["dlon"] * stride
-            off_y = 0.30 * d["dlat"] * stride       # por encima del glifo, que está centrado en el punto
-            u_kt = " kt" if d["label_units"] else ""
-            u_c = " °C" if d["label_units"] else "°"
-            nj, ni = Xl.shape
-            for jj in range(nj):
-                for ii in range(ni):
-                    parts = []
-                    col = self.pal["text"]
-                    if spd_s is not None and not np.ma.is_masked(spd_s[jj, ii]):
-                        s_val = float(spd_s[jj, ii])
-                        parts.append(f"{s_val:.0f}{u_kt}")
-                        col = speed_color(s_val)
-                    if t_s is not None and not np.isnan(t_s[jj, ii]):
-                        parts.append(f"{t_s[jj, ii]:.0f}{u_c}")
-                    if parts:
-                        txt = ax.text(Xl[jj, ii] + off_x, Yl[jj, ii] + off_y, "  ".join(parts),
-                                      fontsize=fs, color=col, ha="left", va="bottom",
-                                      zorder=6, **tr)
-                        # Recorte al área del mapa (con cartopy sólo funciona por bbox)
-                        txt.set_clip_box(ax.bbox)
-                        txt.set_clip_on(True)
-                        self._label_artists.append(txt)
+            self._draw_labels(X, stride, i0, i1, j0, j1, cell)
+
+    _textpath_cache = {}
+
+    @classmethod
+    def _text_path(cls, text, size):
+        """Trazado vectorial de un rótulo (en puntos), con caché: los textos
+        se repiten mucho («12 kt», «−45 °C»)."""
+        key = (text, round(size, 2))
+        path = cls._textpath_cache.get(key)
+        if path is None:
+            if len(cls._textpath_cache) > 4000:
+                cls._textpath_cache.clear()
+            path = TextPath((0, 0), text, size=size, prop=FontProperties())
+            cls._textpath_cache[key] = path
+        return path
+
+    def _draw_labels(self, X, stride, i0, i1, j0, j1, cell):
+        """Rótulos de Extra Info como UNA colección de trazados (no un
+        artista de texto por punto): matplotlib dibuja cientos de textos
+        uno por uno, con layout y rasterizado de glifos cada vez; una
+        PathCollection se transforma y pinta de una sola pasada."""
+        d = self._data
+        ax = self.ax
+        dpi = float(self.fig.dpi)
+        fs = self._fs(d["label_size"])
+        fs_px = fs * dpi / 72.0
+        n_chars = 0
+        if d["draw_wind"]:
+            n_chars += 5 if d["label_units"] else 2
+        if d["draw_temp"]:
+            n_chars += 6 if d["label_units"] else 4
+        label_w = 0.62 * fs_px * (n_chars + 1)
+        label_h = 1.3 * fs_px
+        k = int(math.ceil(math.sqrt(X.size / MAX_LABELS)))
+        stride_l = stride * max(1, k)
+        if cell > 0:
+            stride_l = max(stride_l, int(math.ceil(label_w / cell)), int(math.ceil(label_h / cell)))
+        lons, lats = d["lons"], d["lats"]
+        si_l = self._aligned_slice(i0, i1, stride_l)
+        sj_l = self._aligned_slice(j0, j1, stride_l)
+        Xl, Yl = np.meshgrid(lons[si_l], lats[sj_l])
+        if Xl.size == 0:
+            self.label_texts, self.label_fontsize = [], fs
+            return
+        off_x = 0.15 * d["dlon"] * stride
+        off_y = 0.30 * d["dlat"] * stride       # por encima del glifo, que está centrado en el punto
+        u_kt = " kt" if d["label_units"] else ""
+        u_c = " °C" if d["label_units"] else "°"
+        # Valores y colores en bloque (matrices), textos en una pasada corta
+        spd_s = None
+        if d["draw_wind"]:
+            spd_s = np.ma.filled(d["spd"][sj_l, si_l].astype(float), np.nan).ravel()
+        t_s = None
+        if d["draw_temp"]:
+            t_s = (np.asarray(d["t"][sj_l, si_l], dtype=float) - KELVIN).ravel()
+        xs = (Xl + off_x).ravel()
+        ys = (Yl + off_y).ravel()
+        n = xs.size
+        colors = np.tile(np.array(matplotlib.colors.to_rgba(self.pal["text"])), (n, 1))
+        if spd_s is not None:
+            ok = np.isfinite(spd_s)
+            colors[ok] = SPEED_CMAP(SPEED_NORM(spd_s[ok]))
+        paths, offsets, facecolors, texts = [], [], [], []
+        for i in range(n):
+            parts = []
+            if spd_s is not None and np.isfinite(spd_s[i]):
+                parts.append(f"{spd_s[i]:.0f}{u_kt}")
+            if t_s is not None and np.isfinite(t_s[i]):
+                parts.append(f"{t_s[i]:.0f}{u_c}")
+            if not parts:
+                continue
+            text = "  ".join(parts)
+            paths.append(self._text_path(text, fs))
+            offsets.append((xs[i], ys[i]))
+            facecolors.append(colors[i])
+            texts.append(text)
+        self.label_texts, self.label_fontsize = texts, fs
+        if not paths:
+            return
+        if self.use_cartopy:
+            offset_tr = self.data_crs._as_mpl_transform(ax)
+        else:
+            offset_tr = ax.transData
+        coll = PathCollection(paths, offsets=np.asarray(offsets), offset_transform=offset_tr,
+                              facecolors=facecolors, edgecolors="none", linewidths=0,
+                              zorder=6)
+        coll.set_transform(Affine2D().scale(dpi / 72.0))   # trazados en puntos → píxeles
+        coll.set_clip_box(ax.bbox)
+        coll.set_clip_on(True)
+        ax.add_collection(coll, autolim=False)
+        self._label_artists.append(coll)
 
     def _draw_wind(self, X, Y, sj, si, stride, i0, i1, j0, j1, factor=1.0):
         """Capa de viento según el estilo: barbas, flechas (vectores) o
@@ -976,15 +1186,14 @@ class WindPlot:
             flip_barb=(Y < 0), zorder=5, clip_on=True, **tr))
 
     def _draw_streamlines(self, stride, i0, i1, j0, j1, factor=1.0):
-        """Líneas de corriente (streamplot) coloreadas por velocidad.
-        `Densidad` N baja la densidad de líneas (2 / N).
+        """Líneas de corriente coloreadas por velocidad. `Densidad` N baja la
+        densidad de líneas (2 / N).
 
-        El integrador necesita una grilla regular en coordenadas del eje:
-        con cartopy se muestrea el campo (bilineal) sobre una grilla regular
-        de la proyección que cubre la vista y se rotan los vectores con
-        `transform_vectors` (sin scipy, que cartopy exigiría para hacerlo
-        solo); sin cartopy la grilla lat/lon ya es regular."""
-        from matplotlib.axes import Axes
+        El campo se muestrea (bilineal) sobre una grilla regular de la
+        proyección que cubre la vista, se rotan los vectores con cartopy y
+        las trayectorias se integran todas a la vez con numpy
+        (`integrate_streamlines`), en lugar del integrador punto por punto
+        de matplotlib."""
         d = self._data
         ax = self.ax
         lons, lats = d["lons"], d["lats"]
@@ -995,9 +1204,6 @@ class WindPlot:
             return
         density = max(0.25, 2.0 / max(1, stride))
         scale = max(0.8, self.font_scale) * factor
-        kw = dict(cmap=SPEED_CMAP, norm=SPEED_NORM, density=density, linewidth=1.1 * scale,
-                  arrowsize=1.0 * scale, arrowstyle="->", zorder=5)
-        patches_before = set(id(a) for a in ax.patches)
         try:
             if self.use_cartopy:
                 proj = ax.projection
@@ -1014,7 +1220,6 @@ class WindPlot:
                 ok = np.isfinite(qlon) & np.isfinite(qlat)
                 qlon = np.where(ok, qlon, lons[0])
                 qlat = np.where(ok, qlat, lats[0])
-                # Longitudes en la misma convención que el archivo
                 if lons.max() > 180.0:
                     qlon = np.where(qlon < 0.0, qlon + 360.0, qlon)
                 elif lons.min() < 0.0:
@@ -1028,89 +1233,103 @@ class WindPlot:
                 good = np.isfinite(us) & np.isfinite(vs)
                 if good.sum() < 4:
                     return
-                u0 = np.where(good, us, 0.0)
-                v0 = np.where(good, vs, 0.0)
                 with np.errstate(all="ignore"):
-                    up, vp = proj.transform_vectors(self.data_crs, qlon, qlat, u0, v0)
+                    up, vp = proj.transform_vectors(self.data_crs, qlon, qlat,
+                                                    np.where(good, us, 0.0), np.where(good, vs, 0.0))
                 up = np.where(good, up, np.nan)
                 vp = np.where(good, vp, np.nan)
-                sp = Axes.streamplot(ax, xs, ys, up, vp, color=np.ma.masked_invalid(ss), **kw)
             else:
-                sp = ax.streamplot(lons, lats, uk, vk, color=np.ma.masked_invalid(spd), **kw)
+                # Grilla lat/lon ya regular: recorte visible
+                xs, ys = lons[i0:i1], lats[j0:j1]
+                if len(xs) < 2 or len(ys) < 2:
+                    return
+                up, vp, ss = uk[j0:j1, i0:i1], vk[j0:j1, i0:i1], spd[j0:j1, i0:i1]
+            trajs = integrate_streamlines(xs, ys, up, vp, density=density)
         except Exception as exc:
             import logging
             logging.getLogger(__name__).warning("Líneas de corriente: %s", exc)
             return
-        # streamplot agrega sus flechas al eje por fuera de lo que devuelve:
-        # se quitan (quedarían huérfanas al cambiar de estilo o de vista) y
-        # se reemplazan por flechas propias, a intervalos regulares.
-        for a in list(ax.patches):
-            if id(a) not in patches_before:
-                try:
-                    a.remove()
-                except Exception:
-                    pass
-        try:
-            sp.lines.set_clip_box(ax.bbox)
-            sp.lines.set_clip_on(True)
-        except Exception:
-            pass
-        self._view_artists.append(sp.lines)
-        self._view_artists.extend(self._stream_arrows(sp.lines, scale))
+        if not trajs:
+            return
+        # Velocidad a lo largo de cada trayectoria (color por segmento)
+        segs, vals, trajs_v = [], [], []
+        for pts in trajs:
+            v = _sample_bilinear(xs, ys, ss, pts[:, 0], pts[:, 1])
+            seg = np.stack([pts[:-1], pts[1:]], axis=1)
+            segs.append(seg)
+            vals.append(0.5 * (v[:-1] + v[1:]))
+            trajs_v.append((pts, v))
+        segs = np.concatenate(segs)
+        vals = np.concatenate(vals)
+        lc = LineCollection(segs, cmap=SPEED_CMAP, norm=SPEED_NORM, linewidths=1.1 * scale,
+                            zorder=5, transform=ax.transData)
+        lc.set_array(np.ma.masked_invalid(vals))
+        lc.set_clip_box(ax.bbox)
+        lc.set_clip_on(True)
+        ax.add_collection(lc, autolim=False)
+        self._view_artists.append(lc)
+        self._view_artists.extend(self._stream_arrows(trajs_v, scale))
 
-    def _stream_arrows(self, lc, scale):
+    def _stream_arrows(self, trajs, scale):
         """Flechas de sentido embebidas en las líneas de corriente, una cada
         STREAM_ARROW_PX píxeles de cada trayectoria, del color de la
-        velocidad local. Las trayectorias se reconstruyen encadenando los
-        segmentos consecutivos de la LineCollection."""
-        from matplotlib.patches import FancyArrowPatch
+        velocidad local. `trajs`: lista de (puntos (n, 2), velocidad (n,)).
+
+        Todas las puntas van en UNA LineCollection de «chevrones» (dos
+        segmentos por flecha) calculados con numpy en coordenadas de datos a
+        partir del tamaño en píxeles, en vez de un FancyArrowPatch por flecha
+        (cada parche se transformaba y dibujaba por separado)."""
         ax = self.ax
-        segs = lc.get_segments()
-        vals = lc.get_array()
-        if not len(segs):
-            return []
-        vals = np.asarray(np.ma.filled(vals, np.nan), dtype=float) if vals is not None \
-            else np.full(len(segs), np.nan)
-        trajs = []
-        cur = [segs[0][0], segs[0][1]]
-        curv = [vals[0]]
-        for k in range(1, len(segs)):
-            if np.allclose(segs[k][0], cur[-1]):
-                cur.append(segs[k][1])
-                curv.append(vals[k])
-            else:
-                trajs.append((np.asarray(cur), np.asarray(curv)))
-                cur = [segs[k][0], segs[k][1]]
-                curv = [vals[k]]
-        trajs.append((np.asarray(cur), np.asarray(curv)))
         spacing = STREAM_ARROW_PX * scale
-        out = []
+        head = 7.0 * scale                       # largo de las alas (px)
+        tips, dirs, vals = [], [], []
         for pts, v in trajs:
             if len(pts) < 3:
                 continue
+            v = np.asarray(v, dtype=float)
             disp = ax.transData.transform(pts)
             d = np.hypot(np.diff(disp[:, 0]), np.diff(disp[:, 1]))
             cum = np.concatenate([[0.0], np.cumsum(d)])
             total = cum[-1]
             if total < spacing * 0.6:
-                targets = [total / 2.0]
+                targets = np.array([total / 2.0])
             else:
                 n = int(total // spacing)
                 off = (total - n * spacing) / 2.0
-                targets = [off + spacing * (i + 0.5) for i in range(max(1, n))]
-            for t in targets:
-                i = int(np.searchsorted(cum, t)) - 1
-                i = max(0, min(i, len(pts) - 2))
-                val = v[min(i, len(v) - 1)]
-                color = SPEED_CMAP(SPEED_NORM(val)) if np.isfinite(val) else self.pal["text"]
-                arr = FancyArrowPatch(tuple(pts[i]), tuple(pts[i + 1]), arrowstyle="->",
-                                      mutation_scale=11.0 * scale, color=color,
-                                      linewidth=1.1 * scale, zorder=6, transform=ax.transData)
-                arr.set_clip_box(ax.bbox)
-                arr.set_clip_on(True)
-                ax.add_patch(arr)
-                out.append(arr)
-        return out
+                targets = off + spacing * (np.arange(max(1, n)) + 0.5)
+            i = np.clip(np.searchsorted(cum, targets) - 1, 0, len(pts) - 2)
+            seg = disp[i + 1] - disp[i]
+            norm = np.hypot(seg[:, 0], seg[:, 1])
+            ok = norm > 1e-6
+            if not ok.any():
+                continue
+            tips.append(disp[i + 1][ok])
+            dirs.append(seg[ok] / norm[ok][:, None])
+            vals.append(v[np.minimum(i + 1, len(v) - 1)][ok])
+        if not tips:
+            return []
+        tips = np.concatenate(tips)          # (M, 2) en píxeles
+        dirs = np.concatenate(dirs)
+        vals = np.concatenate(vals)
+        # Alas a ±28° de la dirección, hacia atrás desde la punta
+        ang = np.deg2rad(28.0)
+        c, s_ = np.cos(ang), np.sin(ang)
+        left = np.column_stack([-dirs[:, 0] * c + dirs[:, 1] * s_, -dirs[:, 0] * s_ - dirs[:, 1] * c])
+        right = np.column_stack([-dirs[:, 0] * c - dirs[:, 1] * s_, dirs[:, 0] * s_ - dirs[:, 1] * c])
+        a = tips + head * left
+        b = tips + head * right
+        inv = ax.transData.inverted()
+        segs = np.stack([np.stack([inv.transform(a), inv.transform(tips)], axis=1),
+                         np.stack([inv.transform(b), inv.transform(tips)], axis=1)], axis=1)
+        segs = segs.reshape(-1, 2, 2)            # (2M, 2, 2) en datos
+        colors = SPEED_CMAP(SPEED_NORM(np.repeat(np.nan_to_num(vals, nan=0.0), 2)))
+        colors[np.repeat(~np.isfinite(vals), 2)] = matplotlib.colors.to_rgba(self.pal["text"])
+        lc = LineCollection(segs, colors=colors, linewidths=1.5 * scale, zorder=6,
+                            transform=ax.transData, capstyle="round")
+        lc.set_clip_box(ax.bbox)
+        lc.set_clip_on(True)
+        ax.add_collection(lc, autolim=False)
+        return [lc]
 
     def save_png(self, path, dpi=150):
         """Guarda la vista actual con fondo opaco (el alfa es sólo para la

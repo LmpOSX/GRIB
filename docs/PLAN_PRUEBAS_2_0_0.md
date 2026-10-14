@@ -105,6 +105,7 @@ detalle.
 | G6 | Todo el dominio | Botón o ⌘⇧0 | Vuelve a la grilla completa. |
 | G7 | Cambio de nivel con zoom | Hacer zoom y cambiar de FL, paso, variable, Extra Info, grilla o densidad | La vista se mantiene en todos los casos. |
 | G15 | Rueda del mouse | Girar la rueda sobre el mapa | Acerca/aleja alrededor del cursor; `Inicio` vuelve a la vista completa. |
+| G20 | Velocidad al cambiar de capa | Archivo GFS 0,25° de una zona grande; cambiar de FL con barbas, con Extra Info, con curvas y en estereográfica | Cada cambio se dibuja en menos de medio segundo en todos los casos; con Extra Info los rótulos aparecen junto con las barbas (son una sola colección). |
 | G16 | Fluidez del pan | Densidad 1 + Extra Info + grilla, arrastrar el mapa | El mapa sigue al mouse sin trabarse; los rótulos y las etiquetas de la grilla desaparecen durante el arrastre y vuelven al soltar (≈0,2 s). |
 | G17 | Raleo automático | Vista completa con densidad 1 | Barbas y rótulos raleados pero legibles; al acercar aparecen todos los puntos; el cambio no "salta" entre vistas. |
 | G18 | Fluidez en proyecciones | Repetir G16 en estereográfica | Mismo comportamiento. |

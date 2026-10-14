@@ -300,8 +300,17 @@ conserva al cambiar paso, nivel, variable u opciones; `Inicio` o `Todo el
 dominio` la reinician. La vista siempre llena el área del mapa: al fijar el
 dominio o un recuadro se amplía en el sentido que haga falta.
 
-Para que el mapa responda rápido, las barbas o flechas y los rótulos de "Extra Info"
-se dibujan sólo para la zona visible. Al alejar la vista las barbas y las
+Para que el mapa responda rápido todo lo que se dibuja va en bloque, con
+matrices: barbas y flechas son una colección de matplotlib; los rótulos de
+"Extra Info" son una sola colección de trazados vectoriales (un artista de
+texto por punto costaba cinco veces más); las líneas de corriente se
+integran todas a la vez con un Runge-Kutta vectorizado en numpy sobre
+una grilla regular de la proyección (`integrate_streamlines`, tres veces
+más rápido que el integrador punto por punto de matplotlib) y sus flechas
+de sentido son una colección de chevrones. Un cambio de nivel tarda
+≈0,1 s con barbas o flechas y ≈0,15 s con curvas en un GFS de 0,50°.
+Además, las barbas o flechas y los rótulos se dibujan sólo para la zona
+visible. Al alejar la vista las barbas y las
 flechas primero se achican (hasta la mitad del tamaño nominal) y las curvas
 se afinan, para conservar la mayor cantidad posible de celdas; recién
 cuando ya no entran se ralean (al acercar la vista aparecen todos;

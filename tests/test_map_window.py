@@ -188,24 +188,25 @@ class TestCargaYRedibujo(_MapBase):
         self.assertEqual(self.w.plot._view_artists, [])
 
     def test_cambiar_de_estilo_no_deja_huerfanos(self):
-        """Las flechas que streamplot agrega al eje por su cuenta se quitan al
-        cambiar de estilo o de vista (antes quedaban dibujadas)."""
+        """Las curvas son dos colecciones (líneas y chevrones de sentido), sin
+        parches sueltos; al cambiar de estilo o redibujar no queda nada."""
         from matplotlib.patches import FancyArrowPatch
+        from matplotlib.collections import LineCollection
         ax = self.w.plot.ax
         for key in ("curvas", "flechas", "curvas", "barbas"):
             self.w.panel.cb_style.setCurrentIndex(self.w.panel.cb_style.findData(key))
             self.w.plot.canvas.draw()
         self.assertEqual([a for a in ax.patches if isinstance(a, FancyArrowPatch)], [])
+        self.assertEqual([a for a in ax.collections if isinstance(a, LineCollection)], [])
         self.w.panel.cb_style.setCurrentIndex(self.w.panel.cb_style.findData("curvas"))
         self.w.plot.canvas.draw()
-        n1 = len([a for a in ax.patches if isinstance(a, FancyArrowPatch)])
-        self.assertGreater(n1, 0)
+        n1 = len(ax.collections)
+        self.assertEqual(len(self.w.plot._view_artists), 2)          # líneas + chevrones
+        self.assertTrue(all(isinstance(a, LineCollection) for a in self.w.plot._view_artists))
+        self.assertGreater(len(self.w.plot._view_artists[1].get_segments()), 2)   # varias flechas
         self.w.panel.btn_update.click()
         self.w.plot.canvas.draw()
-        n2 = len([a for a in ax.patches if isinstance(a, FancyArrowPatch)])
-        self.assertEqual(n2, n1)        # redibujar no acumula flechas
-        # Las flechas embebidas son más que las trayectorias (varias por línea)
-        self.assertEqual(len(self.w.plot._view_artists), n1 + 1)
+        self.assertEqual(len(ax.collections), n1)          # redibujar no acumula
 
     def test_flechas_solo_direccion(self):
         """Las flechas tienen largo fijo (vectores unitarios) y no se dibujan
@@ -231,15 +232,16 @@ class TestCargaYRedibujo(_MapBase):
         self.w.panel.rb_var[2].click()                     # viento + temperatura
         self.w.panel.chk_extra.setChecked(True)
         self.w.plot.canvas.draw()
-        txts = [t.get_text() for t in self.w.plot._label_artists]
+        txts = list(self.w.plot.label_texts)
         self.assertTrue(txts and all("kt" in t and "°C" in t for t in txts), txts[:3])
-        self.assertAlmostEqual(self.w.plot._label_artists[0].get_fontsize(), 7.0)
+        self.assertAlmostEqual(self.w.plot.label_fontsize, 7.0)
+        self.assertEqual(len(self.w.plot._label_artists), 1)       # una sola colección
         vals = dict(self.w._cfg); vals.update({"map_label_units": False, "map_label_size": 11})
         self.w.apply_settings(vals)
         self.w.plot.canvas.draw()
-        txts = [t.get_text() for t in self.w.plot._label_artists]
+        txts = list(self.w.plot.label_texts)
         self.assertTrue(txts and all("kt" not in t and t.endswith("°") for t in txts), txts[:3])
-        self.assertAlmostEqual(self.w.plot._label_artists[0].get_fontsize(), 11.0)
+        self.assertAlmostEqual(self.w.plot.label_fontsize, 11.0)
 
     def test_alejar_achica_los_glifos_antes_de_ralear(self):
         """Al alejar la vista las flechas se acortan hasta la mitad y recién
@@ -267,6 +269,22 @@ class TestCargaYRedibujo(_MapBase):
         self.assertAlmostEqual(f, wind_plot.GLYPH_MIN_FACTOR)
         self.assertGreater(stride, 1)
         self.assertEqual(plot._fit_glyph(24.0, 40.0, 1), (1.0, 1))
+
+    def test_integrador_vectorizado(self):
+        """Las líneas de corriente salen del integrador propio (numpy): en un
+        campo de rotación cierran una vuelta y no se superponen; con menos
+        densidad hay menos líneas."""
+        from app.wind_plot import integrate_streamlines
+        xs = np.linspace(-10, 10, 80); ys = np.linspace(-8, 8, 60)
+        X, Y = np.meshgrid(xs, ys)
+        t2 = integrate_streamlines(xs, ys, -Y, X, density=2.0)
+        t1 = integrate_streamlines(xs, ys, -Y, X, density=1.0)
+        self.assertGreater(len(t2), len(t1) * 2)
+        for pts in t2:
+            self.assertTrue(np.isfinite(pts).all())
+            self.assertTrue((pts[:, 0] >= xs[0] - 1e-9).all() and (pts[:, 0] <= xs[-1] + 1e-9).all())
+        # campo nulo: ninguna trayectoria
+        self.assertEqual(integrate_streamlines(xs, ys, 0 * X, 0 * Y), [])
 
     def test_curvas_con_densidad_y_sin_cartopy(self):
         from app import wind_plot
