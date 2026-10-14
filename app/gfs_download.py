@@ -17,9 +17,10 @@ NOMADS_BASE = "https://nomads.ncep.noaa.gov/cgi-bin/"
 
 # (clave, nombre, script del filtro, patrón del archivo,
 #  script del producto "b" con los niveles intermedios, patrón de ese archivo)
-# A 0,25° los niveles intermedios (cada 25 hPa) están en un segundo producto,
-# pgrb2b, con su propio filtro. A 0,50° el producto pgrb2full ya los trae en
-# el mismo archivo. A 1,00° no existen.
+# Los niveles intermedios (cada 25 hPa) están en el producto pgrb2b, que
+# existe en las tres resoluciones, pero NOMADS sólo tiene grib filter para
+# pgrb2b a 0,25°. A 0,50° el producto pgrb2full ya une pgrb2 + pgrb2b. A
+# 1,00° habría que bajar pgrb2b.1p00 entero (~19 MB por paso, sin recorte).
 RESOLUTIONS = [
     ("0p25", "0,25°", "filter_gfs_0p25.pl", "gfs.t{cyc:02d}z.pgrb2.0p25.f{fh:03d}",
      "filter_gfs_0p25b.pl", "gfs.t{cyc:02d}z.pgrb2b.0p25.f{fh:03d}"),
@@ -117,8 +118,9 @@ class DownloadSpec:
         if desconocidos:
             return "Niveles que el GFS no ofrece: " + ", ".join(f"{lv}" for lv in desconocidos)
         if self.extra_levels and not extra_levels_available(self.resolution):
-            return ("A 1,00° el GFS no ofrece los niveles intermedios (cada 25 hPa); "
-                    "elegí 0,25° o 0,50° o quitalos.")
+            return ("A 1,00° NOMADS no tiene grib filter para el producto pgrb2b, así "
+                    "que los niveles intermedios (cada 25 hPa) no se pueden pedir "
+                    "recortados; elegí 0,25° o 0,50° o quitalos.")
         if self.region is not None:
             top, bottom, left, right = self.region
             if not (-90 <= bottom < top <= 90):

@@ -103,8 +103,9 @@ servidor sólo lo pedido:
 * **Variables**: viento U y V, temperatura, altura geopotencial y humedad.
 * **Niveles de presión**: los del producto pgrb2 (1000 … 10 hPa) y, si se
   marca `Incluir niveles intermedios cada 25 hPa`, también 875 … 125 hPa
-  (producto pgrb2b a 0,25°, incluidos en pgrb2full a 0,50°; a 1,00° no
-  existen). Atajos "Los del visor" (que suma 275/225/175 con los
+  (producto pgrb2b a 0,25°, incluidos en pgrb2full a 0,50°; a 1,00° el
+  producto pgrb2b existe pero NOMADS no tiene grib filter para él, así que no
+  se pueden pedir recortados). Atajos "Los del visor" (que suma 275/225/175 con los
   intermedios), "Todos" y "Ninguno".
 * **Resolución**: 0,25°, 0,50° o 1,00°.
 * **Zona**: latitudes norte/sur y longitudes oeste/este (o todo el globo);

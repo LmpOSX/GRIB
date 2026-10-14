@@ -247,7 +247,7 @@ class SettingsDialog(GlassDialog):
         lay.addWidget(self.chk_extra_levels)
         self._hint(lay, "Con los intermedios, cada FL del visor queda a menos de 8 hPa de "
                         "un nivel del archivo (F320 ≈ 275, F360 ≈ 225, F410 ≈ 175) y la "
-                        "interpolación en ln(p) es mínima. A 1,00° no existen.")
+                        "interpolación en ln(p) es mínima. A 1,00° NOMADS no los filtra.")
         self.chk_merge = QCheckBox("Unir los pasos en un solo archivo")
         self.chk_merge.setChecked(bool(self._cfg.get("download_merge", True)))
         lay.addWidget(self.chk_merge)

@@ -136,7 +136,7 @@ class DownloadDialog(GlassDialog):
         self.chk_extra = QCheckBox("Incluir niveles intermedios cada 25 hPa (pgrb2b)")
         self.chk_extra.setToolTip("875 … 125 hPa: a 0,25° se bajan del producto pgrb2b y se "
                                   "unen al mismo archivo; a 0,50° vienen en pgrb2full; a "
-                                  "1,00° no existen. Con ellos F320, F360 y F410 quedan a "
+                                  "1,00° NOMADS no los filtra. Con ellos F320, F360 y F410 quedan a "
                                   "menos de 4 hPa de un nivel del archivo.")
         self.chk_extra.toggled.connect(self._on_extra_toggled)
         row.addWidget(self.chk_extra)
