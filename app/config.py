@@ -52,6 +52,7 @@ DEFAULTS = {
     "last_directory": "",    # working directory for open/save dialogs
     "projection": "platecarree",   # clave de wind_plot.PROJECTIONS
     # Mapa: valores iniciales de CONFIG del panel (se guardan al cambiarlos)
+    "map_wind_style": "barbas",   # 'barbas' | 'flechas' | 'curvas' (wind_plot.WIND_STYLES)
     "map_extra_info": False,
     "map_grid": False,
     "map_fill": False,

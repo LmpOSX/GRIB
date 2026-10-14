@@ -269,14 +269,15 @@ class MainWindow(QMainWindow):
 
     def _map_options_from_cfg(self) -> dict:
         c = self._cfg
-        return {"extra_info": c.get("map_extra_info", False), "grid": c.get("map_grid", False),
+        return {"wind_style": c.get("map_wind_style", "barbas"),
+                "extra_info": c.get("map_extra_info", False), "grid": c.get("map_grid", False),
                 "fill": c.get("map_fill", False), "stride": c.get("map_stride", 1)}
 
     def _on_panel_options_changed(self):
         """CONFIG del panel: se guarda como valor inicial y se redibuja."""
         o = self.panel.options()
-        self._cfg.update({"map_extra_info": o["extra_info"], "map_grid": o["grid"],
-                          "map_fill": o["fill"], "map_stride": o["stride"]})
+        self._cfg.update({"map_wind_style": o["wind_style"], "map_extra_info": o["extra_info"],
+                          "map_grid": o["grid"], "map_fill": o["fill"], "map_stride": o["stride"]})
         save_config(self._cfg)
         self.redraw()
 

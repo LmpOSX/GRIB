@@ -2,7 +2,7 @@
 """Preferencias del visor, en pestañas:
 
 * Apariencia: color de acento (con vista previa en vivo) y transparencia.
-* Mapa: proyección y valores iniciales de CONFIG (Extra Info, grilla, fondo,
+* Mapa: proyección y valores iniciales de CONFIG (viento, Extra Info, grilla, fondo,
   densidad).
 * Fuentes: habilitar cada fuente, sus parámetros, credenciales y prueba.
 * Descarga: plazos y destino por defecto de «Obtener datos…», caché.
@@ -26,7 +26,7 @@ from .glass_dialog import GlassDialog, add_shadow as _add_shadow
 from ..config import OPACITY_MAX
 from .. import gfs_download as gfs
 from ..grib_engines import ENGINES, ec, find_wgrib2, wgrib2_version
-from ..wind_plot import PROJECTIONS, HAVE_CARTOPY
+from ..wind_plot import PROJECTIONS, HAVE_CARTOPY, WIND_STYLES
 from ..sources import all_sources, source_config, set_source_config, source_label
 from ..sources.cache import DownloadCache
 
@@ -198,7 +198,16 @@ class SettingsDialog(GlassDialog):
         lay.addWidget(self.cb_proj)
 
         self._sub(lay, "Valores iniciales de CONFIG (también se guardan al cambiarlos en el panel)")
-        self.chk_extra = QCheckBox("Extra Info (kt / °C junto a cada barba)")
+        row = QHBoxLayout()
+        row.addWidget(QLabel("Viento"))
+        self.cb_style = QComboBox()
+        for key, name in WIND_STYLES:
+            self.cb_style.addItem(name, key)
+        self.cb_style.setCurrentIndex(max(0, self.cb_style.findData(
+            self._cfg.get("map_wind_style", "barbas"))))
+        row.addWidget(self.cb_style, 1)
+        lay.addLayout(row)
+        self.chk_extra = QCheckBox("Extra Info (kt / °C junto a cada punto)")
         self.chk_extra.setChecked(bool(self._cfg.get("map_extra_info", False)))
         self.chk_grid = QCheckBox("Grilla lat/lon del archivo")
         self.chk_grid.setChecked(bool(self._cfg.get("map_grid", False)))
@@ -485,6 +494,7 @@ class SettingsDialog(GlassDialog):
             "accent_color": self._color,
             "opacity": self._opacity,
             "projection": self.cb_proj.currentData() or "platecarree",
+            "map_wind_style": self.cb_style.currentData() or "barbas",
             "map_extra_info": self.chk_extra.isChecked(),
             "map_grid": self.chk_grid.isChecked(),
             "map_fill": self.chk_fill.isChecked(),

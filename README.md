@@ -230,14 +230,20 @@ real salvo la cuantización del empaquetado). Por eso la fuente ofrece:
   niveles del archivo. Fuera del rango se usa el nivel más cercano y STATUS
   lo marca como "extrapolado". El combo "Nivel de presión" elige un nivel
   del archivo sin interpolar.
-* **VARIABLE**: Viento (barbas), Temperatura (contornos cada 2 °C) o ambas.
+* **VARIABLE**: Viento, Temperatura (contornos cada 2 °C) o ambas.
 * **CONFIG**: `Proyección` elige cómo se dibuja el mapa: Lat/Lon
   (PlateCarree), Estereográfica conforme centrada en el dominio del archivo,
   Estereográfica polar sur o norte, Mercator o Lambert conforme (requieren
-  cartopy; la elección se guarda en la configuración). `Extra Info` escribe
-  la velocidad en kt (y la temperatura en °C) junto a cada barba; `Grilla` dibuja la grilla lat/lon del archivo;
+  cartopy; la elección se guarda en la configuración). `Viento` elige la
+  representación: **Barbas** (convención meteorológica, en kt), **Flechas**
+  (vectores que apuntan hacia donde sopla el viento, con largo proporcional
+  a la velocidad) o **Curvas** (líneas de corriente del campo, con flechas
+  de sentido); las tres usan la misma escala de colores por velocidad.
+  `Extra Info` escribe la velocidad en kt (y la temperatura en °C) junto a
+  cada punto; `Grilla` dibuja la grilla lat/lon del archivo;
   `Fondo de velocidad` rellena el mapa con la misma escala de colores;
-  `Densidad` submuestrea las barbas cada N puntos; `Update` redibuja y
+  `Densidad` submuestrea las barbas o flechas cada N puntos (en curvas baja
+  la densidad de líneas); `Update` redibuja y
   `Disable`/`Enable` oculta o muestra la capa de datos. Cualquier cambio de
   radio, botón de nivel, combo o casilla redibuja automáticamente, y las
   casillas y la densidad quedan guardadas como valores iniciales (también
@@ -255,7 +261,7 @@ conserva al cambiar paso, nivel, variable u opciones; `Inicio` o `Todo el
 dominio` la reinician. La vista siempre llena el área del mapa: al fijar el
 dominio o un recuadro se amplía en el sentido que haga falta.
 
-Para que el mapa responda rápido, las barbas y los rótulos de "Extra Info"
+Para que el mapa responda rápido, las barbas o flechas y los rótulos de "Extra Info"
 se dibujan sólo para la zona visible y se ralean automáticamente cuando hay
 demasiados (al acercar la vista aparecen todos; `Densidad` fija el raleo
 mínimo). Mientras se arrastra el mapa se ocultan los rótulos y las etiquetas
@@ -263,12 +269,14 @@ de la grilla, que vuelven al soltar. Al mover el mouse sobre el mapa la barra in
 muestra lat/lon y, en el punto de grilla más cercano, velocidad (kt),
 dirección (°) y temperatura (°C).
 
-En cualquier proyección las barbas se rotan a la orientación local del
-mapa, los meridianos y paralelos cada 10° llevan etiquetas en los bordes y
+En cualquier proyección las barbas y flechas se rotan a la orientación
+local del mapa (las curvas se calculan sobre una grilla regular de la
+proyección que cubre la vista, muestreando el campo bilinealmente y
+rotando los vectores), los meridianos y paralelos cada 10° llevan etiquetas en los bordes y
 la grilla del archivo (opcional) se dibuja punteada. La barra de estado
 convierte la posición del cursor a lat/lon.
 
-Escala de colores de las barbas: 0–9 kt cian, 10–19 azul, 20–29 verde,
+Escala de colores del viento (barbas, flechas y curvas): 0–9 kt cian, 10–19 azul, 20–29 verde,
 30–39 amarillo, 40–49 naranja, ≥50 rojo. Conversiones: 1 m/s = 1.943844 kt;
 dirección meteorológica = (270 − atan2(v, u)) mod 360; T(°C) = T(K) −
 273.15. Las longitudes 0–360 se normalizan a −180…180 y las latitudes se

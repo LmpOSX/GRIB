@@ -15,14 +15,14 @@ from PyQt6.QtWidgets import (
 )
 
 from ..grib_reader import FLIGHT_LEVELS, fl_to_hpa
-from ..wind_plot import PROJECTIONS, HAVE_CARTOPY
+from ..wind_plot import PROJECTIONS, HAVE_CARTOPY, WIND_STYLES
 
 
 class ControlPanel(QWidget):
     step_changed = pyqtSignal(int)          # índice del paso elegido
     level_changed = pyqtSignal()            # FL o nivel de presión
     variable_changed = pyqtSignal(str)      # 'viento' | 'temperatura' | 'ambos'
-    options_changed = pyqtSignal()          # Extra Info / Grilla / Fondo / Densidad
+    options_changed = pyqtSignal()          # Viento / Extra Info / Grilla / Fondo / Densidad
     update_clicked = pyqtSignal()
     layer_toggled = pyqtSignal()            # Disable / Enable
     extent_applied = pyqtSignal(float, float, float, float)   # lon0, lon1, lat0, lat1
@@ -175,7 +175,18 @@ class ControlPanel(QWidget):
             lambda i: self._emit_if_live(self.projection_changed, self.cb_proj.itemData(i)))
         row.addWidget(self.cb_proj, 1)
         lay.addLayout(row)
-        self.chk_extra = QCheckBox("Extra Info (kt / °C junto a cada barba)")
+        row = QHBoxLayout()
+        row.addWidget(QLabel("Viento"))
+        self.cb_style = QComboBox()
+        for key, name in WIND_STYLES:
+            self.cb_style.addItem(name, key)
+        self.cb_style.setToolTip("Representación del viento: barbas, flechas (vectores con largo "
+                                 "proporcional a la velocidad) o curvas (líneas de corriente)")
+        self.cb_style.setSizePolicy(QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Fixed)
+        self.cb_style.currentIndexChanged.connect(lambda _i: self._emit_if_live(self.options_changed))
+        row.addWidget(self.cb_style, 1)
+        lay.addLayout(row)
+        self.chk_extra = QCheckBox("Extra Info (kt / °C junto a cada punto)")
         self.chk_grid = QCheckBox("Grilla lat/lon del archivo")
         self.chk_fill = QCheckBox("Fondo de velocidad (contornos rellenos)")
         for c in (self.chk_extra, self.chk_grid, self.chk_fill):
@@ -383,6 +394,7 @@ class ControlPanel(QWidget):
 
     def options(self) -> dict:
         return {
+            "wind_style": self.cb_style.currentData() or "barbas",
             "extra_info": self.chk_extra.isChecked(),
             "grid": self.chk_grid.isChecked(),
             "fill": self.chk_fill.isChecked(),
@@ -390,10 +402,12 @@ class ControlPanel(QWidget):
         }
 
     def set_options(self, opts: dict):
-        """Fija Extra Info / Grilla / Fondo / Densidad sin emitir señales
-        (valores iniciales de la configuración o de Preferencias)."""
+        """Fija Viento / Extra Info / Grilla / Fondo / Densidad sin emitir
+        señales (valores iniciales de la configuración o de Preferencias)."""
         self._updating = True
         try:
+            if "wind_style" in opts:
+                self.cb_style.setCurrentIndex(max(0, self.cb_style.findData(opts["wind_style"])))
             if "extra_info" in opts:
                 self.chk_extra.setChecked(bool(opts["extra_info"]))
             if "grid" in opts:

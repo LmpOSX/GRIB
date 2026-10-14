@@ -7,6 +7,8 @@ import os
 import tempfile
 import unittest
 
+import numpy as np
+
 os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
 
 from PyQt6.QtWidgets import QApplication, QMessageBox  # noqa: E402
@@ -161,6 +163,41 @@ class TestCargaYRedibujo(_MapBase):
         self.assertEqual(self.draws[-1]["stride"], 2)
         self.w.panel.btn_update.click()
         self.assertEqual(len(self.draws), n + 6)
+
+    def test_estilos_de_viento(self):
+        """Barbas / Flechas / Curvas redibujan, generan el artista esperado y
+        quedan guardadas en la configuración."""
+        from matplotlib.quiver import Barbs, Quiver
+        from matplotlib.collections import LineCollection
+        esperado = {"flechas": Quiver, "curvas": LineCollection, "barbas": Barbs}   # barbas ya está elegido
+        for key, cls in esperado.items():
+            n = len(self.draws)
+            self.w.panel.cb_style.setCurrentIndex(self.w.panel.cb_style.findData(key))
+            _app.processEvents()
+            self.assertEqual(len(self.draws), n + 1)
+            self.assertEqual(self.draws[-1]["wind_style"], key)
+            self.w.plot.canvas.draw()
+            tipos = [type(a) for a in self.w.plot._view_artists]
+            self.assertIn(cls, tipos, (key, tipos))
+            self.assertEqual(config.load_config()["map_wind_style"], key)
+        # Con sólo temperatura no hay capa de viento en ningún estilo
+        self.w.panel.rb_var[1].click()
+        self.w.plot.canvas.draw()
+        self.assertEqual(self.w.plot._view_artists, [])
+
+    def test_curvas_con_densidad_y_sin_cartopy(self):
+        from app import wind_plot
+        self.w.panel.cb_style.setCurrentIndex(self.w.panel.cb_style.findData("curvas"))
+        self.w.panel.spin_stride.setValue(4)
+        self.w.plot.canvas.draw()
+        self.assertTrue(self.w.plot._view_artists)
+        # Muestreo bilineal usado para regrillar a la proyección
+        x = np.array([0.0, 1.0, 2.0]); y = np.array([10.0, 11.0])
+        f = np.array([[0.0, 1.0, 2.0], [10.0, 11.0, 12.0]])
+        out = wind_plot._sample_bilinear(x, y, f, np.array([0.5, 1.5, 2.5, np.nan]),
+                                         np.array([10.5, 10.0, 10.5, 10.5]))
+        self.assertAlmostEqual(out[0], 5.5); self.assertAlmostEqual(out[1], 1.5)
+        self.assertTrue(np.isnan(out[2])); self.assertTrue(np.isnan(out[3]))
 
     def test_capa_de_datos(self):
         n = len(self.draws)

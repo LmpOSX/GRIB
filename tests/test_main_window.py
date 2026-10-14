@@ -119,7 +119,7 @@ class TestDialogos(_Base):
         from app.dialogs.settings_dialog import SettingsDialog
         cfg = dict(config.DEFAULTS)
         cfg.update({"accent_color": "#4A90D9", "opacity": 180, "projection": "mercator",
-                    "map_stride": 3, "cache_max_mb": 123, "engine": "wgrib2",
+                    "map_stride": 3, "map_wind_style": "flechas", "cache_max_mb": 123, "engine": "wgrib2",
                     "wgrib2_path": "/no/existe/wgrib2",
                     "sources": {"gfs": {"enabled": True, "params": {"resolucion": "0p50"}}}})
         self.w = SettingsDialog(None, cfg=cfg)
@@ -133,6 +133,7 @@ class TestDialogos(_Base):
         v = self.w.values()
         self.assertEqual(v["projection"], "mercator")
         self.assertEqual(v["map_stride"], 3)
+        self.assertEqual(v["map_wind_style"], "flechas")
         self.assertEqual(v["cache_max_mb"], 123)
         self.assertEqual(v["engine"], "wgrib2")
         self.assertEqual(v["wgrib2_path"], "/no/existe/wgrib2")
@@ -169,13 +170,14 @@ class TestDialogos(_Base):
         self.w.show()
         _app.processEvents()
         vals = dict(self.w._cfg)
-        vals.update({"accent_color": "#C0674D", "map_grid": True, "map_stride": 4,
+        vals.update({"accent_color": "#C0674D", "map_grid": True, "map_stride": 4, "map_wind_style": "curvas",
                      "projection": "mercator", "cache_max_days": 7,
                      "sources": {"gfs": {"enabled": True, "params": {"resolucion": "1p00"}}},
                      "engine": "eccodes"})
         self.w.apply_settings(vals)
         self.assertTrue(self.w.panel.chk_grid.isChecked())
         self.assertEqual(self.w.panel.spin_stride.value(), 4)
+        self.assertEqual(self.w.panel.options()["wind_style"], "curvas")
         self.assertEqual(self.w.panel.projection(), "mercator")
         saved = config.load_config()
         self.assertEqual(saved["accent_color"], "#C0674D")

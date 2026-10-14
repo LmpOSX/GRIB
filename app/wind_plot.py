@@ -172,9 +172,35 @@ class TranslucentCanvas(FigureCanvasQTAgg):
 # ---------------------------------------------------------------------------
 # Dibujo del mapa
 # ---------------------------------------------------------------------------
-MAX_BARBS = 2500        # barbas visibles como máximo (se ralea automáticamente)
+MAX_BARBS = 2500        # barbas / flechas visibles como máximo (se ralea automáticamente)
+WIND_STYLES = [("barbas", "Barbas"), ("flechas", "Flechas (vectores)"), ("curvas", "Curvas (líneas de corriente)")]
+ARROW_KT_PER_INCH = 150.0   # escala de las flechas: 50 kt ≈ 1/3 de pulgada
 MAX_LABELS = 900        # rótulos de Extra Info visibles como máximo
 SETTLE_MS = 150         # espera tras el último cambio de vista para reconstruir
+
+
+def _sample_bilinear(x, y, field, qx, qy):
+    """Muestreo bilineal de `field` (ny, nx) con ejes ascendentes `x`, `y`
+    en los puntos `qx`, `qy` (arrays de igual forma). NaN fuera del dominio
+    o donde falta algún vecino."""
+    x = np.asarray(x, dtype=float)
+    y = np.asarray(y, dtype=float)
+    qx = np.asarray(qx, dtype=float)
+    qy = np.asarray(qy, dtype=float)
+    ix = np.searchsorted(x, qx, side="right") - 1
+    iy = np.searchsorted(y, qy, side="right") - 1
+    valid = ((ix >= 0) & (ix < len(x) - 1) & (iy >= 0) & (iy < len(y) - 1)
+             & np.isfinite(qx) & np.isfinite(qy))
+    ix = np.clip(ix, 0, max(0, len(x) - 2))
+    iy = np.clip(iy, 0, max(0, len(y) - 2))
+    with np.errstate(all="ignore"):
+        tx = (qx - x[ix]) / (x[ix + 1] - x[ix])
+        ty = (qy - y[iy]) / (y[iy + 1] - y[iy])
+        out = (field[iy, ix] * (1 - tx) * (1 - ty) + field[iy, ix + 1] * tx * (1 - ty)
+               + field[iy + 1, ix] * (1 - tx) * ty + field[iy + 1, ix + 1] * tx * ty)
+    out = np.asarray(out, dtype=float)
+    out[~valid] = np.nan
+    return out
 
 
 class WindPlot:
@@ -597,9 +623,11 @@ class WindPlot:
             mode        'viento' | 'temperatura' | 'ambos'
             show_wind   bool  (False = capa de viento deshabilitada)
             extra_info  bool  (velocidad/temperatura al lado de cada barba)
+            wind_style  'barbas' | 'flechas' | 'curvas' (representación del viento)
             grid        bool  (grilla fina del archivo)
             fill        bool  (fondo de velocidad en contornos rellenos)
-            stride      int   (submuestreo mínimo de barbas)
+            stride      int   (submuestreo mínimo de barbas / flechas; en curvas
+                               baja la densidad de líneas)
             keep_view   bool  (True = conservar la vista actual de zoom/pan)
             extent      [lonmin, lonmax, latmin, latmax] o None (= todo el dominio)
             title       str
@@ -633,6 +661,7 @@ class WindPlot:
                 "draw_wind": draw_wind, "draw_temp": draw_temp,
                 "extra": bool(opts.get("extra_info", False)) and show_wind,
                 "stride": max(1, int(opts.get("stride", 1))),
+                "style": opts.get("wind_style", "barbas"),
             }
 
             # Capa base (se conserva entre redibujos)
@@ -743,11 +772,7 @@ class WindPlot:
             return
 
         if d["draw_wind"]:
-            uk, vk, spd = d["uk"][sj, si], d["vk"][sj, si], d["spd"][sj, si]
-            self._view_artists.append(ax.barbs(
-                X, Y, uk, vk, spd, cmap=SPEED_CMAP, norm=SPEED_NORM,
-                length=5.5 * max(0.8, self.font_scale), linewidth=0.7, pivot="middle",
-                flip_barb=(Y < 0), zorder=5, clip_on=True, **tr))
+            self._draw_wind(X, Y, sj, si, stride, i0, i1, j0, j1)
 
         if d["extra"]:
             n_barbs = X.size
@@ -780,6 +805,105 @@ class WindPlot:
                         txt.set_clip_box(ax.bbox)
                         txt.set_clip_on(True)
                         self._label_artists.append(txt)
+
+    def _draw_wind(self, X, Y, sj, si, stride, i0, i1, j0, j1):
+        """Capa de viento según el estilo: barbas, flechas (vectores) o
+        curvas (líneas de corriente). Las tres usan la escala fija de colores
+        por velocidad."""
+        d = self._data
+        ax = self.ax
+        tr = self._tr()
+        style = d.get("style", "barbas")
+        if style == "curvas":
+            self._draw_streamlines(stride, i0, i1, j0, j1)
+            return
+        uk, vk, spd = d["uk"][sj, si], d["vk"][sj, si], d["spd"][sj, si]
+        if style == "flechas":
+            # Flechas apuntando hacia donde sopla el viento, largo ∝ velocidad.
+            self._view_artists.append(ax.quiver(
+                X, Y, uk, vk, spd, cmap=SPEED_CMAP, norm=SPEED_NORM,
+                pivot="middle", scale_units="inches",
+                scale=ARROW_KT_PER_INCH / max(0.8, self.font_scale),
+                width=0.0035, headwidth=3.5, headlength=4.5, headaxislength=4.0,
+                minlength=0.5, zorder=5, clip_on=True, **tr))
+            return
+        self._view_artists.append(ax.barbs(
+            X, Y, uk, vk, spd, cmap=SPEED_CMAP, norm=SPEED_NORM,
+            length=5.5 * max(0.8, self.font_scale), linewidth=0.7, pivot="middle",
+            flip_barb=(Y < 0), zorder=5, clip_on=True, **tr))
+
+    def _draw_streamlines(self, stride, i0, i1, j0, j1):
+        """Líneas de corriente (streamplot) coloreadas por velocidad.
+        `Densidad` N baja la densidad de líneas (2 / N).
+
+        El integrador necesita una grilla regular en coordenadas del eje:
+        con cartopy se muestrea el campo (bilineal) sobre una grilla regular
+        de la proyección que cubre la vista y se rotan los vectores con
+        `transform_vectors` (sin scipy, que cartopy exigiría para hacerlo
+        solo); sin cartopy la grilla lat/lon ya es regular."""
+        from matplotlib.axes import Axes
+        d = self._data
+        ax = self.ax
+        lons, lats = d["lons"], d["lats"]
+        uk = np.ma.filled(d["uk"].astype(float), np.nan)
+        vk = np.ma.filled(d["vk"].astype(float), np.nan)
+        spd = np.ma.filled(d["spd"].astype(float), np.nan)
+        if not np.isfinite(uk).any():
+            return
+        density = max(0.25, 2.0 / max(1, stride))
+        scale = max(0.8, self.font_scale)
+        kw = dict(cmap=SPEED_CMAP, norm=SPEED_NORM, density=density, linewidth=1.1 * scale,
+                  arrowsize=1.0 * scale, arrowstyle="->", zorder=5)
+        try:
+            if self.use_cartopy:
+                proj = ax.projection
+                x0, x1, y0, y1 = ax.get_extent(proj)
+                if not (x1 > x0 and y1 > y0):
+                    return
+                nx = 120
+                ny = int(np.clip(nx * (y1 - y0) / (x1 - x0), 30, 240))
+                xs = np.linspace(x0, x1, nx)
+                ys = np.linspace(y0, y1, ny)
+                XP, YP = np.meshgrid(xs, ys)
+                ll = self.data_crs.transform_points(proj, XP, YP)
+                qlon, qlat = ll[..., 0], ll[..., 1]
+                ok = np.isfinite(qlon) & np.isfinite(qlat)
+                qlon = np.where(ok, qlon, lons[0])
+                qlat = np.where(ok, qlat, lats[0])
+                # Longitudes en la misma convención que el archivo
+                if lons.max() > 180.0:
+                    qlon = np.where(qlon < 0.0, qlon + 360.0, qlon)
+                elif lons.min() < 0.0:
+                    qlon = np.where(qlon > 180.0, qlon - 360.0, qlon)
+                us = _sample_bilinear(lons, lats, uk, qlon, qlat)
+                vs = _sample_bilinear(lons, lats, vk, qlon, qlat)
+                ss = _sample_bilinear(lons, lats, spd, qlon, qlat)
+                us[~ok] = np.nan
+                vs[~ok] = np.nan
+                ss[~ok] = np.nan
+                good = np.isfinite(us) & np.isfinite(vs)
+                if good.sum() < 4:
+                    return
+                u0 = np.where(good, us, 0.0)
+                v0 = np.where(good, vs, 0.0)
+                with np.errstate(all="ignore"):
+                    up, vp = proj.transform_vectors(self.data_crs, qlon, qlat, u0, v0)
+                up = np.where(good, up, np.nan)
+                vp = np.where(good, vp, np.nan)
+                sp = Axes.streamplot(ax, xs, ys, up, vp, color=np.ma.masked_invalid(ss), **kw)
+            else:
+                sp = ax.streamplot(lons, lats, uk, vk, color=np.ma.masked_invalid(spd), **kw)
+        except Exception as exc:
+            import logging
+            logging.getLogger(__name__).warning("Líneas de corriente: %s", exc)
+            return
+        for art in (sp.lines, sp.arrows):
+            try:
+                art.set_clip_box(ax.bbox)
+                art.set_clip_on(True)
+            except Exception:
+                pass
+            self._view_artists.append(art)
 
     def save_png(self, path, dpi=150):
         """Guarda la vista actual con fondo opaco (el alfa es sólo para la
