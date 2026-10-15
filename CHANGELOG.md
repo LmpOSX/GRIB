@@ -1,5 +1,14 @@
 # Cambios
 
+## Sin publicar
+
+- Working Area por FIR: cuadrado en millas náuticas sobre un plano
+  estereográfico tangente (punto de tangencia, vértice SO, ancho, alto y
+  radio de la esfera conforme), cargado a mano en `FIR…` ▸ Working Area y
+  dibujado junto con cada FIR mostrada (casilla `WA`, Vista ▸ FIR).
+- Las FIR se muestran de a una o sumadas desde Vista ▸ FIR ▸ FIR a mostrar
+  (una entrada por FIR, Todas, Sólo Argentina, Ninguna).
+
 ## 0.1.0 — 2026-10-15
 
 Primera versión publicada del visor en PyQt6. Instaladores para macOS (Apple

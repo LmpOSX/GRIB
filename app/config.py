@@ -73,6 +73,14 @@ DEFAULTS = {
     "fir_label_size": 9,           # pt de la etiqueta (nombre + código)
     "fir_preferred": "vatspy",     # fuente descargada preferida: 'vatspy' | 'openaip'
     "fir_user_file": "",           # GeoJSON/KML/SHP propio (reemplaza a las demás fuentes)
+    # Working Area de cada FIR (ver app/working_area.py): cuadrado en NM sobre
+    # un plano estereográfico tangente; se carga a mano en Vista ▸ FIR ▸ FIR…
+    "working_areas": [],           # [{code, tangent_lat, tangent_lon, vertex_lat, vertex_lon,
+                                   #   width_nm, height_nm, radius_km, enabled}]
+    "wa_show": False,              # dibujar la WA junto con cada FIR mostrada
+    "wa_color": "#ffd54f",
+    "wa_line_width": 1.3,
+    "wa_label_size": 8,
     # Fuentes de datos: última elegida y configuración por fuente
     "source": "gfs",
     "sources": {},                      # {clave: {"enabled": bool, "params": {...}}}

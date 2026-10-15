@@ -529,7 +529,7 @@ class TestVentana(unittest.TestCase):
         self.assertIsInstance(dlg, GlassDialog)
         dlg.show()
         _app.processEvents()
-        self.assertEqual(dlg.tabs.count(), 3)
+        self.assertEqual(dlg.tabs.count(), 4)
         self.assertEqual(dlg.table.rowCount(), 14)
         self.assertEqual(dlg.table.item(0, 1).text(), "SARR")
         self.assertEqual(dlg.table.item(0, 2).text(), "-22.25°")          # norte de Resistencia

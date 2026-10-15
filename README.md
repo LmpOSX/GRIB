@@ -28,6 +28,7 @@ app/
   wafs_format.py            formato WAFS: tabla FL↔Pa, conversión, detección, validador, .idx, exportación, CLI
   wind_plot.py              mapa matplotlib (QtAgg) + cartopy opcional; capa de límites de FIR
   fir.py, fir_aip.py        límites de FIR: carga GeoJSON/KML/SHP, extremos, cobertura, VATSpy; conversor AIP → GeoJSON (CLI)
+  working_area.py           Working Area de cada FIR: plano estereográfico tangente, cuadrado en NM, contorno lat/lon, radio conforme
   main_window.py            ventana principal: mapa, panel, menús, atajos
   areas.py                  áreas de descarga por FIR: tabla, coordenadas, envolvente + margen, redondeo hacia afuera, exportar/importar
   config.py, theme.py, platform_blur.py, crash_guard.py, utils.py
@@ -428,8 +429,44 @@ más tenue y a rayas. Se activa con la casilla `FIR Argentina` del panel
 `FIR…`; `+ vecinas` suma las limítrofes. Qué FIR están activas y el estilo
 quedan en la configuración.
 
+Las FIR se muestran **de a una o sumadas**: Vista ▸ FIR ▸ **FIR a mostrar**
+tiene una entrada tildable por FIR (Argentina y vecinas) más `Todas`,
+`Sólo Argentina` y `Ninguna`. Marcar una FIR con la capa apagada enciende
+la capa y muestra sólo esa; marcar una vecina enciende también
+`+ vecinas`. La misma elección está en la lista de la pestaña Regiones del
+diálogo `FIR…`.
+
+#### Working Area
+
+Cada FIR puede tener, además del contorno del AIP y del recuadro lat/lon de
+descarga, una **Working Area (WA)**: un cuadrado medido en millas náuticas
+sobre un plano en proyección estereográfica tangente a un punto de
+tangencia, con origen en el vértice suroeste y lados hacia el norte y el
+este. Se define con el código de la FIR, el punto de tangencia (lat/lon),
+el vértice SO (lat/lon), el ancho hacia el este y el alto hacia el norte
+(NM) y el radio de la esfera conforme (km; por defecto 6371 km, y un botón
+calcula √(M·N) de WGS84 en la latitud de tangencia). Los valores los cargás
+vos en `FIR…` ▸ **Working Area** (también Vista ▸ FIR ▸ Working Areas…):
+una fila por FIR, coordenadas en decimal con signo o grados-minutos con
+hemisferio, validación (código de hasta 4 letras, rangos, lados mayores que
+cero, radio entre 6000 y 6500 km, vértice a menos de 90° de la tangencia)
+y, para la fila elegida, las esquinas SO y NE resultantes en lat/lon. No
+vienen precargadas.
+
+Con la casilla `WA` del panel (o Vista ▸ FIR ▸ Working Area de las FIR
+mostradas, o la casilla de la pestaña) la WA de cada FIR mostrada se dibuja
+junto con su contorno, en amarillo a rayas y puntos con el rótulo `WA
+SAEF` en el vértice SO; si la FIR no está mostrada o su WA está
+deshabilitada, no se dibuja. Los lados, rectos en el plano, se densifican
+cada 5 NM y se proyectan como curvas; el viento se dibuja por encima. Color,
+grosor y tamaño de etiqueta se eligen en la misma pestaña. Todo queda en la
+configuración (`working_areas`, `wa_show`, `wa_color`, `wa_line_width`,
+`wa_label_size`). La proyección es la estereográfica esférica estándar
+(Snyder 21-2 a 21-4 y 20-14/20-15) con el radio indicado; el módulo es
+`app/working_area.py` y se puede usar sin la interfaz.
+
 * **Diálogo «Límites de FIR»** (botón `FIR…`, Vista ▸ FIR ▸ Configurar
-  FIR…), en tres pestañas. *Regiones*: casillas por FIR y estilo (color
+  FIR…), en cuatro pestañas (la cuarta, *Working Area*, se describe arriba). *Regiones*: casillas por FIR y estilo (color
   de las argentinas y de las vecinas, grosor, relleno semitransparente en
   %, tamaño de etiqueta; el valor por defecto es un lavanda tenue que no
   compite con la escala de las barbas ni con el magenta de la

@@ -31,6 +31,7 @@ class ControlPanel(QWidget):
     projection_changed = pyqtSignal(str)    # clave de PROJECTIONS
     fir_toggled = pyqtSignal(bool)          # capa de límites de FIR
     fir_neighbors_toggled = pyqtSignal(bool)
+    wa_toggled = pyqtSignal(bool)           # Working Area junto con cada FIR
     fir_config_clicked = pyqtSignal()       # botón «FIR…»
 
     TIME_LABELS = ["Current (+0)", "Next (+1)", "Advanced (+2)"]
@@ -288,6 +289,11 @@ class ControlPanel(QWidget):
                                    "Johannesburgo Oceánico)")
         self.chk_fir_nb.toggled.connect(lambda v: self._emit_if_live(self.fir_neighbors_toggled, bool(v)))
         row.addWidget(self.chk_fir_nb)
+        self.chk_wa = QCheckBox("WA")
+        self.chk_wa.setToolTip("Dibujar la Working Area (cuadrado en NM sobre el plano estereográfico "
+                               "tangente) de cada FIR mostrada; se cargan en FIR… ▸ Working Area")
+        self.chk_wa.toggled.connect(lambda v: self._emit_if_live(self.wa_toggled, bool(v)))
+        row.addWidget(self.chk_wa)
         row.addStretch()
         self.btn_fir = QPushButton("FIR…")
         self.btn_fir.setFixedHeight(20)
@@ -528,13 +534,16 @@ class ControlPanel(QWidget):
         finally:
             self._updating = False
 
-    def set_fir_options(self, enabled: bool, neighbors: bool):
+    def set_fir_options(self, enabled: bool, neighbors: bool, wa=None):
         """Casillas de FIR sin emitir señales (estado de la configuración)."""
         self._updating = True
         try:
             self.chk_fir.setChecked(bool(enabled))
             self.chk_fir_nb.setChecked(bool(neighbors))
             self.chk_fir_nb.setEnabled(bool(enabled))
+            if wa is not None:
+                self.chk_wa.setChecked(bool(wa))
+            self.chk_wa.setEnabled(bool(enabled))
         finally:
             self._updating = False
 

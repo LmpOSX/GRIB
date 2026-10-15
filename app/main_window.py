@@ -35,6 +35,7 @@ from .wind_plot import PROJECTIONS, WIND_STYLES, GRID_STEPS
 from .widgets.inventory_panel import InventoryPanel
 from .sources import enabled_sources, all_sources, get_source, source_label, read_provenance
 from . import fir as firmod
+from . import working_area as wamod
 
 APP_TITLE = "Visor GRIB"
 GRIB_FILTER = "GRIB (*.grib2 *.grb2 *.grib *.grb);;Todos los archivos (*)"
@@ -269,6 +270,7 @@ class MainWindow(QMainWindow):
         self.panel.projection_changed.connect(self.set_projection)
         self.panel.fir_toggled.connect(self.set_fir_enabled)
         self.panel.fir_neighbors_toggled.connect(self.set_fir_neighbors)
+        self.panel.wa_toggled.connect(self.set_wa_show)
         self.panel.fir_config_clicked.connect(self.open_fir_dialog)
 
         # ── Capa de límites de FIR ──
@@ -493,8 +495,30 @@ class MainWindow(QMainWindow):
                                             self.set_fir_neighbors)
         for act in (self._act_fir, self._act_fir_nb):
             act.setCheckable(True)
+        # Una entrada por FIR: se muestran de a una o sumadas
+        self._menu_fir_codes = self._menu_fir.addMenu("FIR a mostrar")
+        self._fir_code_actions = {}
+        for header, pairs in (("Argentina", firmod.ARGENTINA_FIRS), ("Vecinas", firmod.NEIGHBOR_FIRS)):
+            h = self._menu_fir_codes.addAction(header)
+            h.setEnabled(False)
+            for code, name in pairs:
+                act = QAction(f"{code}  {name}", self)
+                act.setCheckable(True)
+                act.triggered.connect(lambda on, c=code: self.toggle_fir_code(c, on))
+                self._menu_fir_codes.addAction(act)
+                self._fir_code_actions[code] = act
+        self._menu_fir_codes.addSeparator()
+        self._menu_fir_codes.addAction("Todas").triggered.connect(
+            lambda: self.set_fir_codes(firmod.ALL_CODES))
+        self._menu_fir_codes.addAction("Sólo Argentina").triggered.connect(
+            lambda: self.set_fir_codes(firmod.ARGENTINA_CODES))
+        self._menu_fir_codes.addAction("Ninguna").triggered.connect(lambda: self.set_fir_codes([]))
+        self._act_wa = self._add_action(self._menu_fir, "Working Area de las FIR mostradas",
+                                        self.set_wa_show)
+        self._act_wa.setCheckable(True)
         self._menu_fir.addSeparator()
         self._add_action(self._menu_fir, "Extremos y cobertura…", lambda: self.open_fir_dialog(1))
+        self._add_action(self._menu_fir, "Working Areas…", lambda: self.open_fir_dialog(3))
         self._add_action(self._menu_fir, "Configurar FIR…", lambda: self.open_fir_dialog(0))
         self._menu_fir.addSeparator()
         self._act_area = self._add_action(self._menu_fir, "Rectángulos del área de descarga",
@@ -545,7 +569,17 @@ class MainWindow(QMainWindow):
                 act.setChecked(val)
                 act.blockSignals(False)
             self._act_fir_nb.setEnabled(on)
-            self.panel.set_fir_options(on, nb)
+            wa = bool(self._cfg.get("wa_show", False))
+            self._act_wa.blockSignals(True)
+            self._act_wa.setChecked(wa)
+            self._act_wa.blockSignals(False)
+            self._act_wa.setEnabled(on)
+            self.panel.set_fir_options(on, nb, wa)
+            shown = set(self._fir_selection()[0] + self._fir_selection()[1])
+            for code, act in self._fir_code_actions.items():
+                act.blockSignals(True)
+                act.setChecked(code in shown)
+                act.blockSignals(False)
         if hasattr(self, "_act_area"):
             self._act_area.blockSignals(True)
             self._act_area.setChecked(bool(self._cfg.get("download_area_draw", False)))
@@ -1088,9 +1122,29 @@ class MainWindow(QMainWindow):
                 "line_width": c.get("fir_line_width"), "fill_alpha": c.get("fir_fill_alpha"),
                 "label_size": c.get("fir_label_size")}
 
+    def _wa_style(self):
+        c = self._cfg
+        return {"color": c.get("wa_color"), "line_width": c.get("wa_line_width"),
+                "label_size": c.get("wa_label_size")}
+
+    def _wa_items(self, codes):
+        """Working Areas a dibujar: las habilitadas de las FIR mostradas, si
+        el usuario pidió verlas. [(código, anillo lon/lat, punto de etiqueta)]."""
+        if not self._cfg.get("wa_show", False):
+            return []
+        out = []
+        was = wamod.working_areas_from_config(self._cfg)
+        for code in codes:
+            wa = wamod.find_working_area(was, code)
+            if wa is None or not wa.enabled or wamod.validate_working_area(wa):
+                continue
+            out.append((code, wa.ring(), wa.label_point()))
+        return out
+
     def _apply_fir_layer(self, redraw=True):
         ar, nb = self._fir_selection()
         self.plot.set_fir(self._fir_regions, ar, nb, self._fir_style())
+        self.plot.set_working_areas(self._wa_items(ar + nb), self._wa_style())
         self._sync_view_menu()
         if not redraw:
             return
@@ -1112,6 +1166,46 @@ class MainWindow(QMainWindow):
         if self._cfg.get("fir_neighbors", False) != on:
             self._cfg["fir_neighbors"] = on
             save_config(self._cfg)
+        self._apply_fir_layer()
+
+    def set_wa_show(self, on: bool):
+        """Vista ▸ FIR ▸ Working Area de las FIR mostradas o la casilla WA del panel."""
+        on = bool(on)
+        if self._cfg.get("wa_show", False) != on:
+            self._cfg["wa_show"] = on
+            save_config(self._cfg)
+        self._apply_fir_layer()
+
+    def toggle_fir_code(self, code: str, on: bool):
+        """Vista ▸ FIR ▸ FIR a mostrar ▸ una FIR: se suma o se quita de las
+        dibujadas. Al marcar una se enciende la capa (y las vecinas si hace
+        falta) para que se vea sin más clics."""
+        code = str(code).upper()
+        # Se parte de lo que se ve ahora (no de la lista guardada): con la
+        # capa apagada, marcar una FIR muestra sólo esa
+        ar, nb = self._fir_selection()
+        active = list(ar) + list(nb)
+        if on:
+            if code not in active:
+                active.append(code)
+            self._cfg["fir_enabled"] = True
+            if code in firmod.NEIGHBOR_CODES:
+                self._cfg["fir_neighbors"] = True
+        else:
+            active = [c for c in active if c != code]
+        self._cfg["fir_active"] = [c for c in firmod.ALL_CODES if c in active]
+        save_config(self._cfg)
+        self._apply_fir_layer()
+
+    def set_fir_codes(self, codes):
+        """Todas / Sólo Argentina / Ninguna."""
+        codes = [c for c in firmod.ALL_CODES if c in set(str(c).upper() for c in codes)]
+        self._cfg["fir_active"] = codes
+        if codes:
+            self._cfg["fir_enabled"] = True
+            if any(c in firmod.NEIGHBOR_CODES for c in codes):
+                self._cfg["fir_neighbors"] = True
+        save_config(self._cfg)
         self._apply_fir_layer()
 
     def _grid_bbox(self):

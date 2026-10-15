@@ -198,6 +198,7 @@ MAX_LABELS = 900        # rótulos de Extra Info visibles como máximo
 FIR_STYLE_DEFAULT = {"color": "#b39ddb", "neighbor_color": "#8d8da8", "line_width": 1.3,
                      "fill_alpha": 0.08, "label_size": 9}
 AREA_STYLE_DEFAULT = {"color": "#ffb74d", "line_width": 1.6, "label_size": 8}
+from .working_area import WA_STYLE_DEFAULT  # noqa: E402
 FIR_EDGE_TOL_PX = 5.0   # distancia al contorno (px) para «pasar el mouse sobre un límite»
 SETTLE_MS = 150         # espera tras el último cambio de vista para reconstruir
 
@@ -422,6 +423,9 @@ class WindPlot:
         self._area = None
         self._area_artists = []
         self._area_key = None
+        self._wa = None                # Working Areas: [(código, anillo lon/lat, punto de etiqueta)]
+        self._wa_artists = []
+        self._wa_key = None
         self.on_click = None            # callable(event): clic sin arrastre sobre el mapa
         self._press_xy = None
         self._in_draw = False
@@ -454,6 +458,7 @@ class WindPlot:
         self._base_key = None
         self._fir_artists, self._fir_key = [], None
         self._area_artists, self._area_key = [], None
+        self._wa_artists, self._wa_key = [], None
         self.ax.callbacks.connect("xlim_changed", self._on_lim_changed)
         self.ax.callbacks.connect("ylim_changed", self._on_lim_changed)
 
@@ -467,6 +472,7 @@ class WindPlot:
         self.proj = make_projection(self.proj_key, lons, lats)
         self._fir_cache = {}            # la geometría proyectada depende de la proyección
         self._area_key = None
+        self._wa_key = None
         self._make_axes()
         self._style_axes()
         self.has_data = False
@@ -729,12 +735,14 @@ class WindPlot:
             self._base_key = None
             self._fir_artists, self._fir_key = [], None
             self._area_artists, self._area_key = [], None
+            self._wa_artists, self._wa_key = [], None
             self._data = None
             self._style_axes()
             self.has_data = False
             self._base_map()
             self._ensure_fir()
             self._ensure_area()
+            self._ensure_wa()
             self.ax.text(0.5, 0.5, message, transform=self.ax.transAxes, ha="center",
                          va="center", color=self.pal["text_dim"], fontsize=self._fs(12))
             if self.use_cartopy:
@@ -935,6 +943,7 @@ class WindPlot:
             self._ensure_base(dlon, dlat, opts.get("grid", False), opts.get("grid_step", 10))
             self._ensure_fir()
             self._ensure_area()
+            self._ensure_wa()
 
             # Capa estática: se reconstruye entera
             self._remove_all(self._static_artists)
@@ -1630,6 +1639,90 @@ class WindPlot:
                         clip_on=True, path_effects=halo)
             self._area_artists.append(t)
         self._area_key = key
+
+    # ── Working Areas de las FIR ──
+    def set_working_areas(self, items=(), style=None):
+        """`items` = [(código, anillo lon/lat N×2, (lon, lat) de la etiqueta)]
+        de las Working Areas a dibujar (las de las FIR mostradas, si el
+        usuario las pidió). Vacío = no dibujar."""
+        st = dict(WA_STYLE_DEFAULT)
+        st.update({k: v for k, v in (style or {}).items() if k in st and v is not None})
+        items = [(str(c), np.asarray(r, dtype=float), (float(lp[0]), float(lp[1]))) for c, r, lp in items]
+        self._wa = {"items": items, "style": st} if items else None
+        self._wa_key = None
+
+    def _ring_xy(self, ring):
+        """Anillo lon/lat (ya densificado) → polilínea proyectada."""
+        ring = np.asarray(ring, dtype=float)
+        if self.use_cartopy and self.proj_key == "mercator":
+            ring = ring.copy()
+            ring[:, 1] = np.clip(ring[:, 1], -89.999, 89.999)
+        shift = 0.0
+        if not self.use_cartopy and self._data is not None and float(self._data["lons"].max()) > 180.0:
+            shift = 360.0
+        if self.use_cartopy:
+            xyz = self.proj.transform_points(self.data_crs, ring[:, 0], ring[:, 1])
+            xy = xyz[:, :2]
+        else:
+            lon = ring[:, 0] + np.where(ring[:, 0] < 0, shift, 0.0)
+            xy = np.column_stack([lon, ring[:, 1]])
+        ok = np.isfinite(xy).all(axis=1) & (np.abs(xy) < 1e12).all(axis=1)
+        xy = xy[ok]
+        return xy if len(xy) >= 3 else None
+
+    def _ensure_wa(self):
+        """Reconstruye las Working Areas sólo si cambió algo que las afecta."""
+        w = self._wa
+        if not w:
+            self._remove_all(self._wa_artists)
+            self._wa_key = None
+            return
+        st = w["style"]
+        key = (self.proj_key, tuple((c, r.shape, float(r[0, 0]), float(r[0, 1]), float(r[-1, 0]), float(r[-1, 1]))
+                                    for c, r, _lp in w["items"]),
+               tuple(sorted(st.items())), round(self.font_scale, 3), self.pal["ax_bg"])
+        if key == self._wa_key:
+            return
+        self._remove_all(self._wa_artists)
+        ax = self.ax
+        scale = max(0.8, self.font_scale)
+        color = st["color"]
+        lw = float(st["line_width"]) * scale
+        halo = [patheffects.withStroke(linewidth=2.5 * scale, foreground=self.pal["ax_bg"])]
+        fs = self._fs(float(st["label_size"]))
+        segs, labels = [], []
+        for code, ring, lp in w["items"]:
+            xy = self._ring_xy(ring)
+            if xy is None:
+                continue
+            segs.append(np.vstack([xy, xy[:1]]))
+            labels.append((code, lp))
+        if segs:
+            lc = LineCollection(segs, colors=[matplotlib.colors.to_rgba(color, 0.95)] * len(segs),
+                                linewidths=[lw] * len(segs), linestyles=[(0, (6, 2, 1, 2))] * len(segs),
+                                zorder=3.7, transform=ax.transData)
+            lc.set_clip_box(ax.bbox)
+            lc.set_clip_on(True)
+            ax.add_collection(lc, autolim=False)
+            self._wa_artists.append(lc)
+        for code, (lon, lat) in labels:
+            if self.use_cartopy:
+                xy = self.proj.transform_points(self.data_crs, np.array([lon]), np.array([lat]))[0, :2]
+                if not np.isfinite(xy).all():
+                    continue
+                x, y = float(xy[0]), float(xy[1])
+            else:
+                x, y = lon, lat
+                if self._data is not None and float(self._data["lons"].max()) > 180.0 and lon < 0:
+                    x = lon + 360.0
+            t = ax.text(x, y, f"WA {code}", ha="left", va="bottom", fontsize=fs, color=color,
+                        zorder=6.7, clip_on=True, path_effects=halo)
+            self._wa_artists.append(t)
+        self._wa_key = key
+
+    def wa_visible(self):
+        """Códigos de las Working Areas dibujadas."""
+        return [c for c, _r, _lp in (self._wa or {}).get("items", [])]
 
     def area_visible(self):
         return bool(self._area)

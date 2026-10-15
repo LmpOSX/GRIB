@@ -6,6 +6,9 @@
 * Extremos: latitud norte/sur y longitud este/oeste máximas de cada FIR
   calculadas del polígono cargado, y si la grilla meteorológica abierta la
   cubre completa, en parte o nada.
+* Working Area: cuadrado en millas náuticas de cada FIR sobre el plano
+  estereográfico tangente (punto de tangencia, vértice SO, ancho, alto y
+  radio de la esfera conforme), cargado a mano; se dibuja junto con la FIR.
 * Datos: de dónde salen los límites. Descarga de VATSpy (no oficial),
   descarga de openAIP (con clave en el llavero), archivo propio
   (GeoJSON / KML / KMZ / Shapefile, p. ej. el generado desde el AIP) y el
@@ -23,12 +26,14 @@ from PyQt6.QtWidgets import (
     QVBoxLayout, QHBoxLayout, QGridLayout, QLabel, QPushButton, QFrame, QTabWidget, QWidget,
     QCheckBox, QListWidget, QListWidgetItem, QDoubleSpinBox, QSpinBox, QColorDialog,
     QTableWidget, QTableWidgetItem, QHeaderView, QAbstractItemView, QComboBox, QProgressBar,
-    QFileDialog, QMessageBox,
+    QFileDialog, QMessageBox, QLineEdit,
 )
 
 from .glass_dialog import GlassDialog, add_shadow as _add_shadow
 from .. import fir as firmod
+from .. import working_area as wamod
 from ..config import DEFAULTS
+from ..widgets.areas_editor import CoordEdit
 from ..sources import credentials as creds
 from ..sources.base import DownloadError, DownloadCancelled
 
@@ -72,7 +77,7 @@ class _FirWorker(QThread):
 
 
 class FirDialog(GlassDialog):
-    TABS = ("Regiones", "Extremos", "Datos")
+    TABS = ("Regiones", "Extremos", "Datos", "Working Area")
 
     def __init__(self, parent=None, cfg=None, regions=None, notes=None, grid_bbox=None):
         super().__init__(parent)
@@ -82,10 +87,11 @@ class FirDialog(GlassDialog):
         self._grid_bbox = grid_bbox
         self._worker = None
         self._color = self._cfg.get("fir_color", DEFAULTS["fir_color"])
+        self._wa_color = self._cfg.get("wa_color", DEFAULTS["wa_color"])
         self._nb_color = self._cfg.get("fir_neighbor_color", DEFAULTS["fir_neighbor_color"])
         self._user_file = self._cfg.get("fir_user_file", "") or ""
         self.setWindowTitle("Límites de FIR")
-        self.setMinimumWidth(840)
+        self.setMinimumWidth(960)      # la tabla de Working Area tiene nueve columnas
         self._build_ui()
 
     # ── Construcción ─────────────────────────────────────────────────────────
@@ -109,6 +115,7 @@ class FirDialog(GlassDialog):
         self.tabs.addTab(self._tab_regiones(), self.TABS[0])
         self.tabs.addTab(self._tab_extremos(), self.TABS[1])
         self.tabs.addTab(self._tab_datos(), self.TABS[2])
+        self.tabs.addTab(self._tab_wa(), self.TABS[3])
         lay.addWidget(self.tabs, 1)
 
         row = QHBoxLayout()
@@ -226,18 +233,23 @@ class FirDialog(GlassDialog):
         return w
 
     def _refresh_color_buttons(self):
-        for btn, col in ((self.btn_color, self._color), (self.btn_nb_color, self._nb_color)):
+        pairs = [(self.btn_color, self._color), (self.btn_nb_color, self._nb_color)]
+        if hasattr(self, "btn_wa_color"):
+            pairs.append((self.btn_wa_color, self._wa_color))
+        for btn, col in pairs:
             btn.setText(col)
             btn.setStyleSheet(f"QPushButton {{ background: {col}; color: #000; border: 1px solid #888; }}")
 
     def _pick_color(self, which):
-        cur = self._color if which == "ar" else self._nb_color
+        cur = {"ar": self._color, "nb": self._nb_color, "wa": self._wa_color}[which]
         c = QColorDialog.getColor(QColor(cur), self, "Color de los límites de FIR")
         if c.isValid():
             if which == "ar":
                 self._color = c.name()
-            else:
+            elif which == "nb":
                 self._nb_color = c.name()
+            else:
+                self._wa_color = c.name()
             self._refresh_color_buttons()
 
     def _reset_style(self):
@@ -292,6 +304,181 @@ class FirDialog(GlassDialog):
                         "Oceánico llegan a 90° S, así que una grilla regional siempre las cubre "
                         "parcialmente.")
         return w
+
+    # ── Working Area ──
+    WA_COLS = ("Código", "Tang. lat", "Tang. lon", "Vért. SO lat", "Vért. SO lon",
+               "Ancho NM", "Alto NM", "Radio km", "Activa")
+    WA_WIDTHS = (72, 110, 110, 110, 110, 88, 88, 108, 60)
+    W_CODE, W_TLAT, W_TLON, W_VLAT, W_VLON, W_W, W_H, W_R, W_ON = range(9)
+
+    def _tab_wa(self):
+        w, lay = self._page()
+        self.chk_wa_show = QCheckBox("Dibujar la Working Area junto con cada FIR mostrada")
+        self.chk_wa_show.setChecked(bool(self._cfg.get("wa_show", False)))
+        lay.addWidget(self.chk_wa_show)
+        self._sub(lay, "Working Area por FIR (cuadrado en NM, plano estereográfico tangente)")
+        self.wa_table = QTableWidget(0, len(self.WA_COLS))
+        self.wa_table.setHorizontalHeaderLabels(list(self.WA_COLS))
+        self.wa_table.setHorizontalScrollBarPolicy(Qt.ScrollBarPolicy.ScrollBarAsNeeded)
+        hh = self.wa_table.horizontalHeader()
+        for i, px in enumerate(self.WA_WIDTHS):
+            hh.setSectionResizeMode(i, QHeaderView.ResizeMode.Interactive)
+            self.wa_table.setColumnWidth(i, px)
+        hh.setStretchLastSection(True)
+        self.wa_table.verticalHeader().setVisible(False)
+        self.wa_table.setSelectionBehavior(QAbstractItemView.SelectionBehavior.SelectRows)
+        self.wa_table.setMinimumHeight(180)
+        self.wa_table.itemSelectionChanged.connect(self._wa_refresh_info)
+        lay.addWidget(self.wa_table, 1)
+        self._wa_fmt = self._cfg.get("areas_coord_format", "decimal")
+        for wa in wamod.working_areas_from_config(self._cfg):
+            self._wa_add_row(wa)
+
+        row = QHBoxLayout()
+        b = QPushButton("Agregar WA")
+        b.setToolTip("Nueva fila para la primera FIR que todavía no tiene Working Area")
+        b.clicked.connect(self._wa_add_default)
+        row.addWidget(b)
+        self.btn_wa_del = QPushButton("Borrar")
+        self.btn_wa_del.clicked.connect(self._wa_remove)
+        row.addWidget(self.btn_wa_del)
+        b = QPushButton("Radio conforme WGS84")
+        b.setToolTip("Reemplaza el radio de la fila elegida por √(M·N) de WGS84 en la latitud "
+                     "del punto de tangencia (radio de la esfera conforme)")
+        b.clicked.connect(self._wa_conformal)
+        row.addWidget(b)
+        row.addStretch()
+        lay.addLayout(row)
+        row = QHBoxLayout()
+        row.addWidget(QLabel("Color"))
+        self.btn_wa_color = QPushButton()
+        self.btn_wa_color.setFixedWidth(90)
+        self.btn_wa_color.clicked.connect(lambda: self._pick_color("wa"))
+        row.addWidget(self.btn_wa_color)
+        row.addWidget(QLabel("Grosor"))
+        self.spin_wa_lw = QDoubleSpinBox()
+        self.spin_wa_lw.setRange(0.3, 5.0)
+        self.spin_wa_lw.setSingleStep(0.1)
+        self.spin_wa_lw.setDecimals(1)
+        self.spin_wa_lw.setValue(float(self._cfg.get("wa_line_width", DEFAULTS["wa_line_width"])))
+        row.addWidget(self.spin_wa_lw)
+        row.addWidget(QLabel("Etiqueta (pt)"))
+        self.spin_wa_label = QSpinBox()
+        self.spin_wa_label.setRange(5, 18)
+        self.spin_wa_label.setValue(int(self._cfg.get("wa_label_size", DEFAULTS["wa_label_size"])))
+        row.addWidget(self.spin_wa_label)
+        row.addStretch()
+        lay.addLayout(row)
+        self.lbl_wa_info = QLabel("")
+        self.lbl_wa_info.setObjectName("Hint")
+        self.lbl_wa_info.setWordWrap(True)
+        lay.addWidget(self.lbl_wa_info)
+        self.lbl_wa_error = QLabel("")
+        self.lbl_wa_error.setObjectName("StatusWarn")
+        self.lbl_wa_error.setWordWrap(True)
+        lay.addWidget(self.lbl_wa_error)
+        self._hint(lay, "Origen en el vértice suroeste, lados hacia el norte y el este medidos en millas "
+                        "náuticas sobre el plano estereográfico tangente al punto de tangencia, con "
+                        "el radio de la esfera conforme que se indique (por defecto 6371 km; el "
+                        "botón calcula el radio conforme WGS84 en la tangencia). Coordenadas en "
+                        "decimal con signo o grados-minutos con hemisferio (22°15'S, 06240W). "
+                        "Los valores los cargás vos: no vienen precargados.")
+        self._refresh_color_buttons()
+        self._wa_refresh_info()
+        return w
+
+    def _wa_add_default(self):
+        used = {wa.code for wa in self._wa_rows()}
+        code = next((c for c in firmod.ALL_CODES if c not in used), "")
+        wa = wamod.WorkingArea(code, 0.0, 0.0, 0.0, 0.0, 100.0, 100.0, wamod.DEFAULT_RADIUS_KM, True)
+        self._wa_add_row(wa)
+        self.wa_table.selectRow(self.wa_table.rowCount() - 1)
+
+    def _wa_add_row(self, wa):
+        t = self.wa_table
+        r = t.rowCount()
+        t.insertRow(r)
+        code = QLineEdit(wa.code)
+        code.setMaxLength(4)
+        code.setMaximumWidth(self.WA_WIDTHS[self.W_CODE] - 6)
+        code.textChanged.connect(lambda txt, e=code: (e.setText(txt.upper()) if txt != txt.upper() else None,
+                                                      self._wa_refresh_info()))
+        t.setCellWidget(r, self.W_CODE, code)
+        for col, kind, val in ((self.W_TLAT, "lat", wa.tangent_lat), (self.W_TLON, "lon", wa.tangent_lon),
+                               (self.W_VLAT, "lat", wa.vertex_lat), (self.W_VLON, "lon", wa.vertex_lon)):
+            e = CoordEdit(kind, val, self._wa_fmt)
+            e.setMaximumWidth(self.WA_WIDTHS[col] - 6)
+            e.value_changed.connect(lambda _v: self._wa_refresh_info())
+            e.invalid.connect(lambda msg: self.lbl_wa_error.setText(msg))
+            t.setCellWidget(r, col, e)
+        for col, val, lo, hi, dec in ((self.W_W, wa.width_nm, 0.0, wamod.SIZE_MAX_NM, 1),
+                                      (self.W_H, wa.height_nm, 0.0, wamod.SIZE_MAX_NM, 1),
+                                      (self.W_R, wa.radius_km, wamod.RADIUS_MIN_KM, wamod.RADIUS_MAX_KM, 3)):
+            sp = QDoubleSpinBox()
+            sp.setRange(lo, hi)
+            sp.setDecimals(dec)
+            sp.setValue(float(val))
+            sp.setMaximumWidth(self.WA_WIDTHS[col] - 6)
+            sp.valueChanged.connect(lambda _v: self._wa_refresh_info())
+            t.setCellWidget(r, col, sp)
+        chk = QCheckBox()
+        chk.setChecked(bool(wa.enabled))
+        chk.toggled.connect(lambda _v: self._wa_refresh_info())
+        t.setCellWidget(r, self.W_ON, chk)
+
+    def _wa_remove(self):
+        rows = sorted({i.row() for i in self.wa_table.selectedIndexes()}, reverse=True)
+        if not rows and self.wa_table.rowCount():
+            rows = [self.wa_table.rowCount() - 1]
+        for r in rows:
+            self.wa_table.removeRow(r)
+        self._wa_refresh_info()
+
+    def _wa_row(self, r):
+        t = self.wa_table
+        if any(t.cellWidget(r, c) is None for c in range(len(self.WA_COLS))):
+            return None               # fila a medio construir (las señales disparan antes)
+        return wamod.WorkingArea(
+            t.cellWidget(r, self.W_CODE).text(),
+            t.cellWidget(r, self.W_TLAT).value(), t.cellWidget(r, self.W_TLON).value(),
+            t.cellWidget(r, self.W_VLAT).value(), t.cellWidget(r, self.W_VLON).value(),
+            t.cellWidget(r, self.W_W).value(), t.cellWidget(r, self.W_H).value(),
+            t.cellWidget(r, self.W_R).value(), t.cellWidget(r, self.W_ON).isChecked())
+
+    def _wa_rows(self):
+        rows = [self._wa_row(r) for r in range(self.wa_table.rowCount())]
+        return [wa for wa in rows if wa is not None]
+
+    def _wa_selected_row(self):
+        rows = sorted({i.row() for i in self.wa_table.selectedIndexes()})
+        if rows:
+            return rows[0]
+        return 0 if self.wa_table.rowCount() else None
+
+    def _wa_conformal(self):
+        r = self._wa_selected_row()
+        if r is None:
+            return
+        lat = self.wa_table.cellWidget(r, self.W_TLAT).value()
+        self.wa_table.cellWidget(r, self.W_R).setValue(wamod.conformal_radius_km(lat))
+
+    def wa_errors(self):
+        return wamod.validate_working_areas(self._wa_rows())
+
+    def _wa_refresh_info(self):
+        if not hasattr(self, "lbl_wa_info"):
+            return
+        errs = self.wa_errors()
+        self.lbl_wa_error.setText("; ".join(errs[:3]))
+        r = self._wa_selected_row()
+        if r is None:
+            self.lbl_wa_info.setText("Sin Working Areas cargadas.")
+            return
+        wa = self._wa_row(r)
+        if wa is None or wamod.validate_working_area(wa):
+            self.lbl_wa_info.setText("")
+            return
+        self.lbl_wa_info.setText("Esquinas: " + wamod.describe(wa))
 
     # ── Datos ──
     def _tab_datos(self):
@@ -545,7 +732,21 @@ class FirDialog(GlassDialog):
             "fir_preferred": self.cb_pref.currentData() or "vatspy",
             "fir_user_file": self._user_file,
             "sources": dict(self._cfg.get("sources") or {}),
+            "working_areas": wamod.working_areas_to_config(self._wa_rows()),
+            "wa_show": self.chk_wa_show.isChecked(),
+            "wa_color": self._wa_color,
+            "wa_line_width": round(float(self.spin_wa_lw.value()), 2),
+            "wa_label_size": int(self.spin_wa_label.value()),
         }
+
+    def accept(self):
+        errs = self.wa_errors()
+        if errs:
+            self.tabs.setCurrentIndex(3)
+            QMessageBox.warning(self, "Working Area", "Corregí las Working Areas antes de aplicar:\n"
+                                + "\n".join(errs[:6]))
+            return
+        super().accept()
 
     def closeEvent(self, event):
         if self._worker is not None and self._worker.isRunning():
