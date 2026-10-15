@@ -41,7 +41,10 @@ def create_png(size: int, document: bool = False) -> bytes:
         """Segmento grueso: pinta un disco por cada punto del trazo."""
         length = max(1, int(math.hypot(x2 - x1, y2 - y1)))
         rad = max(1, width // 2)
-        for i in range(length + 1):
+        # Un disco cada rad/2 píxeles alcanza para un trazo continuo y es
+        # ~20× más rápido que uno por píxel (en CI tardaba minutos)
+        step = max(1, rad // 2)
+        for i in list(range(0, length + 1, step)) + [length]:
             t = i / length
             cx = x1 + (x2 - x1) * t
             cy = y1 + (y2 - y1) * t

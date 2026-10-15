@@ -90,9 +90,12 @@ class MainWindow(QMainWindow):
         plot = getattr(self, "plot", None)
         if plot is None:
             return
-        # El panel lateral crece con el tamaño de fuente para no cortarse
+        # El panel lateral crece con el tamaño de fuente para no cortarse, y
+        # nunca queda más angosto que lo que piden sus controles (las fuentes
+        # de Linux y Windows son algo más anchas que las de macOS)
         scale = self._cfg.get("font_size", 13) / 13.0
-        self._side.setFixedWidth(int(PANEL_WIDTH * scale))
+        self._side.setFixedWidth(max(int(PANEL_WIDTH * scale),
+                                     self._side.minimumSizeHint().width()))
         p = generate_palette(self._cfg["accent_color"])
         # Fuentes del mapa escaladas con el zoom de fuente (13 = tamaño base)
         plot.set_font_scale(self._cfg.get("font_size", 13) / 13.0)

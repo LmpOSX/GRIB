@@ -6,6 +6,7 @@ import datetime as dt
 import json
 import os
 import tempfile
+import time
 import unittest
 import urllib.error
 
@@ -218,6 +219,8 @@ class TestCache(unittest.TestCase):
             c = DownloadCache(os.path.join(tmp.name, "c"), max_mb=0.00001, max_days=1)
             c.put("a", b"x" * 10)
             c.put("b", b"y" * 10)
+            old = time.time() - 60                        # "a" es la más vieja (misma marca en fs rápidos)
+            os.utime(c.path_for("a"), (old, old))
             self.assertEqual(c.get("a"), b"x" * 10)
             self.assertIsNone(c.get("otra"))
             c.cleanup()                                   # 20 bytes > 10e-6 MB → borra el más viejo

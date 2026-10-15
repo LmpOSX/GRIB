@@ -132,7 +132,22 @@ def main():
             disable_native_fullscreen(window)
     QTimer.singleShot(50, _blur_or_opaque)
 
-    sys.exit(app.exec())
+    rc = app.exec()
+
+    # Salida ordenada: el mapa (matplotlib) y la ventana se destruyen antes
+    # que QApplication. En el paquete de Linux la finalización del
+    # intérprete abortaba con "double free" después de cerrar la ventana;
+    # ya está todo guardado (closeEvent), así que ahí se termina sin pasar
+    # por la finalización.
+    window.close()
+    window.deleteLater()
+    app.processEvents()
+    del window
+    if getattr(sys, "frozen", False) and sys.platform.startswith("linux"):
+        sys.stdout.flush()
+        sys.stderr.flush()
+        os._exit(rc)
+    sys.exit(rc)
 
 
 if __name__ == "__main__":
