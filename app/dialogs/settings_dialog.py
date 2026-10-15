@@ -228,7 +228,11 @@ class SettingsDialog(GlassDialog):
         self.chk_grid.setChecked(bool(self._cfg.get("map_grid", False)))
         self.chk_fill = QCheckBox("Fondo de velocidad (contornos rellenos)")
         self.chk_fill.setChecked(bool(self._cfg.get("map_fill", False)))
-        for c in (self.chk_extra, self.chk_grid, self.chk_fill):
+        self.chk_coast = QCheckBox("Costas y fronteras")
+        self.chk_coast.setChecked(bool(self._cfg.get("map_coast", True)))
+        self.chk_graticule = QCheckBox("Grilla de grados (meridianos y paralelos con rótulos)")
+        self.chk_graticule.setChecked(bool(self._cfg.get("map_graticule", True)))
+        for c in (self.chk_extra, self.chk_grid, self.chk_fill, self.chk_coast, self.chk_graticule):
             lay.addWidget(c)
         row = QHBoxLayout()
         row.addWidget(QLabel("Densidad: cada N puntos"))
@@ -604,6 +608,8 @@ class SettingsDialog(GlassDialog):
             "map_stride": int(self.spin_stride.value()),
             "map_label_size": int(self.spin_label.value()),
             "map_label_units": self.chk_label_units.isChecked(),
+            "map_coast": self.chk_coast.isChecked(),
+            "map_graticule": self.chk_graticule.isChecked(),
             "map_zoom_step": int(self.spin_zoom.value()),
             "map_fine_divisor": int(self.spin_fine.value()),
             "magvar_convention": self.cb_magvar.currentData() or "east_positive",

@@ -1,5 +1,14 @@
 # Cambios
 
+## Sin publicar
+
+- Menú `Capas` en la barra de acciones (reemplaza a `Ocultar capa`): GRIB,
+  Marco del GRIB, Fondo de velocidad, Extra Info, Costas y fronteras, Grilla
+  de grados, Grilla del archivo, FIR y Working Areas, cada una
+  independiente; costas y grilla de grados son nuevas capas apagables.
+- La Lambert conforme también se centra en la tangencia de la WA marcada
+  (con su radio, sin giro magnético).
+
 ## 0.2.0 — 2026-10-15
 
 - Working Area por FIR: cuadrado en millas náuticas sobre un plano

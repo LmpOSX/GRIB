@@ -368,15 +368,25 @@ valores iniciales (también editables en Preferencias ▸ Mapa). Las mismas
 opciones de VIENTO y MAPA están en el menú **Vista** (Proyección, Viento,
 Extra Info, Fondo de velocidad, Grilla de grados, Grilla del archivo),
 sincronizadas con el panel; las
-acciones globales `Actualizar` (F5) y `Ocultar capa` / `Mostrar capa`
-(⌘D) van en la barra de acciones y en Vista.
+acciones globales `Actualizar` (F5) y el menú `Capas` van en la barra de
+acciones; `Capa de datos` (⌘D) también en Vista.
+
+**Menú Capas.** El botón `Capas` de la barra de acciones despliega una
+casilla por capa, independientes entre sí: GRIB (viento / temperatura,
+⌘D), Marco del GRIB (recuadro del área de descarga o de la grilla), Fondo
+de velocidad, Extra Info, Costas y fronteras, Grilla de grados (meridianos
+y paralelos con rótulos), Grilla del archivo (puntos), Límites de FIR y
+Working Areas de las FIR mostradas. Cada una se prende o apaga sin tocar
+las demás, y queda sincronizada con las casillas del panel, el menú Vista
+y la configuración (`map_coast` y `map_graticule` son nuevas; también
+están en Preferencias ▸ Mapa).
 
 ### Barra de acciones y mapa
 
 La barra de acciones tiene tres grupos del mismo alto, separados con
 aire: *datos* (`Abrir GRIB…`, el selector `Fuente` integrado en un solo
-control con borde, `Obtener datos…`), *mapa* (`Inicio`, `Actualizar`,
-`Ocultar capa`) y *salida* (`Guardar PNG`); a la derecha, `▥` (panel
+control con borde, `Obtener datos…`), *mapa* (`Inicio`, `+`, `−`,
+`Actualizar`, `Capas`) y *salida* (`Guardar PNG`); a la derecha, `▥` (panel
 lateral) y `⚙` (preferencias). La franja STATUS y la barra de estado
 inferior usan un tamaño de letra fijo que no sigue ⌘ +/−. El mapa ocupa
 el área con márgenes justos para las etiquetas de lat/lon; el título
@@ -500,7 +510,10 @@ mostrada ni que la WA esté activa. El combo de proyección del panel y Vista
 proyección al elegirla, y con el mapa girado el cursor agrega la dirección
 magnética del viento (`304.8° (314.8°M)`); los números del viento siguen
 siendo verdaderos. Sin ninguna tangencia marcada (o con una WA inválida) se
-usa el centro del dominio como siempre; las demás proyecciones no cambian.
+usa el centro del dominio como siempre. La *Lambert conforme* también se
+centra en la tangencia de esa WA, con su radio, pero sin giro magnético (la
+cónica no se gira): el combo dice "(tangente a WA SAEF)" y la barra de
+estado "norte verdadero arriba". Las demás proyecciones no cambian.
 Técnicamente PROJ no gira el plano de `stere`, así que se usa `ob_tran`
 con un polo rotado a 90° del punto de tangencia en el acimut de la
 variación (`working_area.tangent_projection_params`).

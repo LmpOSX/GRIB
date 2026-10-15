@@ -168,7 +168,14 @@ def make_projection(key, lons=None, lats=None, tangent=None):
     if key == "mercator":
         return ccrs.Mercator(central_longitude=lon_c)
     if key == "lambert":
-        # Paralelos estándar simétricos alrededor del centro del dominio
+        globe = None
+        if tangent:
+            # Cono centrado en la tangencia de la WA, sobre su esfera conforme
+            # (sin giro magnético: la cónica no se gira)
+            lat_c, lon_c = float(tangent["lat"]), float(tangent["lon"])
+            r_m = float(tangent.get("radius_km", 6371.0)) * 1000.0
+            globe = ccrs.Globe(ellipse=None, semimajor_axis=r_m, semiminor_axis=r_m)
+        # Paralelos estándar simétricos alrededor del centro
         half = max(5.0, (float(np.max(lats)) - float(np.min(lats))) / 4.0) if lats is not None and len(lats) else 10.0
         p1 = max(-85.0, min(85.0, lat_c - half))
         p2 = max(-85.0, min(85.0, lat_c + half))
@@ -178,7 +185,7 @@ def make_projection(key, lons=None, lats=None, tangent=None):
             p1, p2 = ((5.0, 15.0) if lat_c > 0 else (-15.0, -5.0))
         return ccrs.LambertConformal(central_longitude=lon_c, central_latitude=lat_c,
                                      standard_parallels=(p1, p2),
-                                     cutoff=(30 if (p1 + p2) < 0 else -30))
+                                     cutoff=(30 if (p1 + p2) < 0 else -30), globe=globe)
     return ccrs.PlateCarree()
 
 
@@ -444,6 +451,8 @@ class WindPlot:
         self.proj_key = "platecarree"
         self.proj = ccrs.PlateCarree() if self.use_cartopy else None       # proyección del mapa
         self.tangent = None             # WA de tangencia de la estereográfica (dict) o None
+        self.show_coast = True          # costas y fronteras (menú Capas)
+        self.show_graticule = True      # meridianos y paralelos con rótulos (menú Capas)
         self.ax = None
         self.has_data = False
         self._features = None           # (costas, fronteras) ya cargadas
@@ -518,7 +527,13 @@ class WindPlot:
             self.tangent = None
             return False
         self.proj_key = key if key in dict(PROJECTIONS) else "platecarree"
-        self.tangent = dict(tangent) if (tangent and self.proj_key == "stereo") else None
+        if tangent and self.proj_key == "stereo":
+            self.tangent = dict(tangent)
+        elif tangent and self.proj_key == "lambert":
+            # La cónica se centra en la tangencia pero no se gira
+            self.tangent = dict(tangent, up_bearing=0.0, variation_deg=0.0)
+        else:
+            self.tangent = None
         self.proj = make_projection(self.proj_key, lons, lats, self.tangent)
         self._fir_cache = {}            # la geometría proyectada depende de la proyección
         self._area_key = None
@@ -845,8 +860,26 @@ class WindPlot:
         except Exception as exc:
             self._features_error = f"{type(exc).__name__}: {exc}"
 
+    def set_base_layers(self, coast=None, graticule=None):
+        """Menú Capas: costas y fronteras, y grilla de grados. Devuelve True
+        si cambió algo (hay que redibujar)."""
+        changed = False
+        if coast is not None and bool(coast) != self.show_coast:
+            self.show_coast = bool(coast)
+            changed = True
+        if graticule is not None and bool(graticule) != self.show_graticule:
+            self.show_graticule = bool(graticule)
+            changed = True
+        if changed:
+            self._base_key = None
+        return changed
+
     def _base_map(self):
         """Costas y fronteras (cartopy) o aviso si no está disponible."""
+        if not self.show_coast:
+            if not self.use_cartopy:
+                self.ax.set_aspect("equal", adjustable="box")
+            return
         if self.use_cartopy:
             self._load_features()
             if self._features is not None:
@@ -889,6 +922,20 @@ class WindPlot:
         etiquetadas en los bordes, secundarias con otro trazo) y,
         opcionalmente, la grilla fina del archivo."""
         major, minor = self.grid_spacing(step)
+        if not self.show_graticule:
+            minor = None
+            if not self.use_cartopy:
+                self.ax.grid(False, which="both")
+                self.ax.set_xlabel("Longitud", fontsize=self._fs(9))
+                self.ax.set_ylabel("Latitud", fontsize=self._fs(9))
+            if fine and self.use_cartopy:
+                gf = self.ax.gridlines(
+                    crs=self.data_crs, draw_labels=False,
+                    xlocs=mticker.MultipleLocator(dlon), ylocs=mticker.MultipleLocator(dlat),
+                    color=self.pal["grid_fine"], linewidth=0.5, linestyle=":", alpha=0.9, zorder=1)
+                gf.n_steps = 30
+                self._gridliners.append(gf)
+            return
         if self.use_cartopy:
             gl = self.ax.gridlines(crs=self.data_crs, draw_labels=True,
                                    xlocs=mticker.MultipleLocator(major),
@@ -938,7 +985,7 @@ class WindPlot:
     def _ensure_base(self, dlon, dlat, fine, step=10):
         """Reconstruye costas y grillas sólo si cambió algo que las afecta."""
         key = (self.proj_key, bool(fine), int(step), round(self.font_scale, 3), round(dlon, 6),
-               round(dlat, 6))
+               round(dlat, 6), self.show_coast, self.show_graticule)
         if key == self._base_key:
             return
         self._remove_all(self._base_artists)

@@ -61,6 +61,8 @@ DEFAULTS = {
     "map_stride": 1,
     "map_label_size": 7,          # tamaño (pt) de los rótulos de Extra Info
     "map_label_units": True,      # rótulos con unidad ("12 kt  −45 °C")
+    "map_coast": True,            # costas y fronteras (menú Capas)
+    "map_graticule": True,        # meridianos y paralelos con rótulos (menú Capas)
     "map_zoom_step": 20,          # % de acercamiento por paso de la rueda (o por botón ±)
     "map_fine_divisor": 5,        # modo fino (Cmd/Ctrl o Shift apretados): rueda y arrastre ÷ N
     # Capa de límites de FIR (ver app/fir.py)

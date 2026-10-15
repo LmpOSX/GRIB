@@ -283,6 +283,7 @@ class MainWindow(QMainWindow):
         self.plot.canvas.mpl_connect("draw_event", self._on_draw)
         self.plot.canvas.mpl_connect("scroll_event", self._on_scroll)
         self._apply_fine_divisor()
+        self._apply_base_layers(redraw=False)
 
     def _map_options_from_cfg(self) -> dict:
         c = self._cfg
@@ -410,7 +411,11 @@ class MainWindow(QMainWindow):
         lay.addWidget(self._btn_zoom_in)
         lay.addWidget(self._btn_zoom_out)
         lay.addWidget(self.panel.btn_update)
-        lay.addWidget(self.panel.btn_disable)
+        self._btn_layers = QPushButton("Capas")
+        self._btn_layers.setObjectName("DropdownBtn")
+        self._btn_layers.setToolTip("Mostrar u ocultar cada capa del mapa por separado")
+        self._btn_layers.setMenu(self._build_layers_menu())
+        lay.addWidget(self._btn_layers)
         lay.addWidget(self._action_sep())
         lay.addWidget(self._btn_png)
 
@@ -599,6 +604,7 @@ class MainWindow(QMainWindow):
             self._act_area.blockSignals(True)
             self._act_area.setChecked(bool(self._cfg.get("download_area_draw", False)))
             self._act_area.blockSignals(False)
+        self._sync_layers_menu()
 
     def _menu_set_option(self, key, value):
         """Opción de VIENTO / MAPA elegida desde el menú: se refleja en el
@@ -1077,7 +1083,8 @@ class MainWindow(QMainWindow):
         if not t:
             return f"Proyección: {name}."
         var = float(t.get("variation_deg", 0.0))
-        txt = (f"Proyección: estereográfica tangente a la WA {t['code']} "
+        kind = "Lambert conforme centrada en" if self.plot.proj_key == "lambert" else "estereográfica tangente a"
+        txt = (f"Proyección: {kind} la WA {t['code']} "
                f"({areasmod.format_coord(t['lat'], 'lat', 'gm')} {areasmod.format_coord(t['lon'], 'lon', 'gm')}), "
                f"R {t['radius_km']:.3f} km")
         if abs(var) >= 0.05:
@@ -1087,32 +1094,29 @@ class MainWindow(QMainWindow):
         return txt + "."
 
     def _refresh_projection_labels(self):
-        """El nombre de la estereográfica en el combo del panel y en Vista ▸
-        Proyección dice a qué está tangente."""
-        t = self.plot.tangent if self.plot.proj_key == "stereo" else None
+        """El nombre de la estereográfica y de la Lambert en el combo del
+        panel y en Vista ▸ Proyección dice a qué WA están tangentes."""
         tang = wamod.find_tangency(wamod.working_areas_from_config(self._cfg))
-        if t:
-            label = f"Estereográfica conforme (tangente a WA {t['code']})"
-        elif tang is not None:
-            label = f"Estereográfica conforme (tangente a WA {tang.code})"
-        else:
-            label = dict(PROJECTIONS)["stereo"]
-        try:
-            cb = self.panel.cb_proj
-            idx = cb.findData("stereo")
-            if idx >= 0 and cb.itemText(idx) != label:
-                cb.setItemText(idx, label)
-        except Exception:
-            pass
-        act = getattr(self, "_proj_actions", {}).get("stereo")
-        if act is not None and act.text() != label:
-            act.setText(label)
+        for key, base in (("stereo", "Estereográfica conforme"), ("lambert", "Lambert conforme")):
+            t = self.plot.tangent if self.plot.proj_key == key else None
+            code = t["code"] if t else (tang.code if tang is not None else None)
+            label = f"{base} (tangente a WA {code})" if code else dict(PROJECTIONS)[key]
+            try:
+                cb = self.panel.cb_proj
+                idx = cb.findData(key)
+                if idx >= 0 and cb.itemText(idx) != label:
+                    cb.setItemText(idx, label)
+            except Exception:
+                pass
+            act = getattr(self, "_proj_actions", {}).get(key)
+            if act is not None and act.text() != label:
+                act.setText(label)
 
     def _refresh_tangent_projection(self):
         """Si cambió la WA de tangencia (diálogo FIR o Preferencias) y la
         estereográfica está en uso, se rehace la proyección."""
         self._refresh_projection_labels()
-        if self.plot.proj_key != "stereo":
+        if self.plot.proj_key not in ("stereo", "lambert"):
             return
         want = self._wa_tangent()
         have = self.plot.tangent
@@ -1121,7 +1125,7 @@ class MainWindow(QMainWindow):
             and all(abs(float(want[k]) - float(have[k])) < 1e-9 for k in ("lat", "lon", "radius_km", "up_bearing"))
             and want["code"] == have["code"])
         if not same:
-            self.set_projection("stereo")
+            self.set_projection(self.plot.proj_key)
 
     def set_projection(self, key: str):
         """Cambia la proyección del mapa (centrada en el dominio del archivo
@@ -1167,6 +1171,89 @@ class MainWindow(QMainWindow):
             ext = self.plot.get_extent()
             if ext:
                 self.panel.set_extent_entries(ext)
+
+    # ── Menú Capas ───────────────────────────────────────────────────────────
+    LAYERS = (
+        ("grib", "GRIB (viento / temperatura)"),
+        ("frame", "Marco del GRIB (área de descarga)"),
+        ("fill", "Fondo de velocidad"),
+        ("extra", "Extra Info (kt / °C por punto)"),
+        ("coast", "Costas y fronteras"),
+        ("graticule", "Grilla de grados (meridianos y paralelos)"),
+        ("filegrid", "Grilla del archivo (puntos)"),
+        ("fir", "Límites de FIR"),
+        ("wa", "Working Areas de las FIR mostradas"),
+    )
+
+    def _build_layers_menu(self):
+        """Una acción tildable por capa, independientes entre sí. El menú
+        queda abierto al tildar, para prender o apagar varias seguidas."""
+        from PyQt6.QtWidgets import QMenu
+        menu = QMenu(self)
+        self._layer_actions = {}
+        for key, text in self.LAYERS:
+            act = QAction(text, self)
+            act.setCheckable(True)
+            act.triggered.connect(lambda on, k=key: self.set_layer_visible(k, on))
+            if key == "grib":
+                act.setToolTip("También Ctrl+D")
+            menu.addAction(act)
+            self._layer_actions[key] = act
+            if key in ("extra", "filegrid"):
+                menu.addSeparator()
+        menu.aboutToShow.connect(self._sync_layers_menu)
+        return menu
+
+    def layer_visible(self, key) -> bool:
+        c = self._cfg
+        return {
+            "grib": self._layer_enabled,
+            "frame": bool(c.get("download_area_draw", False)),
+            "fill": bool(self.panel.options()["fill"]),
+            "extra": bool(self.panel.options()["extra_info"]),
+            "coast": bool(c.get("map_coast", True)),
+            "graticule": bool(c.get("map_graticule", True)),
+            "filegrid": bool(self.panel.options()["grid"]),
+            "fir": bool(c.get("fir_enabled", False)),
+            "wa": bool(c.get("wa_show", False)),
+        }[key]
+
+    def set_layer_visible(self, key, on: bool):
+        """Menú Capas: cada capa se prende o apaga sin tocar las demás."""
+        on = bool(on)
+        if key == "grib":
+            if self._layer_enabled != on:
+                self.toggle_layer()
+        elif key == "frame":
+            self.set_area_draw(on)
+        elif key in ("fill", "extra", "filegrid"):
+            opt = {"fill": "fill", "extra": "extra_info", "filegrid": "grid"}[key]
+            self.panel.set_options({opt: on})
+            self._on_panel_options_changed()
+        elif key in ("coast", "graticule"):
+            self._cfg["map_coast" if key == "coast" else "map_graticule"] = on
+            save_config(self._cfg)
+            self._apply_base_layers()
+        elif key == "fir":
+            self.set_fir_enabled(on)
+        elif key == "wa":
+            self.set_wa_show(on)
+        self._sync_layers_menu()
+
+    def _apply_base_layers(self, redraw=True):
+        changed = self.plot.set_base_layers(self._cfg.get("map_coast", True),
+                                            self._cfg.get("map_graticule", True))
+        if changed and redraw:
+            if self._reader is not None:
+                self.redraw()
+            else:
+                self.plot.draw_empty()
+
+    def _sync_layers_menu(self):
+        for key, act in getattr(self, "_layer_actions", {}).items():
+            act.blockSignals(True)
+            act.setChecked(self.layer_visible(key))
+            act.blockSignals(False)
 
     def _zoom_factors(self):
         """(factor de un paso normal, factor de un paso fino) para alejar;
@@ -1667,6 +1754,7 @@ class MainWindow(QMainWindow):
         self._apply_theme(values.get("accent_color"), opacity=values.get("opacity"))
         self.panel.set_options(self._map_options_from_cfg())
         self._apply_fine_divisor()
+        self._apply_base_layers(redraw=False)
         self._refresh_tangent_projection()
         self._sync_view_menu()
         self._refresh_sources_combo()

@@ -336,9 +336,22 @@ class TestVentana(unittest.TestCase):
         w._cfg["working_areas"][0]["width_nm"] = 0.0
         w._refresh_tangent_projection()
         self.assertIsNone(w.plot.tangent)
-        # otras proyecciones no usan la tangencia
+        # Lambert: centrada en la tangencia con su radio, sin giro magnético
         w._cfg["working_areas"][0]["width_nm"] = 700.0
         w.set_projection("lambert")
+        t = w.plot.tangent
+        self.assertEqual((t["code"], t["up_bearing"], t["variation_deg"]), ("SAEF", 0.0, 0.0))
+        self.assertEqual(type(w.plot.proj).__name__, "LambertConformal")
+        x0, y0 = w.plot.proj.transform_point(SAEF["tangent_lon"], SAEF["tangent_lat"], w.plot.data_crs)
+        self.assertLess(math.hypot(x0, y0), 1.0)
+        xn, yn = w.plot.proj.transform_point(SAEF["tangent_lon"], SAEF["tangent_lat"] + 1.0, w.plot.data_crs)
+        self.assertAlmostEqual(math.degrees(math.atan2(xn - x0, yn - y0)), 0.0, places=6)
+        self.assertIn("Lambert conforme centrada en la WA SAEF", w.projection_text())
+        self.assertIn("norte verdadero arriba", w.projection_text())
+        self.assertNotIn("°M", w.cursor_text(-60.0, -35.0))
+        self.assertIn("tangente a WA SAEF", w.panel.cb_proj.itemText(w.panel.cb_proj.findData("lambert")))
+        # las demás proyecciones no usan la tangencia
+        w.set_projection("mercator")
         self.assertIsNone(w.plot.tangent)
         w.set_projection("stereo")
         self.assertEqual(w.plot.tangent["code"], "SAEF")
