@@ -20,6 +20,7 @@ SHORTCUTS = [
     ("Vista", "Actualizar (redibujar)", "F5"),
     ("Vista", "Capa de datos activada / desactivada", "Cmd D"),
     ("Vista", "Panel lateral (mostrar / ocultar)", "Cmd Shift P"),
+    ("Vista", "Pantalla completa (entrar / salir)", "Ctrl Cmd F (botón verde) · F11"),
     ("Vista", "Límites de FIR de Argentina (mostrar / ocultar)", "Cmd Shift F"),
     ("Vista", "FIR vecinas, extremos y cobertura, configurar FIR", "Menú Vista ▸ FIR"),
     ("Vista", "Preferencias…", "Cmd ,"),

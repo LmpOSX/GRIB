@@ -204,7 +204,8 @@ detalle.
 | I7 | Mapa translúcido | Bajar la transparencia con un archivo abierto | El fondo del mapa deja ver el escritorio desenfocado; las barbas y costas siguen nítidas; el PNG exportado sale con fondo opaco. |
 | I5 | Escala de barbas | Cambiar el acento | Los colores de las barbas (cian…rojo) y de los contornos de temperatura no cambian. |
 | I8 | Casillas y radios | Marcar Extra Info y cambiar de variable | El indicador se pinta con el acento y además muestra el tilde (casillas) o el punto (radios). |
-| I9 | Botón verde (macOS) | Clic en el botón verde de la ventana | La ventana se maximiza sobre el escritorio (no entra al Space de pantalla completa) y conserva el desenfoque y la transparencia. |
+| I9 | Pantalla completa (macOS) | Clic en el botón verde, o Vista ▸ Pantalla completa (⌃⌘F) | La ventana entra en el Space de pantalla completa nativo ocupando toda la pantalla; mientras dura es opaca con el fondo del tema (sin negro detrás); al salir (⌃⌘F, Esc en la barra de menú o el botón verde) vuelve translúcida con desenfoque; Vista ▸ Pantalla completa queda tildada mientras está activa. |
+| I10 | Pantalla completa (Windows / Linux) | F11 | Ocupa toda la pantalla y vuelve con F11; la ventana sigue opaca. |
 | I6 | Diálogos glass | Abrir Preferencias, Atajos y Acerca de | Fondo translúcido con desenfoque, barra de título nativa, contenido sin aplastar; Esc / Cerrar los cierran. |
 | I10 | Pestañas | `⚙` | Seis pestañas: Apariencia, Mapa, Fuentes, Descarga, WAFS, Motor; se ven con el tema (pestaña activa resaltada con el acento). |
 | I11 | Mapa | Pestaña Mapa ▸ proyección Mercator, Grilla marcada, densidad 2 ▸ Aplicar, con archivo abierto | El mapa pasa a Mercator con grilla y barbas cada 2 puntos; el panel CONFIG refleja los valores; se conservan al reiniciar. |

@@ -35,10 +35,9 @@ def apply_blur(widget) -> bool:
 
 def disable_native_fullscreen(widget) -> bool:
     """macOS: que el botón verde maximice la ventana en vez de entrar en el
-    Space de pantalla completa. En ese Space no hay escritorio detrás (fondo
-    negro), así que el desenfoque "detrás de la ventana" no tiene nada que
-    mostrar y la ventana se ve opaca. Maximizada sobre el escritorio ocupa
-    la pantalla y conserva la translucidez. Devuelve True si se aplicó."""
+    Space de pantalla completa. Ya no se usa: la app entra en pantalla
+    completa nativa y pasa a opaca mientras tanto (MainWindow.changeEvent).
+    Se conserva por si hace falta volver al comportamiento anterior."""
     if platform.system() != "Darwin" or not native_window_available():
         return False
     try:

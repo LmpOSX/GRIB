@@ -1,5 +1,12 @@
 # Cambios
 
+## Sin publicar
+
+- Pantalla completa nativa en macOS (botón verde o ⌃⌘F; F11 en Windows y
+  Linux): la ventana ocupa toda la pantalla y pasa a opaca mientras dura,
+  porque en ese Space no hay escritorio detrás del desenfoque; vuelve
+  translúcida al salir. Vista ▸ Pantalla completa.
+
 ## 0.2.1 — 2026-10-15
 
 - Menú `Capas` en la barra de acciones (reemplaza a `Ocultar capa`): GRIB,

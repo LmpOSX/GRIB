@@ -615,11 +615,13 @@ licencias en `docs/FUENTES_FIR.md`.
 | Acercar / alejar un paso fino (botones + y −) | ⌘⇧+ / ⌘⇧− | Ctrl Shift + / Ctrl Shift − |
 | Atajos de teclado | ⌘ / | Ctrl / |
 
-En macOS el botón verde maximiza la ventana sobre el escritorio en lugar
-de entrar en el modo de pantalla completa nativo: en ese modo el sistema
-pone la ventana sola sobre un fondo negro y el desenfoque "detrás de la
-ventana" no tiene nada que mostrar. Sin desenfoque (Windows, Linux o si
-falla en macOS) el botón verde conserva su comportamiento habitual.
+**Pantalla completa.** Vista ▸ Pantalla completa (⌃⌘F en macOS, F11 en
+Windows y Linux) o el botón verde de macOS expanden la ventana a toda la
+pantalla. En ese modo macOS pone la ventana sola sobre un Space sin
+escritorio detrás, así que el desenfoque no tiene nada que mostrar: la
+ventana pasa a opaca con el fondo del tema mientras dura, y vuelve a ser
+translúcida al salir. Sin desenfoque (Windows, Linux o si falla en macOS)
+la ventana es opaca siempre.
 
 La configuración (color, transparencia, tamaño de fuente, geometría,
 recientes) se guarda en `config.json` junto al código en desarrollo y en

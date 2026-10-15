@@ -17,7 +17,7 @@ from PyQt6.QtWidgets import (
     QApplication, QMessageBox, QMenuBar, QFileDialog, QStatusBar, QScrollArea,
     QLabel, QComboBox,
 )
-from PyQt6.QtCore import Qt
+from PyQt6.QtCore import Qt, QEvent
 from PyQt6.QtGui import QKeySequence, QShortcut, QAction, QActionGroup, QCursor
 from PyQt6.QtWidgets import QToolTip
 
@@ -83,6 +83,8 @@ class MainWindow(QMainWindow):
         app_font = QApplication.instance().font()
         app_font.setPointSize(self._cfg["font_size"])
         QApplication.instance().setFont(app_font)
+        if hasattr(self, "_blur_active"):
+            self._apply_window_opacity()
         self._on_theme_applied()
 
     def _on_theme_applied(self):
@@ -462,6 +464,10 @@ class MainWindow(QMainWindow):
                                            "Ctrl+Shift+P")
         self._act_panel.setCheckable(True)
         self._act_panel.setChecked(bool(self._cfg.get("panel_visible", True)))
+        self._act_fullscreen = self._add_action(vista, "Pantalla completa", self.toggle_fullscreen,
+                                                "Ctrl+Meta+F")      # en macOS: ⌃⌘F
+        self._act_fullscreen.setShortcuts([QKeySequence("Ctrl+Meta+F"), QKeySequence("F11")])
+        self._act_fullscreen.setCheckable(True)
         vista.addSeparator()
         # Mismas opciones que el panel (VIENTO / MAPA), sincronizadas
         self._menu_proj = vista.addMenu("Proyección")
@@ -1801,6 +1807,46 @@ class MainWindow(QMainWindow):
                 x = avail.left() + (avail.width() - w) // 2
                 y = avail.top() + (avail.height() - h) // 2
         self.setGeometry(x, y, w, h)
+
+    # ── Pantalla completa y opacidad ─────────────────────────────────────────
+    def set_blur_active(self, active: bool):
+        """Lo llama main.py tras intentar el desenfoque nativo: con desenfoque
+        la ventana es translúcida; sin él, opaca con el fondo del tema."""
+        self._blur_active = bool(active)
+        self._apply_window_opacity()
+
+    def _apply_window_opacity(self):
+        """Translúcida sólo con desenfoque y fuera de pantalla completa: en el
+        Space de pantalla completa de macOS no hay escritorio detrás y la
+        translucidez dejaría ver negro."""
+        from .theme import opaque_window_css
+        translucent = bool(getattr(self, "_blur_active", False)) and not self.isFullScreen()
+        if translucent:
+            self.setAttribute(Qt.WidgetAttribute.WA_TranslucentBackground, True)
+            self.setStyleSheet("")
+        else:
+            self.setAttribute(Qt.WidgetAttribute.WA_TranslucentBackground, False)
+            self.setStyleSheet(opaque_window_css(self._cfg["accent_color"]))
+
+    def toggle_fullscreen(self, on=None):
+        """Vista ▸ Pantalla completa (⌃⌘F en macOS, F11 en Windows/Linux); el
+        botón verde de macOS hace lo mismo."""
+        want = (not self.isFullScreen()) if on is None else bool(on)
+        if want:
+            self.showFullScreen()
+        else:
+            self.showNormal()
+
+    def changeEvent(self, event):
+        super().changeEvent(event)
+        if event.type() == QEvent.Type.WindowStateChange:
+            full = self.isFullScreen()
+            act = getattr(self, "_act_fullscreen", None)
+            if act is not None and act.isChecked() != full:
+                act.blockSignals(True)
+                act.setChecked(full)
+                act.blockSignals(False)
+            self._apply_window_opacity()
 
     def closeEvent(self, event):
         g = self.geometry()
