@@ -1,6 +1,6 @@
 # Cambios
 
-## Sin publicar
+## 0.2.2 — 2026-10-15
 
 - Pantalla completa nativa en macOS (botón verde o ⌃⌘F; F11 en Windows y
   Linux): la ventana ocupa toda la pantalla y pasa a opaca mientras dura,
