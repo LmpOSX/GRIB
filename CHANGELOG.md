@@ -1,6 +1,6 @@
 # Cambios
 
-## Sin publicar
+## 0.2.1 — 2026-10-15
 
 - Menú `Capas` en la barra de acciones (reemplaza a `Ocultar capa`): GRIB,
   Marco del GRIB, Fondo de velocidad, Extra Info, Costas y fronteras, Grilla
