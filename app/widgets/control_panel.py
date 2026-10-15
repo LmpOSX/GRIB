@@ -29,6 +29,9 @@ class ControlPanel(QWidget):
     full_extent_clicked = pyqtSignal()
     extent_invalid = pyqtSignal(str)        # mensaje para la ventana
     projection_changed = pyqtSignal(str)    # clave de PROJECTIONS
+    fir_toggled = pyqtSignal(bool)          # capa de límites de FIR
+    fir_neighbors_toggled = pyqtSignal(bool)
+    fir_config_clicked = pyqtSignal()       # botón «FIR…»
 
     TIME_LABELS = ["Current (+0)", "Next (+1)", "Advanced (+2)"]
     P_COMBO_NONE = "(interpolar por FL)"            # archivo en niveles de presión
@@ -161,7 +164,7 @@ class ControlPanel(QWidget):
         # ── LEVEL ──
         lay = self._section("LEVEL")
         grid = QGridLayout()
-        grid.setSpacing(4)
+        grid.setSpacing(3)
         self._fl_group = QButtonGroup(self)
         self._fl_group.setExclusive(True)
         self._fl_buttons = {}
@@ -267,10 +270,31 @@ class ControlPanel(QWidget):
         self.cb_grid_step.currentIndexChanged.connect(
             lambda _i: self._emit_if_live(self.options_changed))
         row.addWidget(self.cb_grid_step, 1)
-        lay.addLayout(row)
-        self.chk_grid = QCheckBox("Grilla lat/lon del archivo")
+        self.chk_grid = QCheckBox("+ la del archivo")
+        self.chk_grid.setToolTip("Grilla lat/lon del archivo (cada punto de la grilla), punteada")
         self.chk_grid.toggled.connect(lambda _=False: self._emit_if_live(self.options_changed))
-        lay.addWidget(self.chk_grid)
+        row.addWidget(self.chk_grid)
+        lay.addLayout(row)
+        # Límites de FIR: la ventana carga los polígonos y guarda la elección
+        row = QHBoxLayout()
+        self.chk_fir = QCheckBox("FIR Argentina")
+        self.chk_fir.setToolTip("Dibujar los límites de las FIR Resistencia, Córdoba, Mendoza, "
+                                "Ezeiza y Comodoro Rivadavia (Ctrl+Shift+F)")
+        self.chk_fir.toggled.connect(lambda v: self._emit_if_live(self.fir_toggled, bool(v)))
+        row.addWidget(self.chk_fir)
+        self.chk_fir_nb = QCheckBox("+ vecinas")
+        self.chk_fir_nb.setToolTip("Incluir, más tenues, las FIR limítrofes (Montevideo, Asunción, "
+                                   "La Paz, Santiago, Punta Arenas, Curitiba, Brasilia, Atlántico, "
+                                   "Johannesburgo Oceánico)")
+        self.chk_fir_nb.toggled.connect(lambda v: self._emit_if_live(self.fir_neighbors_toggled, bool(v)))
+        row.addWidget(self.chk_fir_nb)
+        row.addStretch()
+        self.btn_fir = QPushButton("FIR…")
+        self.btn_fir.setFixedHeight(20)
+        self.btn_fir.setToolTip("Elegir FIR, estilo, extremos y cobertura, y de dónde salen los límites")
+        self.btn_fir.clicked.connect(self.fir_config_clicked.emit)
+        row.addWidget(self.btn_fir)
+        lay.addLayout(row)
         self._sep(lay)
         self._sub(lay, "Recuadro (lat/lon, Enter aplica)")
         grid = QGridLayout()
@@ -501,6 +525,16 @@ class ControlPanel(QWidget):
                 self.chk_fill.setChecked(bool(opts["fill"]))
             if "stride" in opts:
                 self.spin_stride.setValue(max(1, min(10, int(opts["stride"]))))
+        finally:
+            self._updating = False
+
+    def set_fir_options(self, enabled: bool, neighbors: bool):
+        """Casillas de FIR sin emitir señales (estado de la configuración)."""
+        self._updating = True
+        try:
+            self.chk_fir.setChecked(bool(enabled))
+            self.chk_fir_nb.setChecked(bool(neighbors))
+            self.chk_fir_nb.setEnabled(bool(enabled))
         finally:
             self._updating = False
 

@@ -279,7 +279,27 @@ class SettingsDialog(GlassDialog):
         lay.addLayout(row)
         self._hint(lay, "La casilla habilita la fuente en el selector de la ventana. «Configurar…» "
                         "abre sus parámetros por defecto, credenciales y «Probar conexión».")
+        # Fuentes de límites de FIR (capa del mapa, no datos meteorológicos)
+        self._sub(lay, "Límites de FIR (capa del mapa)")
+        row = QHBoxLayout()
+        lbl = QLabel("openAIP (límites de FIR)   🔑 clave de API en el llavero")
+        row.addWidget(lbl, 1)
+        self.btn_openaip = QPushButton("Configurar…")
+        self.btn_openaip.clicked.connect(self._configure_openaip_fir)
+        row.addWidget(self.btn_openaip)
+        lay.addLayout(row)
+        self._hint(lay, "VATSpy (sin clave) y el archivo propio se manejan en Vista ▸ FIR ▸ "
+                        "Configurar FIR… Los límites de VATSpy y openAIP no son oficiales: para "
+                        "uso operativo verificarlos contra el AIP Argentina ENR 2.1.")
         return w
+
+    def _configure_openaip_fir(self):
+        from .source_config_dialog import SourceConfigDialog
+        from ..sources.openaip_fir import OpenAipFirSource
+        src = OpenAipFirSource()
+        dlg = SourceConfigDialog(self, src, self._wrap())
+        if dlg.exec():
+            set_source_config(self._wrap(), src.key, enabled=dlg.enabled(), params=dlg.params())
 
     def _on_source_checked(self, item):
         key = item.data(Qt.ItemDataRole.UserRole)

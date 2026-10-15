@@ -62,6 +62,18 @@ class AboutDialog(GlassDialog):
         info.setWordWrap(True)
         lay.addWidget(info)
 
+        data = QLabel(
+            "Límites de FIR: copia filtrada de <a href=\"https://github.com/vatsimnetwork/"
+            "vatspy-data-project\">VATSpy Data Project</a> (CC BY-SA 4.0, derivada de las AIP, "
+            "no oficial) y, opcionalmente, <a href=\"https://www.openaip.net\">openAIP</a> "
+            "(CC BY-NC 4.0). Fuente oficial: AIP Argentina ENR 2.1 (AIS de EANA/ANAC). "
+            "Costas y fronteras: Natural Earth (dominio público).")
+        data.setObjectName("Hint")
+        data.setTextFormat(Qt.TextFormat.RichText)
+        data.setOpenExternalLinks(True)
+        data.setWordWrap(True)
+        lay.addWidget(data)
+
         row = QHBoxLayout()
         row.addStretch()
         close_btn = QPushButton("Cerrar")

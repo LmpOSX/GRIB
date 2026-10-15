@@ -36,6 +36,8 @@ from matplotlib.lines import Line2D  # noqa: E402
 from matplotlib.transforms import Bbox, Affine2D  # noqa: E402
 from matplotlib.collections import PathCollection, LineCollection  # noqa: E402
 from matplotlib.textpath import TextPath  # noqa: E402
+from matplotlib.path import Path as MplPath  # noqa: E402
+from matplotlib import patheffects  # noqa: E402
 from matplotlib.font_manager import FontProperties  # noqa: E402
 
 from PyQt6 import sip  # noqa: E402
@@ -45,6 +47,7 @@ from PyQt6.QtGui import QImage, QPainter  # noqa: E402
 from .grib_reader import (  # noqa: E402
     KELVIN, MS_TO_KT, SPEED_BINS, SPEED_COLORS, SPEED_LABELS,
     speed_color, speed_dir_from_uv)
+from .fir import densify  # noqa: E402
 
 # ---------------------------------------------------------------------------
 # Dependencia opcional: cartopy
@@ -189,6 +192,12 @@ LABEL_SIZE_DEFAULT = 7      # tamaño base (pt) de los rótulos de Extra Info
 GRID_LABEL_MARGIN_PX = (66.0, 18.0, 14.0, 38.0)   # margen de inscripciones: izq, der, arriba, abajo
 GRID_STEPS = [(10, "10°"), (5, "5°"), (1, "1°")]   # grilla de grados seleccionable
 MAX_LABELS = 900        # rótulos de Extra Info visibles como máximo
+# Capa de límites de FIR: estilo por defecto (lavanda tenue sobre fondo
+# oscuro, que no compite con la escala de las barbas ni con el magenta de
+# la temperatura). La ventana lo reemplaza con la configuración.
+FIR_STYLE_DEFAULT = {"color": "#b39ddb", "neighbor_color": "#8d8da8", "line_width": 1.3,
+                     "fill_alpha": 0.08, "label_size": 9}
+FIR_EDGE_TOL_PX = 5.0   # distancia al contorno (px) para «pasar el mouse sobre un límite»
 SETTLE_MS = 150         # espera tras el último cambio de vista para reconstruir
 
 
@@ -401,6 +410,15 @@ class WindPlot:
         self._label_artists = []        # rótulos de Extra Info (una PathCollection)
         self.label_texts = []           # textos de los rótulos visibles (inspección / tests)
         self.label_fontsize = LABEL_SIZE_DEFAULT
+        # Capa de límites de FIR (ver set_fir): regiones, códigos y estilo;
+        # la geometría proyectada se cachea por código y proyección
+        self._fir = None
+        self._fir_artists = []
+        self._fir_key = None
+        self._fir_cache = {}
+        self._fir_regions_id = None
+        self.on_click = None            # callable(event): clic sin arrastre sobre el mapa
+        self._press_xy = None
         self._in_draw = False
         self._interacting = False
         self._settle_timer = QTimer()
@@ -429,6 +447,7 @@ class WindPlot:
         self._base_artists, self._gridliners = [], []
         self._static_artists, self._view_artists, self._label_artists = [], [], []
         self._base_key = None
+        self._fir_artists, self._fir_key = [], None
         self.ax.callbacks.connect("xlim_changed", self._on_lim_changed)
         self.ax.callbacks.connect("ylim_changed", self._on_lim_changed)
 
@@ -440,6 +459,7 @@ class WindPlot:
             return False
         self.proj_key = key if key in dict(PROJECTIONS) else "platecarree"
         self.proj = make_projection(self.proj_key, lons, lats)
+        self._fir_cache = {}            # la geometría proyectada depende de la proyección
         self._make_axes()
         self._style_axes()
         self.has_data = False
@@ -609,6 +629,7 @@ class WindPlot:
                 pass
         self.ax.start_pan(event.x, event.y, 1)
         self._panning = True
+        self._press_xy = (event.x, event.y)
         self.canvas.setCursor(Qt.CursorShape.ClosedHandCursor)
 
     def _on_motion(self, event):
@@ -632,6 +653,14 @@ class WindPlot:
         self.canvas.setCursor(Qt.CursorShape.OpenHandCursor
                               if event.inaxes is self.ax else Qt.CursorShape.ArrowCursor)
         self._settle_timer.start()
+        # Clic (sin arrastre): lo informa la ventana (p. ej. la FIR bajo el cursor)
+        pressed, self._press_xy = self._press_xy, None
+        if (pressed is not None and self.on_click is not None and event.inaxes is self.ax
+                and abs(event.x - pressed[0]) < 3 and abs(event.y - pressed[1]) < 3):
+            try:
+                self.on_click(event)
+            except Exception:
+                pass
 
     def _on_lim_changed(self, _ax):
         """Cualquier cambio de vista (pan, zoom, rueda, Inicio): mientras
@@ -691,10 +720,12 @@ class WindPlot:
             self._base_artists, self._gridliners = [], []
             self._static_artists, self._view_artists, self._label_artists = [], [], []
             self._base_key = None
+            self._fir_artists, self._fir_key = [], None
             self._data = None
             self._style_axes()
             self.has_data = False
             self._base_map()
+            self._ensure_fir()
             self.ax.text(0.5, 0.5, message, transform=self.ax.transAxes, ha="center",
                          va="center", color=self.pal["text_dim"], fontsize=self._fs(12))
             if self.use_cartopy:
@@ -893,6 +924,7 @@ class WindPlot:
 
             # Capa base (se conserva entre redibujos)
             self._ensure_base(dlon, dlat, opts.get("grid", False), opts.get("grid_step", 10))
+            self._ensure_fir()
 
             # Capa estática: se reconstruye entera
             self._remove_all(self._static_artists)
@@ -1330,6 +1362,170 @@ class WindPlot:
         lc.set_clip_on(True)
         ax.add_collection(lc, autolim=False)
         return [lc]
+
+    # ------------------------------------------------------ límites de FIR
+    def set_fir(self, regions, codes=(), neighbors=(), style=None):
+        """Capa de límites de FIR. `regions`: dict código → fir.FirRegion;
+        `codes`: FIR a dibujar con el estilo principal (Argentina);
+        `neighbors`: FIR vecinas, más tenues; `style`: claves de
+        FIR_STYLE_DEFAULT. Se dibuja en el próximo draw()/draw_empty()."""
+        regions = dict(regions or {})
+        if id(regions) != self._fir_regions_id:
+            self._fir_cache = {}
+            self._fir_regions_id = id(regions)
+        st = dict(FIR_STYLE_DEFAULT)
+        st.update({k: v for k, v in (style or {}).items() if k in st and v is not None})
+        self._fir = {"regions": regions,
+                     "codes": [c for c in codes if c in regions],
+                     "neighbors": [c for c in neighbors if c in regions and c not in codes],
+                     "style": st}
+        self._fir_key = None
+
+    def _fir_xy(self, region):
+        """Anillos de la FIR proyectados a coordenadas de los ejes, con los
+        lados densificados y sin los puntos que la proyección no puede
+        representar (p. ej. el polo en Mercator). Cacheado por código."""
+        hit = self._fir_cache.get(region.code)
+        if hit is not None:
+            return hit
+        out = []
+        shift = 0.0
+        if not self.use_cartopy and self._data is not None and float(self._data["lons"].max()) > 180.0:
+            shift = 360.0
+        for ext, holes in region.polygons:
+            rings = []
+            for ring in [ext] + list(holes):
+                dense = densify(ring)
+                if self.use_cartopy:
+                    xyz = self.proj.transform_points(self.data_crs, dense[:, 0], dense[:, 1])
+                    xy = xyz[:, :2]
+                else:
+                    xy = np.column_stack([dense[:, 0] + shift, dense[:, 1]])
+                ok = np.isfinite(xy).all(axis=1) & (np.abs(xy) < 1e12).all(axis=1)
+                xy = xy[ok]
+                if len(xy) >= 3:
+                    rings.append(xy)
+            if rings:
+                out.append(rings)
+        self._fir_cache[region.code] = out
+        return out
+
+    @staticmethod
+    def _fir_path(rings_xy):
+        verts, codes = [], []
+        for ring in rings_xy:
+            n = len(ring)
+            verts.append(ring)
+            verts.append(ring[:1])
+            codes.extend([MplPath.MOVETO] + [MplPath.LINETO] * (n - 1) + [MplPath.CLOSEPOLY])
+        return MplPath(np.concatenate(verts), np.asarray(codes, dtype=np.uint8))
+
+    def _ensure_fir(self):
+        """Reconstruye la capa de FIR sólo si cambió algo que la afecta
+        (proyección, selección, estilo, tamaño de fuente o paleta)."""
+        f = self._fir
+        if not f or not (f["codes"] or f["neighbors"]):
+            self._remove_all(self._fir_artists)
+            self._fir_key = None
+            return
+        st = f["style"]
+        key = (self.proj_key, tuple(f["codes"]), tuple(f["neighbors"]), tuple(sorted(st.items())),
+               round(self.font_scale, 3), self.pal["ax_bg"], id(f["regions"]))
+        if key == self._fir_key:
+            return
+        self._remove_all(self._fir_artists)
+        ax = self.ax
+        scale = max(0.8, self.font_scale)
+        halo = [patheffects.withStroke(linewidth=2.5 * scale, foreground=self.pal["ax_bg"])]
+        groups = [(f["codes"], st["color"], 1.0, "-", st["fill_alpha"], 1.0),
+                  (f["neighbors"], st["neighbor_color"], 0.8, (0, (5, 3)), 0.0, 0.85)]
+        for codes, color, lw_f, ls, fill_alpha, label_f in groups:
+            paths, labels = [], []
+            for code in codes:
+                region = f["regions"][code]
+                polys = self._fir_xy(region)
+                if not polys:
+                    continue
+                paths.append(self._fir_path([r for rings in polys for r in rings]))
+                lp = region.label_point()
+                if lp is not None:
+                    labels.append((region, lp))
+            if not paths:
+                continue
+            coll = PathCollection(
+                paths, facecolors=matplotlib.colors.to_rgba(color, float(fill_alpha)),
+                edgecolors=matplotlib.colors.to_rgba(color, 0.95), linestyles=ls,
+                linewidths=float(st["line_width"]) * lw_f * scale, zorder=3.5,
+                transform=ax.transData)
+            coll.set_clip_box(ax.bbox)
+            coll.set_clip_on(True)
+            ax.add_collection(coll, autolim=False)
+            self._fir_artists.append(coll)
+            fs = self._fs(float(st["label_size"]) * label_f)
+            for region, (lon, lat) in labels:
+                if self.use_cartopy:
+                    xy = self.proj.transform_points(self.data_crs, np.array([lon]), np.array([lat]))[0, :2]
+                    if not np.isfinite(xy).all():
+                        continue
+                    x, y = float(xy[0]), float(xy[1])
+                else:
+                    x, y = lon, lat
+                    if self._data is not None and float(self._data["lons"].max()) > 180.0 and lon < 0:
+                        x = lon + 360.0
+                t = ax.text(x, y, f"{region.name}\n{region.code}", ha="center", va="center",
+                            fontsize=fs, color=color, zorder=6.5, clip_on=True,
+                            path_effects=halo, linespacing=1.1)
+                self._fir_artists.append(t)
+        self._fir_key = key
+
+    def fir_visible(self):
+        """Regiones dibujadas, las de Argentina primero."""
+        f = self._fir
+        if not f:
+            return []
+        return [f["regions"][c] for c in f["codes"] + f["neighbors"]]
+
+    def fir_at_lonlat(self, lon, lat):
+        """FIR visibles que contienen el punto (lon, lat)."""
+        if lon is None or lat is None:
+            return []
+        if lon > 180.0:
+            lon -= 360.0
+        return [r for r in self.fir_visible() if r.contains(lon, lat)]
+
+    def fir_near_edge(self, x_px, y_px, tol=FIR_EDGE_TOL_PX):
+        """FIR visibles cuyo contorno pasa a menos de `tol` píxeles del
+        punto (x_px, y_px) del canvas, con la distancia mínima."""
+        out = []
+        pt = np.array([float(x_px), float(y_px)])
+        for region in self.fir_visible():
+            best = None
+            for rings in self._fir_xy(region):
+                for ring in rings:
+                    disp = self.ax.transData.transform(ring)
+                    q = np.roll(disp, -1, axis=0)
+                    d = q - disp
+                    dd = np.einsum("ij,ij->i", d, d)
+                    with np.errstate(all="ignore"):
+                        t = np.clip(np.einsum("ij,ij->i", pt - disp, d) / np.where(dd > 0, dd, 1.0), 0.0, 1.0)
+                    proj = disp + d * t[:, None]
+                    dist = float(np.min(np.hypot(*(pt - proj).T))) if len(proj) else np.inf
+                    if best is None or dist < best:
+                        best = dist
+            if best is not None and best <= tol:
+                out.append((region, best))
+        out.sort(key=lambda rb: rb[1])
+        return [r for r, _b in out]
+
+    def fir_hit(self, event):
+        """(FIR que contienen el punto, FIR cuyo contorno está bajo el
+        cursor) para un evento de mouse de matplotlib."""
+        if not self._fir or event.inaxes is not self.ax or event.xdata is None:
+            return [], []
+        lon, lat = self.to_lonlat(float(event.xdata), float(event.ydata))
+        inside = self.fir_at_lonlat(lon, lat) if lon is not None else []
+        edges = self.fir_near_edge(event.x, event.y)
+        return inside, edges
 
     def save_png(self, path, dpi=150):
         """Guarda la vista actual con fondo opaco (el alfa es sólo para la

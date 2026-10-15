@@ -66,6 +66,7 @@ OPTIONS = {
         "resources/GribDocument.icns",
         "resources/check.svg",
         "resources/radio_dot.svg",
+        "resources/fir",            # copia filtrada de los límites de FIR (VATSpy)
     ],
 }
 

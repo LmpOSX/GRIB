@@ -117,6 +117,24 @@ detalle.
 | G14 | Grilla visible | Marcar `Grilla lat/lon del archivo` con opacidad alta y baja | Meridianos/paralelos cada 10° en línea continua y la grilla del archivo punteada, ambas visibles sobre el fondo. |
 | G10 | Sin red la primera vez | Borrar `~/.local/share/cartopy` y abrir sin conexión | Aviso "No se pudieron cargar las costas"; el mapa igual se dibuja. |
 
+## P. Límites de FIR
+
+| # | Caso | Pasos | Resultado esperado |
+|---|---|---|---|
+| P1 | Activar la capa | Abrir un GFS de Sudamérica; marcar `FIR Argentina` en MAPA (o ⌘⇧F, o Vista ▸ FIR) | Contornos lavanda de SARR, SACF, SAMF, SAEF y SAVF con etiqueta nombre + código dentro de cada polígono; casilla, menú y `config.json` (`fir_enabled`) sincronizados; el viento se sigue viendo por encima. |
+| P2 | Vecinas | Marcar `+ vecinas` | Montevideo, Asunción, La Paz, Santiago, Punta Arenas, Curitiba, Brasilia, Atlántico y Johannesburgo Oceánico en gris a rayas, etiquetas más chicas; `+ vecinas` se deshabilita si se apaga `FIR Argentina`. |
+| P3 | Polo y sector oceánico | Con la capa activa, elegir cada proyección (Lat/Lon, estereográfica, polar sur, polar norte, Mercator, Lambert) y alejar la vista | SAVF llega a 90° S y SAEF/SAVF a 10° W sin trazos cruzados ni líneas disparadas; en Mercator el borde polar simplemente se corta; el contorno se recorta a la vista. |
+| P4 | Fluidez | Capa activa + vecinas + Extra Info; arrastrar y hacer zoom; cambiar de FL | Igual de fluido que sin la capa (G16/G20); la capa no se reconstruye al cambiar de nivel (sólo al cambiar proyección, selección o estilo). |
+| P5 | Hover | Mover el mouse dentro de Ezeiza y luego sobre el límite Ezeiza/Comodoro | Barra de estado: `… \| FIR Ezeiza (SAEF)`; sobre el contorno agrega `\| límite SAEF · SAVF`. |
+| P6 | Clic | Clic (sin arrastrar) dentro de Córdoba | Barra de estado y tooltip: `FIR Córdoba (SACF): N −21.72° S −34.03° E −60.20° O −69.65° · la grilla cubre la FIR completa · …`; arrastrar no dispara el tooltip. |
+| P7 | Diálogo Regiones | `FIR…` ▸ Regiones: destildar SAVF, color rojo, relleno 25 %, etiqueta 12 ▸ Aplicar | Comodoro desaparece; las demás en rojo con relleno; etiquetas más grandes; `Estilo por defecto` vuelve al lavanda. Persisten tras reiniciar. |
+| P8 | Extremos y cobertura | `FIR…` ▸ Extremos (o Vista ▸ FIR ▸ Extremos y cobertura…) | Tabla con N/S/E/O, vértices, fuente y cobertura: con un GFS 4N–64S / 90W–22W las argentinas continentales dan `completa`, SAEF/SAVF `parcial`, FAJO `ninguna`; sin archivo abierto, "—". |
+| P9 | Descargar VATSpy | `FIR…` ▸ Datos ▸ `Descargar límites de FIR (VATSpy)` | Progreso en MB, `Cancelar descarga` corta; al terminar "VATSpy: 14 FIR guardadas en fir_vatspy.geojson"; el rótulo pasa de "copia incluida" a "Descargado: 14 FIR, fecha"; el aviso de no oficial está a la vista. Sin red: error claro. |
+| P10 | openAIP | Preferencias ▸ Fuentes ▸ openAIP ▸ `Configurar…` ▸ Token = clave ▸ Guardar ▸ `Probar conexión`; luego `FIR…` ▸ Datos ▸ `Descargar de openAIP` | `Conexión OK: openAIP responde: N FIR/UIR del país AR` (o "no tiene FIR del país AR"); la clave se ve enmascarada y no está en `config.json`; `Borrar` la quita. Con clave, la descarga guarda `fir_openaip.geojson` y la fuente preferida pasa a openAIP. **No verificado por falta de clave.** |
+| P11 | Convertir AIP | `FIR…` ▸ Datos ▸ `Convertir texto del AIP…`, pegar los vértices de ENR 2.1 de SAVF (con "a lo largo del límite internacional…"), Convertir | Informe con la cantidad de vértices y los tramos pendientes; `Guardar GeoJSON…` escribe el archivo y, con la casilla marcada, lo deja como archivo propio: SAVF pasa a "AIP … (oficial)" en Regiones y Extremos; las demás siguen de VATSpy. |
+| P12 | Archivo propio KML/SHP | `Cargar archivo propio…` con un KML o un .shp con el código en el nombre o en un campo `ICAO` | Se lee, se copia a la carpeta de datos y reemplaza esas FIR; `Quitar` vuelve a las fuentes descargadas. Un archivo sin códigos reconocibles da un aviso. |
+| P13 | PNG | Exportar PNG con la capa activa | El PNG incluye los límites y etiquetas. |
+
 ## H. Exportar
 
 | # | Caso | Pasos | Resultado esperado |
@@ -200,6 +218,7 @@ detalle.
 | M4 | Probar conexión | `Probar conexión` con red | `✔ Conexión OK: NOAA GFS: corrida … disponible`; sin red: `✖ Sin red`. |
 | M5 | Parámetros por defecto | Resolución 0,50° + intermedios ▸ Aplicar dos veces ▸ `Obtener datos…` | El diálogo de descarga abre con 0,50° e intermedios marcados. |
 | M6 | Selector persistente | Cambiar la fuente en el selector y reiniciar | Se conserva la elegida. |
+| M7 | openAIP en Fuentes | `⚙` ▸ Fuentes, sección «Límites de FIR (capa del mapa)» ▸ `Configurar…` | Diálogo de la fuente con tipo "límites de FIR (capa del mapa)", país AR, casilla UIR, token en el llavero y `Probar conexión` (ver P10). |
 
 ## N. Otras fuentes (requiere conexión)
 

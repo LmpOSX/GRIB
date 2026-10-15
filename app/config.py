@@ -61,6 +61,18 @@ DEFAULTS = {
     "map_stride": 1,
     "map_label_size": 7,          # tamaño (pt) de los rótulos de Extra Info
     "map_label_units": True,      # rótulos con unidad ("12 kt  −45 °C")
+    # Capa de límites de FIR (ver app/fir.py)
+    "fir_enabled": False,          # dibujar las FIR de Argentina
+    "fir_neighbors": False,        # dibujar también las FIR vecinas (más tenues)
+    "fir_active": ["SARR", "SACF", "SAMF", "SAEF", "SAVF", "SUEO", "SGFA", "SLLF",
+                   "SCEZ", "SCCZ", "SBCW", "SBBS", "SBAO", "FAJO"],   # códigos tildados
+    "fir_color": "#b39ddb",        # contorno y etiqueta de las FIR argentinas
+    "fir_neighbor_color": "#8d8da8",
+    "fir_line_width": 1.3,
+    "fir_fill_alpha": 0.08,        # relleno semitransparente (0 = sin relleno)
+    "fir_label_size": 9,           # pt de la etiqueta (nombre + código)
+    "fir_preferred": "vatspy",     # fuente descargada preferida: 'vatspy' | 'openaip'
+    "fir_user_file": "",           # GeoJSON/KML/SHP propio (reemplaza a las demás fuentes)
     # Fuentes de datos: última elegida y configuración por fuente
     "source": "gfs",
     "sources": {},                      # {clave: {"enabled": bool, "params": {...}}}

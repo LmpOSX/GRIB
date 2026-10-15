@@ -18,7 +18,8 @@ from PyQt6.QtWidgets import (
     QLabel, QComboBox,
 )
 from PyQt6.QtCore import Qt
-from PyQt6.QtGui import QKeySequence, QShortcut, QAction, QActionGroup
+from PyQt6.QtGui import QKeySequence, QShortcut, QAction, QActionGroup, QCursor
+from PyQt6.QtWidgets import QToolTip
 
 from .config import (
     load_config, save_config, FONT_SIZE_MIN, FONT_SIZE_MAX,
@@ -32,6 +33,7 @@ from .widgets.control_panel import ControlPanel
 from .wind_plot import PROJECTIONS, WIND_STYLES, GRID_STEPS
 from .widgets.inventory_panel import InventoryPanel
 from .sources import enabled_sources, all_sources, get_source, source_label, read_provenance
+from . import fir as firmod
 
 APP_TITLE = "Visor GRIB"
 GRIB_FILTER = "GRIB (*.grib2 *.grb2 *.grib *.grb);;Todos los archivos (*)"
@@ -47,6 +49,8 @@ class MainWindow(QMainWindow):
         self._current = None           # campos del paso/nivel dibujados (hover, CSV)
         self._layer_enabled = True     # capa de datos visible (Disable/Enable)
         self._provenance = None        # procedencia del archivo abierto (fuente, corrida…)
+        self._fir_regions = {}         # código → fir.FirRegion cargadas para la capa
+        self._fir_notes = []           # de dónde salió cada una (para el diálogo)
 
         self.setAttribute(Qt.WidgetAttribute.WA_TranslucentBackground)
 
@@ -259,6 +263,13 @@ class MainWindow(QMainWindow):
         self.panel.extent_invalid.connect(
             lambda msg: QMessageBox.warning(self, "Recuadro", msg))
         self.panel.projection_changed.connect(self.set_projection)
+        self.panel.fir_toggled.connect(self.set_fir_enabled)
+        self.panel.fir_neighbors_toggled.connect(self.set_fir_neighbors)
+        self.panel.fir_config_clicked.connect(self.open_fir_dialog)
+
+        # ── Capa de límites de FIR ──
+        self.plot.on_click = self._on_map_click
+        self._load_fir_layer(redraw=False)
 
         # ── Eventos del canvas ──
         self.plot.canvas.mpl_connect("motion_notify_event", self._on_motion)
@@ -469,6 +480,17 @@ class MainWindow(QMainWindow):
                                           lambda c: self._menu_set_option("grid", c))
         for act in (self._act_extra, self._act_fill, self._act_grid):
             act.setCheckable(True)
+        # Límites de FIR
+        self._menu_fir = vista.addMenu("FIR")
+        self._act_fir = self._add_action(self._menu_fir, "Límites de FIR de Argentina",
+                                         self.set_fir_enabled, "Ctrl+Shift+F")
+        self._act_fir_nb = self._add_action(self._menu_fir, "Incluir FIR vecinas",
+                                            self.set_fir_neighbors)
+        for act in (self._act_fir, self._act_fir_nb):
+            act.setCheckable(True)
+        self._menu_fir.addSeparator()
+        self._add_action(self._menu_fir, "Extremos y cobertura…", lambda: self.open_fir_dialog(1))
+        self._add_action(self._menu_fir, "Configurar FIR…", lambda: self.open_fir_dialog(0))
         self._sync_view_menu()
         vista.addSeparator()
         act_prefs = self._add_action(vista, "Preferencias…", self._open_settings, "Ctrl+,")
@@ -505,6 +527,15 @@ class MainWindow(QMainWindow):
         act = self._proj_actions.get(self.panel.projection())
         if act is not None:
             act.setChecked(True)
+        if hasattr(self, "_act_fir"):
+            on = bool(self._cfg.get("fir_enabled", False))
+            nb = bool(self._cfg.get("fir_neighbors", False))
+            for act, val in ((self._act_fir, on), (self._act_fir_nb, nb)):
+                act.blockSignals(True)
+                act.setChecked(val)
+                act.blockSignals(False)
+            self._act_fir_nb.setEnabled(on)
+            self.panel.set_fir_options(on, nb)
 
     def _menu_set_option(self, key, value):
         """Opción de VIENTO / MAPA elegida desde el menú: se refleja en el
@@ -1000,13 +1031,133 @@ class MainWindow(QMainWindow):
         self.plot.zoom_at(event.xdata, event.ydata, factor)
 
     def _on_motion(self, event):
-        """Lat/lon y valores bajo el cursor en la barra de estado."""
+        """Lat/lon, valores y FIR bajo el cursor en la barra de estado."""
         if event.inaxes is not self.plot.ax or event.xdata is None or event.ydata is None:
             return
         lon, lat = self.plot.to_lonlat(float(event.xdata), float(event.ydata))
         if lon is None:
             return
-        self.set_status(self.cursor_text(lon, lat))
+        self.set_status(self.cursor_text(lon, lat) + self.fir_hover_text(event))
+
+    # ── Límites de FIR ───────────────────────────────────────────────────────
+
+    def _load_fir_layer(self, redraw=True):
+        """(Re)carga los polígonos según la configuración (copia incluida,
+        descargas y archivo propio) y los aplica al mapa."""
+        self._fir_regions, self._fir_notes = firmod.load_layer(self._cfg)
+        self._apply_fir_layer(redraw=redraw)
+
+    def _fir_selection(self):
+        """(códigos de Argentina, códigos vecinos) a dibujar según la configuración."""
+        c = self._cfg
+        active = set(c.get("fir_active") or [])
+        if not c.get("fir_enabled", False):
+            return [], []
+        ar = [k for k in firmod.ARGENTINA_CODES if k in active]
+        nb = [k for k in firmod.NEIGHBOR_CODES if k in active] if c.get("fir_neighbors", False) else []
+        return ar, nb
+
+    def _fir_style(self):
+        c = self._cfg
+        return {"color": c.get("fir_color"), "neighbor_color": c.get("fir_neighbor_color"),
+                "line_width": c.get("fir_line_width"), "fill_alpha": c.get("fir_fill_alpha"),
+                "label_size": c.get("fir_label_size")}
+
+    def _apply_fir_layer(self, redraw=True):
+        ar, nb = self._fir_selection()
+        self.plot.set_fir(self._fir_regions, ar, nb, self._fir_style())
+        self._sync_view_menu()
+        if not redraw:
+            return
+        if self._reader is not None:
+            self.redraw()
+        else:
+            self.plot.draw_empty()
+
+    def set_fir_enabled(self, on: bool):
+        """Vista ▸ FIR ▸ Límites de FIR (Ctrl+Shift+F) o la casilla del panel."""
+        on = bool(on)
+        if self._cfg.get("fir_enabled", False) != on:
+            self._cfg["fir_enabled"] = on
+            save_config(self._cfg)
+        self._apply_fir_layer()
+
+    def set_fir_neighbors(self, on: bool):
+        on = bool(on)
+        if self._cfg.get("fir_neighbors", False) != on:
+            self._cfg["fir_neighbors"] = on
+            save_config(self._cfg)
+        self._apply_fir_layer()
+
+    def _grid_bbox(self):
+        """(lonmin, lonmax, latmin, latmax) de la grilla abierta o None."""
+        r = self._reader
+        if r is None:
+            return None
+        return (float(r.lons.min()), float(r.lons.max()), float(r.lats.min()), float(r.lats.max()))
+
+    def open_fir_dialog(self, tab: int = 0):
+        """Diálogo «Límites de FIR»: regiones y estilo, extremos y
+        cobertura, fuentes de los límites. Al cerrarlo se recargan los
+        archivos (pudo descargar o cargar uno propio)."""
+        from .dialogs.fir_dialog import FirDialog
+        dlg = FirDialog(self, cfg=self._cfg, regions=self._fir_regions, notes=self._fir_notes,
+                        grid_bbox=self._grid_bbox())
+        try:
+            dlg.tabs.setCurrentIndex(int(tab))
+        except Exception:
+            pass
+        if dlg.exec():
+            self._cfg.update(dlg.values())
+            save_config(self._cfg)
+        self._load_fir_layer()
+
+    def fir_hover_text(self, event) -> str:
+        """Texto para la barra de estado: FIR que contiene el cursor y, si el
+        cursor está sobre un contorno, las FIR que lo comparten."""
+        try:
+            inside, edges = self.plot.fir_hit(event)
+        except Exception:
+            return ""
+        txt = ""
+        if inside:
+            txt += "   | FIR " + " / ".join(f"{r.name} ({r.code})" for r in inside)
+        if edges:
+            txt += "   | límite " + " · ".join(r.code for r in edges)
+        return txt
+
+    def fir_click_text(self, regions) -> str:
+        """Extremos y cobertura de las FIR dadas (clic sobre el mapa)."""
+        lines = []
+        bbox = self._grid_bbox()
+        for r in regions:
+            e = r.extremes()
+            if e is None:
+                continue
+            cov = firmod.coverage(r, bbox)
+            cov_txt = {"completa": "la grilla cubre la FIR completa",
+                       "parcial": "la grilla cubre la FIR parcialmente",
+                       "ninguna": "la grilla no cubre la FIR",
+                       "sin grilla": "sin archivo abierto"}.get(cov, cov)
+            lines.append(f"FIR {r.name} ({r.code}): N {e['norte']:.2f}°  S {e['sur']:.2f}°  "
+                         f"E {e['este']:.2f}°  O {e['oeste']:.2f}°  ·  {cov_txt}  ·  {r.source}")
+        return "\n".join(lines)
+
+    def _on_map_click(self, event):
+        """Clic sin arrastre: nombre, extremos y cobertura de la FIR bajo el
+        cursor en la barra de estado y en un tooltip junto al mouse."""
+        try:
+            inside, edges = self.plot.fir_hit(event)
+        except Exception:
+            return
+        regions = list(inside) + [r for r in edges if r not in inside]
+        if not regions:
+            return
+        text = self.fir_click_text(regions)
+        if not text:
+            return
+        self.set_status(text.splitlines()[0])
+        QToolTip.showText(QCursor.pos(), text.replace("\n", "<br>"), self.plot.canvas)
 
     def cursor_text(self, lon: float, lat: float) -> str:
         txt = f"Lat {lat:7.2f}   Lon {lon:8.2f}"

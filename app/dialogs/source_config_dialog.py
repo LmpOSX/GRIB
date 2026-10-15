@@ -59,7 +59,8 @@ class SourceConfigDialog(GlassDialog):
         title = QLabel(source_label(src))
         title.setObjectName("Heading")
         lay.addWidget(title)
-        kind = "niveles de presión (altura)" if src.kind == "altura" else "variables de superficie"
+        kind = {"altura": "niveles de presión (altura)",
+                "limites": "límites de FIR (capa del mapa)"}.get(src.kind, "variables de superficie")
         desc = QLabel(f"{src.model}\nTipo: {kind}"
                       + ("   ·   ✓ publica los niveles isobáricos OACI por nivel de vuelo"
                          if src.flight_levels else "")

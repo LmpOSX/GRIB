@@ -26,11 +26,14 @@ main.py                     arranque (QApplication, FileOpen de macOS, argv)
 app/
   grib_reader.py            lectura GRIB2 (ecCodes), inventario, cache, ISA, ln(p)
   wafs_format.py            formato WAFS: tabla FL↔Pa, conversión, detección, validador, .idx, exportación, CLI
-  wind_plot.py              mapa matplotlib (QtAgg) + cartopy opcional
+  wind_plot.py              mapa matplotlib (QtAgg) + cartopy opcional; capa de límites de FIR
+  fir.py, fir_aip.py        límites de FIR: carga GeoJSON/KML/SHP, extremos, cobertura, VATSpy; conversor AIP → GeoJSON (CLI)
   main_window.py            ventana principal: mapa, panel, menús, atajos
   config.py, theme.py, platform_blur.py, crash_guard.py, utils.py
   widgets/                  control_panel, inventory_panel, welcome_widget
-  dialogs/                  glass_dialog, settings_dialog, shortcuts_dialog, about_dialog, export_wafs_dialog
+  dialogs/                  glass_dialog, settings_dialog, shortcuts_dialog, about_dialog, export_wafs_dialog, fir_dialog, aip_convert_dialog
+resources/fir/              copia filtrada de Boundaries.geojson (VATSpy, CC BY-SA 4.0)
+docs/FUENTES_FIR.md         fuentes de los límites de FIR y sus licencias
 tests/                      unittest (lector, ventana y mapa en offscreen); tests/data: caso de referencia WAFS
 docs/referencia/            make_wafs_like.py, conversor de referencia del formato WAFS
 docs/PLAN_PRUEBAS_2_0_0.md  plan de pruebas manual
@@ -41,7 +44,8 @@ Módulos del esquema de fuentes: `app/sources/base.py` (clase `Source`,
 descarga genérica), `app/sources/gfs.py`, `app/sources/cache.py`,
 `app/sources/credentials.py`, `app/regrid.py` (submuestreo, promedio de
 área, recorte), `app/widgets/params_form.py` (formulario por parámetros),
-`app/dialogs/source_config_dialog.py` y `app/dialogs/download_dialog.py`.
+`app/dialogs/source_config_dialog.py` y `app/dialogs/download_dialog.py`;
+`app/sources/openaip_fir.py` es la fuente de límites de FIR de openAIP.
 
 ## Instalación
 
@@ -268,10 +272,12 @@ la pantalla) y recuerda tamaño y posición.
   elige los meridianos y paralelos: **10°** (sólo principales, etiquetadas
   en los bordes), **5°** (principales cada 10° y secundarias a rayas cada
   5°) o **1°** (principales cada 5°, iguales entre sí, y secundarias
-  punteadas cada 1°); `Grilla lat/lon del archivo` agrega además la grilla
-  fina del dato; el recuadro lat/lon mín/máx (Enter o `Aplicar recuadro`)
-  y `Todo el dominio` fijan la vista. Alrededor del mapa queda un margen
-  reservado a las inscripciones de grados, que nunca se tapan.
+  punteadas cada 1°); la casilla `+ la del archivo` (Vista ▸ Grilla
+  lat/lon del archivo) agrega además la grilla fina del dato; `FIR
+  Argentina`, `+ vecinas` y `FIR…` manejan la capa de límites de FIR (ver
+  «Límites de FIR»); el recuadro lat/lon mín/máx (Enter o `Aplicar
+  recuadro`) y `Todo el dominio` fijan la vista. Alrededor del mapa queda
+  un margen reservado a las inscripciones de grados, que nunca se tapan.
 * **INVENTARIO**: corrida, pasos, variables, niveles y grilla del archivo.
 
 Cualquier cambio de radio, botón de nivel, combo o casilla redibuja
@@ -332,6 +338,87 @@ dirección meteorológica = (270 − atan2(v, u)) mod 360; T(°C) = T(K) −
 273.15. Las longitudes 0–360 se normalizan a −180…180 y las latitudes se
 reordenan de sur a norte si el archivo viene de norte a sur.
 
+### Límites de FIR
+
+La capa **FIR** dibuja sobre el viento los contornos de las cinco FIR
+argentinas (Resistencia SARR, Córdoba SACF, Mendoza SAMF, Ezeiza SAEF y
+Comodoro Rivadavia SAVF) con su etiqueta (nombre y código OACI) dentro del
+polígono, y opcionalmente las FIR limítrofes (Montevideo SUEO, Asunción
+SGFA, La Paz SLLF, Santiago SCEZ, Punta Arenas SCCZ, Curitiba SBCW,
+Brasilia SBBS, Atlántico SBAO y Johannesburgo Oceánico FAJO) en un estilo
+más tenue y a rayas. Se activa con la casilla `FIR Argentina` del panel
+(MAPA), con Vista ▸ FIR ▸ Límites de FIR (⌘⇧F) o desde el diálogo
+`FIR…`; `+ vecinas` suma las limítrofes. Qué FIR están activas y el estilo
+quedan en la configuración.
+
+* **Diálogo «Límites de FIR»** (botón `FIR…`, Vista ▸ FIR ▸ Configurar
+  FIR…), en tres pestañas. *Regiones*: casillas por FIR y estilo (color
+  de las argentinas y de las vecinas, grosor, relleno semitransparente en
+  %, tamaño de etiqueta; el valor por defecto es un lavanda tenue que no
+  compite con la escala de las barbas ni con el magenta de la
+  temperatura). *Extremos*: tabla con la latitud norte y sur y la longitud
+  este y oeste máximas de cada FIR, calculadas del polígono cargado, la
+  cantidad de vértices, la fuente y si la grilla meteorológica abierta
+  cubre la FIR **completa**, **parcial** o **ninguna** (comparación de
+  recuadros; las que llegan a 90° S siempre quedan parciales con una
+  grilla regional). *Datos*: de dónde salen los límites (ver abajo).
+* **Mouse**: con la capa activa la barra de estado agrega `FIR Ezeiza
+  (SAEF)` cuando el cursor está dentro de una FIR y `límite SAEF · SAVF`
+  cuando pasa sobre un contorno (5 px). Un clic sin arrastrar muestra en la
+  barra de estado y en un tooltip los extremos y la cobertura de la FIR.
+* **Dibujo**: los lados se densifican antes de proyectar, así los sectores
+  oceánicos hasta 10° W y el de Comodoro Rivadavia hasta el Polo Sur se
+  curvan bien en las proyecciones conformes y se recortan a la vista; los
+  puntos que una proyección no puede representar (el polo en Mercator) se
+  descartan. La geometría proyectada se cachea por FIR y proyección y la
+  capa es una colección por grupo, así no afecta la fluidez del viento. La
+  etiqueta usa el punto de etiqueta del dataset si existe y cae adentro;
+  si no, un punto interior calculado por barrido de paralelos (no el
+  centroide, que en polígonos cóncavos cae afuera).
+
+**De dónde salen los contornos.** Prioridad: el archivo propio reemplaza,
+para las FIR que contiene, a la fuente descargada preferida; esta
+reemplaza a la copia incluida con el visor.
+
+1. **AIP Argentina, ENR 2.1** (AIS de EANA / ANAC): la fuente oficial. Los
+   límites laterales están como listas de vértices en texto. `FIR…` ▸
+   Datos ▸ `Convertir texto del AIP…` (o `python -m app.fir_aip
+   limites.txt --codigo SAVF -o savf.geojson`) convierte esa lista a un
+   polígono GeoJSON. Reconoce `2215S06240W`, `221530S0624015W`,
+   `2215.5S06240.2W`, `S2215 W06240`, `22°15'30"S 062°40'15"W`, `22 15 30 S
+   062 40 15 W`, decimales con hemisferio y parejas con signo (una por
+   línea), con lat y lon en cualquier orden. Los tramos descriptos con
+   palabras («a lo largo del límite internacional», «siguiendo por el
+   paralelo…», «por la costa», arcos) **no se inventan**: quedan unidos por
+   una recta y listados en la propiedad `tramos_pendientes` (y en el
+   informe del conversor) para completarlos a mano o tomarlos de otra
+   fuente. El GeoJSON lleva `oficial: true` y `verificado: false`.
+2. **VATSpy Data Project** (`Boundaries.geojson`,
+   <https://github.com/vatsimnetwork/vatspy-data-project>, CC BY-SA 4.0):
+   fuente abierta de respaldo, lista para usar, con las FIR del mundo
+   identificadas por código OACI en la propiedad `id`. Una copia filtrada
+   a las 14 FIR de interés viene con el visor (`resources/fir/`) y
+   `Descargar límites de FIR (VATSpy)` la renueva en la carpeta de datos
+   (`~/Library/Application Support/Visor GRIB/fir/`), con progreso y
+   cancelación. **Estos límites son derivados de las AIP y no son
+   oficiales: para uso operativo hay que verificarlos contra el AIP.**
+3. **openAIP** (<https://www.openaip.net>, API Core, CC BY-NC 4.0): tercera
+   fuente opcional. La API publica los espacios aéreos tipo FIR (10) y UIR
+   (11) en GeoJSON y exige una clave gratuita (perfil de usuario) que se
+   envía en el encabezado `x-openaip-api-key`; se guarda en el llavero
+   del sistema desde Preferencias ▸ Fuentes ▸ «openAIP (límites de FIR)» ▸
+   `Configurar…` (o `FIR…` ▸ Datos ▸ `Configurar clave…`), nunca en
+   `config.json`, y se borra desde el mismo diálogo. `Probar conexión`
+   informa cuántas FIR del país devuelve la API; la cobertura de Argentina
+   no se pudo verificar sin clave. Como la API no trae el indicador OACI,
+   las FIR se reconocen por nombre.
+
+Además `Cargar archivo propio…` admite GeoJSON, KML/KMZ y Shapefile (vía
+pyshp, que instala cartopy); el archivo se copia a la carpeta de datos y
+reemplaza a las demás fuentes para las FIR que contiene (el código OACI
+se toma de la propiedad `id`/`icao`/`code` o del nombre). Fuentes y
+licencias en `docs/FUENTES_FIR.md`.
+
 ### Atajos
 
 | Acción | macOS | Windows / Linux |
@@ -346,6 +433,7 @@ reordenan de sur a norte si el archivo viene de norte a sur.
 | Todo el dominio | ⌘ ⇧ 0 | Ctrl Shift 0 |
 | Actualizar | F5 | F5 |
 | Capa de datos activada / desactivada | ⌘ D | Ctrl D |
+| Límites de FIR de Argentina | ⌘ ⇧ F | Ctrl Shift F |
 | Preferencias… | ⌘ , | Ctrl , |
 | Agrandar / achicar / restablecer fuente | ⌘ + / ⌘ − / ⌘ 0 | Ctrl + / Ctrl − / Ctrl 0 |
 | Desplazar el mapa | Arrastrar | Arrastrar |
@@ -508,7 +596,8 @@ con seis pestañas:
   (usuario/clave o token, guardadas con `keyring` en el llavero del sistema,
   nunca en `config.json`, con botón para borrarlas) y `Probar conexión`, que
   responde `Conexión OK`, `Sin red`, `Credenciales inválidas` o `Dato
-  todavía no publicado`.
+  todavía no publicado`. Debajo, «Límites de FIR (capa del mapa)» con la
+  fuente openAIP: su clave de API se guarda y se borra del mismo modo.
 * **Descarga**: plazos, unir plazos y abrir al terminar como valores
   iniciales de `Obtener datos…`; tamaño y antigüedad máximos de la caché y
   `Vaciar caché`.
