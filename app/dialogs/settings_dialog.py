@@ -251,6 +251,24 @@ class SettingsDialog(GlassDialog):
         self.chk_label_units = QCheckBox("Mostrar unidades (kt, °C)")
         self.chk_label_units.setChecked(bool(self._cfg.get("map_label_units", True)))
         lay.addWidget(self.chk_label_units)
+        self._sub(lay, "Zoom y desplazamiento")
+        row = QHBoxLayout()
+        row.addWidget(QLabel("Rueda: % por paso"))
+        self.spin_zoom = QSpinBox()
+        self.spin_zoom.setRange(1, 80)
+        self.spin_zoom.setValue(int(self._cfg.get("map_zoom_step", 20)))
+        self.spin_zoom.setToolTip("Cuánto se acerca o aleja la vista por cada muesca de la rueda "
+                                  "(en un trackpad, por cada 40 px de gesto)")
+        row.addWidget(self.spin_zoom)
+        row.addWidget(QLabel("   Modo fino (" + MOD_KEY + " o Shift apretados): ÷"))
+        self.spin_fine = QSpinBox()
+        self.spin_fine.setRange(2, 50)
+        self.spin_fine.setValue(int(self._cfg.get("map_fine_divisor", 5)))
+        self.spin_fine.setToolTip("Con " + MOD_KEY + " o Shift apretados la rueda y el arrastre se "
+                                  "dividen por este número; los botones + y − usan el paso fino")
+        row.addWidget(self.spin_fine)
+        row.addStretch()
+        lay.addLayout(row)
         lay.addStretch()
         return w
 
@@ -572,6 +590,8 @@ class SettingsDialog(GlassDialog):
             "map_stride": int(self.spin_stride.value()),
             "map_label_size": int(self.spin_label.value()),
             "map_label_units": self.chk_label_units.isChecked(),
+            "map_zoom_step": int(self.spin_zoom.value()),
+            "map_fine_divisor": int(self.spin_fine.value()),
             "sources": dict(self._wrap()["sources"]),
             "cache_max_mb": int(self.cache_mb.value()),
             "cache_max_days": int(self.cache_days.value()),

@@ -8,6 +8,10 @@
   dibujado junto con cada FIR mostrada (casilla `WA`, Vista ▸ FIR).
 - Las FIR se muestran de a una o sumadas desde Vista ▸ FIR ▸ FIR a mostrar
   (una entrada por FIR, Todas, Sólo Argentina, Ninguna).
+- Zoom y desplazamiento finos: con ⌘/Ctrl o Shift apretados la rueda y el
+  arrastre se dividen por 5; botones `+` y `−` en la barra (Vista ▸ Acercar
+  / Alejar (fino), ⌘⇧+ / ⌘⇧−); la rueda del trackpad ya no acerca de golpe;
+  % por paso y divisor fino en Preferencias ▸ Mapa.
 
 ## 0.1.0 — 2026-10-15
 

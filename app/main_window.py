@@ -282,6 +282,7 @@ class MainWindow(QMainWindow):
         self.plot.canvas.mpl_connect("motion_notify_event", self._on_motion)
         self.plot.canvas.mpl_connect("draw_event", self._on_draw)
         self.plot.canvas.mpl_connect("scroll_event", self._on_scroll)
+        self._apply_fine_divisor()
 
     def _map_options_from_cfg(self) -> dict:
         c = self._cfg
@@ -396,7 +397,18 @@ class MainWindow(QMainWindow):
         self._btn_png = QPushButton("Guardar PNG")
         self._btn_png.setToolTip("Exportar la vista actual a PNG (Ctrl+E)")
         self._btn_png.clicked.connect(self.export_png)
+        # Zoom fino con botones (la rueda es gruesa; con Cmd/Ctrl o Shift también es fina)
+        self._btn_zoom_in = QPushButton("+")
+        self._btn_zoom_in.setFixedWidth(40)
+        self._btn_zoom_in.setToolTip("Acercar un paso fino (Ctrl+Shift++); con Alt, un paso normal")
+        self._btn_zoom_in.clicked.connect(self._zoom_in_clicked)
+        self._btn_zoom_out = QPushButton("−")
+        self._btn_zoom_out.setFixedWidth(40)
+        self._btn_zoom_out.setToolTip("Alejar un paso fino (Ctrl+Shift+-); con Alt, un paso normal")
+        self._btn_zoom_out.clicked.connect(self._zoom_out_clicked)
         lay.addWidget(self._btn_home)
+        lay.addWidget(self._btn_zoom_in)
+        lay.addWidget(self._btn_zoom_out)
         lay.addWidget(self.panel.btn_update)
         lay.addWidget(self.panel.btn_disable)
         lay.addWidget(self._action_sep())
@@ -433,6 +445,9 @@ class MainWindow(QMainWindow):
         # Ctrl+0 queda para el tamaño de fuente; el dominio usa Ctrl+Shift+0
         self._act_full = self._add_action(vista, "Todo el dominio", self.full_extent,
                                           "Ctrl+Shift+0")
+        self._act_zoom_in = self._add_action(vista, "Acercar (fino)", self.zoom_in_fine, "Ctrl+Shift+=")
+        self._act_zoom_in.setShortcuts([QKeySequence("Ctrl+Shift+="), QKeySequence("Ctrl+Shift++")])
+        self._act_zoom_out = self._add_action(vista, "Alejar (fino)", self.zoom_out_fine, "Ctrl+Shift+-")
         self._act_update = self._add_action(vista, "Actualizar", self.redraw, "F5")
         self._act_layer = self._add_action(vista, "Capa de datos activada",
                                            self.toggle_layer, "Ctrl+D")
@@ -1078,16 +1093,83 @@ class MainWindow(QMainWindow):
             if ext:
                 self.panel.set_extent_entries(ext)
 
+    def _zoom_factors(self):
+        """(factor de un paso normal, factor de un paso fino) para alejar;
+        acercar es el inverso. Salen de Preferencias ▸ Mapa."""
+        step = max(1, min(80, int(self._cfg.get("map_zoom_step", 20)))) / 100.0
+        div = max(2, min(50, int(self._cfg.get("map_fine_divisor", 5))))
+        return 1.0 + step, 1.0 + step / div
+
+    @staticmethod
+    def _scroll_notches(event):
+        """Pasos de rueda del evento: ±1 por muesca de un mouse, y en un
+        trackpad (que manda píxeles, muchos eventos por gesto) una fracción
+        acotada, así un gesto corto no acerca de golpe."""
+        step = float(getattr(event, "step", 0.0) or 0.0)
+        if step == 0.0:
+            step = 1.0 if event.button == "up" else -1.0
+        gui = getattr(event, "guiEvent", None)
+        try:
+            pixels = gui is not None and not gui.pixelDelta().isNull()
+        except Exception:
+            pixels = False
+        if pixels:
+            return max(-1.0, min(1.0, step / 40.0))
+        return max(-3.0, min(3.0, step))
+
     def _on_scroll(self, event):
-        """Rueda del mouse: zoom alrededor del cursor (arriba acerca)."""
+        """Rueda del mouse: zoom alrededor del cursor (arriba acerca). Con
+        Cmd/Ctrl o Shift apretados el paso es fino (Preferencias ▸ Mapa)."""
         if event.inaxes is not self.plot.ax or not self.plot.has_data:
             return
-        factor = 0.8 if event.button == "up" else 1.25
+        normal, fine = self._zoom_factors()
+        base = fine if self.plot._event_fine(event) else normal
+        notches = self._scroll_notches(event)
+        if notches == 0.0:
+            return
+        factor = base ** (-notches)          # arriba (positivo) acerca
         try:
             self._toolbar.push_current()      # para que Inicio/atrás funcionen
         except Exception:
             pass
         self.plot.zoom_at(event.xdata, event.ydata, factor)
+
+    def zoom_in_fine(self):
+        """Vista ▸ Acercar (fino), botón «+» o Cmd Shift +."""
+        self._zoom_buttons(1.0 / self._zoom_factors()[1])
+
+    def zoom_out_fine(self):
+        self._zoom_buttons(self._zoom_factors()[1])
+
+    def zoom_in(self):
+        self._zoom_buttons(1.0 / self._zoom_factors()[0])
+
+    def zoom_out(self):
+        self._zoom_buttons(self._zoom_factors()[0])
+
+    def _zoom_in_clicked(self):
+        if QApplication.keyboardModifiers() & Qt.KeyboardModifier.AltModifier:
+            self.zoom_in()
+        else:
+            self.zoom_in_fine()
+
+    def _zoom_out_clicked(self):
+        if QApplication.keyboardModifiers() & Qt.KeyboardModifier.AltModifier:
+            self.zoom_out()
+        else:
+            self.zoom_out_fine()
+
+    def _zoom_buttons(self, factor):
+        if not self.plot.has_data:
+            return
+        try:
+            self._toolbar.push_current()
+        except Exception:
+            pass
+        self.plot.zoom_center(factor)
+
+    def _apply_fine_divisor(self):
+        self.plot.fine_divisor = float(max(2, min(50, int(self._cfg.get("map_fine_divisor", 5)))))
 
     def _on_motion(self, event):
         """Lat/lon, valores y FIR bajo el cursor en la barra de estado."""
@@ -1480,6 +1562,7 @@ class MainWindow(QMainWindow):
         self._cfg.update(values)
         self._apply_theme(values.get("accent_color"), opacity=values.get("opacity"))
         self.panel.set_options(self._map_options_from_cfg())
+        self._apply_fine_divisor()
         self._sync_view_menu()
         self._refresh_sources_combo()
         self._apply_area_layer(redraw=False)

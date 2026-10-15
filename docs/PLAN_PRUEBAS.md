@@ -96,7 +96,11 @@ detalle.
 
 | # | Caso | Pasos | Resultado esperado |
 |---|---|---|---|
-| G1 | Zoom con rueda | Girar la rueda sobre el mapa | Acerca / aleja alrededor del cursor, sin botones ni modos. |
+| G1 | Zoom con rueda | Girar la rueda sobre el mapa | Acerca / aleja alrededor del cursor un 20 % por muesca; en el trackpad un gesto corto acerca poco y uno largo no pasa de una muesca por evento (ya no se va de golpe). |
+| G21 | Rueda fina | Girar la rueda con ⌘ (o Shift) apretado | Acerca / aleja un 4 % por muesca (20 % ÷ 5), alrededor del cursor. |
+| G22 | Arrastre fino | Arrastrar el mapa con ⌘ (o Shift) apretado desde el inicio del arrastre | El mapa se mueve la quinta parte del recorrido del mouse; soltar la tecla a mitad del arrastre no cambia el modo hasta el próximo arrastre. |
+| G23 | Botones ± | Botones `+` y `−` de la barra, Vista ▸ Acercar / Alejar (fino), ⌘⇧+ / ⌘⇧− | Paso fino (4 %) alrededor del centro de la vista; con Alt + clic, paso normal (20 %); sin archivo abierto no hacen nada. |
+| G24 | Preferencias de zoom | Preferencias ▸ Mapa ▸ Rueda 10 %, Modo fino ÷ 10 ▸ Aplicar | La rueda pasa a 10 % y el modo fino a 1 %; el arrastre fino se mueve un décimo; queda en `config.json` (`map_zoom_step`, `map_fine_divisor`). |
 | G2 | Pan por arrastre | Arrastrar el mapa con el botón izquierdo | Cursor de mano abierta sobre el mapa, cerrada al arrastrar; el mapa sigue al mouse. |
 | G19 | El mapa llena el área | Abrir un archivo, redimensionar la ventana, aplicar un recuadro | No quedan franjas vacías a los costados ni arriba/abajo: la vista se amplía para ocupar todo el canvas y el dominio sigue completo. |
 | G3 | Inicio | Tras zoom, clic en `Inicio` | Vuelve a la vista inicial. |

@@ -437,6 +437,8 @@ class WindPlot:
         # Pan por arrastre con el botón izquierdo (sin modo ni botón aparte)
         self._panning = False
         self.on_view_push = None        # callable: guarda la vista antes de moverla (Inicio)
+        self.fine_divisor = 5.0            # modo fino (rueda y arrastre ÷ N); lo fija la ventana
+        self._pan_divisor = 1.0
         self.canvas.mpl_connect("button_press_event", self._on_press)
         self.canvas.mpl_connect("motion_notify_event", self._on_motion)
         self.canvas.mpl_connect("button_release_event", self._on_release)
@@ -630,6 +632,24 @@ class WindPlot:
         self.ax.set_ylim(y - (y - y0) * factor, y + (y1 - y) * factor)
         self.canvas.draw_idle()
 
+    def zoom_center(self, factor):
+        """Zoom alrededor del centro de la vista (botones ± y atajos)."""
+        if not self.has_data:
+            return
+        x0, x1 = self.ax.get_xlim()
+        y0, y1 = self.ax.get_ylim()
+        self.zoom_at(0.5 * (x0 + x1), 0.5 * (y0 + y1), factor)
+
+    @staticmethod
+    def _event_fine(event):
+        """True si hay una tecla modificadora apretada (Cmd/Ctrl, Shift, Alt):
+        modo fino para la rueda y el arrastre."""
+        mods = getattr(event, "modifiers", None)
+        if mods:
+            return bool(set(mods) & {"ctrl", "control", "cmd", "super", "meta", "shift", "alt"})
+        key = getattr(event, "key", None) or ""
+        return any(m in key for m in ("ctrl", "control", "cmd", "super", "meta", "shift", "alt"))
+
     # ----------------------------------------------------------- pan
     def _on_press(self, event):
         if (event.button != 1 or event.inaxes is not self.ax or not self.has_data
@@ -643,6 +663,9 @@ class WindPlot:
         self.ax.start_pan(event.x, event.y, 1)
         self._panning = True
         self._press_xy = (event.x, event.y)
+        # Modo fino: con Cmd/Ctrl o Shift apretados al empezar, el mapa se
+        # mueve una fracción del recorrido del mouse (ajuste de precisión)
+        self._pan_divisor = float(self.fine_divisor) if self._event_fine(event) else 1.0
         self.canvas.setCursor(Qt.CursorShape.ClosedHandCursor)
 
     def _on_motion(self, event):
@@ -652,7 +675,12 @@ class WindPlot:
             elif self.canvas.cursor().shape() != Qt.CursorShape.ArrowCursor:
                 self.canvas.setCursor(Qt.CursorShape.ArrowCursor)
             return
-        self.ax.drag_pan(1, None, event.x, event.y)
+        x, y = event.x, event.y
+        if self._pan_divisor > 1.0 and self._press_xy is not None:
+            px, py = self._press_xy
+            x = px + (x - px) / self._pan_divisor
+            y = py + (y - py) / self._pan_divisor
+        self.ax.drag_pan(1, None, x, y)
         self.canvas.draw_idle()
 
     def _on_release(self, event):
