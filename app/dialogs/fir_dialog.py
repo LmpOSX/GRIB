@@ -91,7 +91,7 @@ class FirDialog(GlassDialog):
         self._nb_color = self._cfg.get("fir_neighbor_color", DEFAULTS["fir_neighbor_color"])
         self._user_file = self._cfg.get("fir_user_file", "") or ""
         self.setWindowTitle("Límites de FIR")
-        self.setMinimumWidth(960)      # la tabla de Working Area tiene nueve columnas
+        self.setMinimumWidth(1080)     # la tabla de Working Area tiene once columnas
         self._build_ui()
 
     # ── Construcción ─────────────────────────────────────────────────────────
@@ -307,9 +307,9 @@ class FirDialog(GlassDialog):
 
     # ── Working Area ──
     WA_COLS = ("Código", "Tang. lat", "Tang. lon", "Vért. SO lat", "Vért. SO lon",
-               "Ancho NM", "Alto NM", "Radio km", "Activa")
-    WA_WIDTHS = (72, 110, 110, 110, 110, 88, 88, 108, 60)
-    W_CODE, W_TLAT, W_TLON, W_VLAT, W_VLON, W_W, W_H, W_R, W_ON = range(9)
+               "Ancho NM", "Alto NM", "Radio km", "Var. mag.", "Activa", "Tangencia")
+    WA_WIDTHS = (72, 100, 100, 100, 100, 88, 88, 100, 84, 58, 74)
+    W_CODE, W_TLAT, W_TLON, W_VLAT, W_VLON, W_W, W_H, W_R, W_VAR, W_ON, W_TG = range(11)
 
     def _tab_wa(self):
         w, lay = self._page()
@@ -331,6 +331,8 @@ class FirDialog(GlassDialog):
         self.wa_table.itemSelectionChanged.connect(self._wa_refresh_info)
         lay.addWidget(self.wa_table, 1)
         self._wa_fmt = self._cfg.get("areas_coord_format", "decimal")
+        self._magvar_conv = self._cfg.get("magvar_convention", "east_positive")
+        self._wa_var_errors = {}
         for wa in wamod.working_areas_from_config(self._cfg):
             self._wa_add_row(wa)
 
@@ -380,7 +382,10 @@ class FirDialog(GlassDialog):
         self._hint(lay, "Origen en el vértice suroeste, lados hacia el norte y el este medidos en millas "
                         "náuticas sobre el plano estereográfico tangente al punto de tangencia, con "
                         "el radio de la esfera conforme que se indique (por defecto 6371 km; el "
-                        "botón calcula el radio conforme WGS84 en la tangencia). Coordenadas en "
+                        "botón calcula el radio conforme WGS84 en la tangencia). La variación "
+                        "magnética gira el plano para que el norte magnético quede arriba. La fila "
+                        "con «Tangencia» define la proyección estereográfica del mapa (punto, radio "
+                        "y giro); sin ninguna, el mapa usa el centro del dominio. Coordenadas en "
                         "decimal con signo o grados-minutos con hemisferio (22°15'S, 06240W). "
                         "Los valores los cargás vos: no vienen precargados.")
         self._refresh_color_buttons()
@@ -390,7 +395,7 @@ class FirDialog(GlassDialog):
     def _wa_add_default(self):
         used = {wa.code for wa in self._wa_rows()}
         code = next((c for c in firmod.ALL_CODES if c not in used), "")
-        wa = wamod.WorkingArea(code, 0.0, 0.0, 0.0, 0.0, 100.0, 100.0, wamod.DEFAULT_RADIUS_KM, True)
+        wa = wamod.WorkingArea(code, 0.0, 0.0, 0.0, 0.0, 100.0, 100.0, wamod.DEFAULT_RADIUS_KM, True, 0.0, False)
         self._wa_add_row(wa)
         self.wa_table.selectRow(self.wa_table.rowCount() - 1)
 
@@ -421,10 +426,45 @@ class FirDialog(GlassDialog):
             sp.setMaximumWidth(self.WA_WIDTHS[col] - 6)
             sp.valueChanged.connect(lambda _v: self._wa_refresh_info())
             t.setCellWidget(r, col, sp)
+        var = QLineEdit(wamod.format_variation(wa.variation_deg, self._magvar_conv, "signed"))
+        var.setMaximumWidth(self.WA_WIDTHS[self.W_VAR] - 6)
+        var.setPlaceholderText("10W, 6°55'E")
+        var.setToolTip("Variación magnética en el punto de tangencia: gira el plano de la WA (y el mapa "
+                       "cuando es la tangencia). Acepta 10W, 7°W, 6°55'E o un número con el signo de "
+                       "la convención elegida en Preferencias ▸ Mapa.")
+        var.editingFinished.connect(lambda e=var: self._wa_commit_variation(e))
+        t.setCellWidget(r, self.W_VAR, var)
         chk = QCheckBox()
         chk.setChecked(bool(wa.enabled))
         chk.toggled.connect(lambda _v: self._wa_refresh_info())
         t.setCellWidget(r, self.W_ON, chk)
+        tg = QCheckBox()
+        tg.setChecked(bool(wa.tangency))
+        tg.setToolTip("La proyección estereográfica del mapa queda tangente a esta WA, con su radio y "
+                      "girada por su variación magnética. Sólo una fila puede tenerlo.")
+        tg.toggled.connect(lambda on, w=tg: self._wa_tangency_toggled(w, on))
+        t.setCellWidget(r, self.W_TG, tg)
+
+    def _wa_commit_variation(self, edit):
+        try:
+            v = wamod.parse_variation(edit.text(), self._magvar_conv)
+        except wamod.WorkingAreaError as exc:
+            self.lbl_wa_error.setText(str(exc))
+            return
+        edit.setText(wamod.format_variation(v, self._magvar_conv, "signed"))
+        edit.setToolTip(edit.toolTip().split("\n")[0] + "\n" + wamod.format_variation(v))
+        self._wa_refresh_info()
+
+    def _wa_tangency_toggled(self, widget, on):
+        """Sólo una WA puede ser la tangencia: marcar una desmarca las demás."""
+        if on:
+            for r in range(self.wa_table.rowCount()):
+                other = self.wa_table.cellWidget(r, self.W_TG)
+                if other is not None and other is not widget and other.isChecked():
+                    other.blockSignals(True)
+                    other.setChecked(False)
+                    other.blockSignals(False)
+        self._wa_refresh_info()
 
     def _wa_remove(self):
         rows = sorted({i.row() for i in self.wa_table.selectedIndexes()}, reverse=True)
@@ -438,12 +478,19 @@ class FirDialog(GlassDialog):
         t = self.wa_table
         if any(t.cellWidget(r, c) is None for c in range(len(self.WA_COLS))):
             return None               # fila a medio construir (las señales disparan antes)
+        try:
+            var = wamod.parse_variation(t.cellWidget(r, self.W_VAR).text(), self._magvar_conv)
+            self._wa_var_errors.pop(r, None)
+        except wamod.WorkingAreaError as exc:
+            var = 999.0               # inválida: wa_errors() lo informa con el texto
+            self._wa_var_errors[r] = str(exc)
         return wamod.WorkingArea(
             t.cellWidget(r, self.W_CODE).text(),
             t.cellWidget(r, self.W_TLAT).value(), t.cellWidget(r, self.W_TLON).value(),
             t.cellWidget(r, self.W_VLAT).value(), t.cellWidget(r, self.W_VLON).value(),
             t.cellWidget(r, self.W_W).value(), t.cellWidget(r, self.W_H).value(),
-            t.cellWidget(r, self.W_R).value(), t.cellWidget(r, self.W_ON).isChecked())
+            t.cellWidget(r, self.W_R).value(), t.cellWidget(r, self.W_ON).isChecked(),
+            var, t.cellWidget(r, self.W_TG).isChecked())
 
     def _wa_rows(self):
         rows = [self._wa_row(r) for r in range(self.wa_table.rowCount())]
@@ -463,7 +510,13 @@ class FirDialog(GlassDialog):
         self.wa_table.cellWidget(r, self.W_R).setValue(wamod.conformal_radius_km(lat))
 
     def wa_errors(self):
-        return wamod.validate_working_areas(self._wa_rows())
+        self._wa_var_errors = {}
+        rows = self._wa_rows()
+        errs = wamod.validate_working_areas(rows)
+        for r, msg in sorted(self._wa_var_errors.items()):
+            code = self.wa_table.cellWidget(r, self.W_CODE).text() or "(sin código)"
+            errs = [f"{code}: {msg}"] + [e for e in errs if not e.endswith("fuera de ±180°")]
+        return errs
 
     def _wa_refresh_info(self):
         if not hasattr(self, "lbl_wa_info"):

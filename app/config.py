@@ -83,6 +83,7 @@ DEFAULTS = {
     "wa_color": "#ffd54f",
     "wa_line_width": 1.3,
     "wa_label_size": 8,
+    "magvar_convention": "east_positive",   # signo de la variación magnética al escribirla (working_area.MAGVAR_CONVENTIONS)
     # Fuentes de datos: última elegida y configuración por fuente
     "source": "gfs",
     "sources": {},                      # {clave: {"enabled": bool, "params": {...}}}

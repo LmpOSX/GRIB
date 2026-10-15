@@ -30,6 +30,7 @@ from ..utils import MOD_KEY
 from .. import gfs_download as gfs
 from ..grib_engines import ENGINES, ec, find_wgrib2, wgrib2_version
 from ..wind_plot import PROJECTIONS, HAVE_CARTOPY, WIND_STYLES, GRID_STEPS
+from ..working_area import MAGVAR_CONVENTIONS
 from ..sources import all_sources, source_config, set_source_config, source_label
 from ..sources.cache import DownloadCache
 from ..widgets.areas_editor import AreasEditor
@@ -268,6 +269,19 @@ class SettingsDialog(GlassDialog):
                                   "dividen por este número; los botones + y − usan el paso fino")
         row.addWidget(self.spin_fine)
         row.addStretch()
+        lay.addLayout(row)
+        self._sub(lay, "Variación magnética (Working Areas)")
+        row = QHBoxLayout()
+        row.addWidget(QLabel("Convención de signo al escribirla"))
+        self.cb_magvar = QComboBox()
+        for key, name in MAGVAR_CONVENTIONS:
+            self.cb_magvar.addItem(name, key)
+        self.cb_magvar.setCurrentIndex(max(0, self.cb_magvar.findData(
+            self._cfg.get("magvar_convention", "east_positive"))))
+        self.cb_magvar.setToolTip("Cómo se interpreta un número sin letra en la columna Var. mag. de las "
+                                  "Working Areas; 10W o 6°55'E se entienden siempre. Internamente se guarda "
+                                  "este positivo.")
+        row.addWidget(self.cb_magvar, 1)
         lay.addLayout(row)
         lay.addStretch()
         return w
@@ -592,6 +606,7 @@ class SettingsDialog(GlassDialog):
             "map_label_units": self.chk_label_units.isChecked(),
             "map_zoom_step": int(self.spin_zoom.value()),
             "map_fine_divisor": int(self.spin_fine.value()),
+            "magvar_convention": self.cb_magvar.currentData() or "east_positive",
             "sources": dict(self._wrap()["sources"]),
             "cache_max_mb": int(self.cache_mb.value()),
             "cache_max_days": int(self.cache_days.value()),

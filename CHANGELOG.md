@@ -8,6 +8,12 @@
   dibujado junto con cada FIR mostrada (casilla `WA`, Vista ▸ FIR).
 - Las FIR se muestran de a una o sumadas desde Vista ▸ FIR ▸ FIR a mostrar
   (una entrada por FIR, Todas, Sólo Argentina, Ninguna).
+- Variación magnética por Working Area (`10W`, `6°55'E` o número según la
+  convención de signo elegida en Preferencias ▸ Mapa) que gira su plano, y
+  columna `Tangencia` (una sola): la estereográfica conforme pasa a ser
+  tangente a esa WA, con su radio y girada para dejar el norte magnético
+  arriba; el cursor agrega la dirección magnética del viento. Sin tangencia,
+  centro del dominio como antes.
 - Zoom y desplazamiento finos: con ⌘/Ctrl o Shift apretados la rueda y el
   arrastre se dividen por 5; botones `+` y `−` en la barra (Vista ▸ Acercar
   / Alejar (fino), ⌘⇧+ / ⌘⇧−); la rueda del trackpad ya no acerca de golpe;

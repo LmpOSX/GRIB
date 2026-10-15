@@ -66,6 +66,7 @@ if "SSL_CERT_FILE" not in os.environ:
 try:
     import cartopy.crs as ccrs
     import cartopy.feature as cfeature
+    import shapely.geometry as sgeom
     HAVE_CARTOPY = True
 except Exception:  # pragma: no cover - depende del entorno
     ccrs = None
@@ -108,14 +109,57 @@ PROJECTIONS = [
 ]
 
 
-def make_projection(key, lons=None, lats=None):
+if HAVE_CARTOPY:
+    class TangentStereographic(ccrs.Projection):
+        """Estereográfica esférica tangente a un punto (la tangencia de una
+        Working Area), con el radio de su esfera conforme y el plano girado
+        para que el norte magnético quede arriba (`up_bearing` = variación
+        magnética, este positivo). Ver working_area.tangent_projection_params."""
+
+        def __init__(self, lat, lon, radius_km, up_bearing=0.0, code=""):
+            from .working_area import tangent_projection_params
+            r_m = float(radius_km) * 1000.0
+            params = tangent_projection_params(lat, lon, radius_km, up_bearing)
+            globe = ccrs.Globe(ellipse=None, semimajor_axis=r_m, semiminor_axis=r_m)
+            super().__init__(params, globe=globe)
+            self.tangent = {"lat": float(lat), "lon": float(lon), "radius_km": float(radius_km),
+                            "up_bearing": float(up_bearing), "code": str(code)}
+            # Hemisferio visible menos un margen: el borde del plano es infinito
+            rr = 1.95 * r_m
+            t = np.linspace(0.0, 2.0 * np.pi, 181)
+            self._boundary = sgeom.LinearRing(np.column_stack([rr * np.cos(t), rr * np.sin(t)]))
+            self._limits = (-rr, rr)
+
+        @property
+        def boundary(self):
+            return self._boundary
+
+        @property
+        def threshold(self):
+            return 2e4
+
+        @property
+        def x_limits(self):
+            return self._limits
+
+        @property
+        def y_limits(self):
+            return self._limits
+
+
+def make_projection(key, lons=None, lats=None, tangent=None):
     """Construye la proyección cartopy para la clave dada. Sin cartopy
-    devuelve None (ejes matplotlib comunes en lat/lon)."""
+    devuelve None (ejes matplotlib comunes en lat/lon). `tangent` (dict con
+    lat, lon, radius_km, up_bearing, code) reemplaza al centro del dominio
+    en la estereográfica conforme."""
     if not HAVE_CARTOPY:
         return None
     lon_c = float(np.mean(lons)) if lons is not None and len(lons) else 0.0
     lat_c = float(np.mean(lats)) if lats is not None and len(lats) else 0.0
     if key == "stereo":
+        if tangent:
+            return TangentStereographic(tangent["lat"], tangent["lon"], tangent.get("radius_km", 6371.0),
+                                        tangent.get("up_bearing", 0.0), tangent.get("code", ""))
         return ccrs.Stereographic(central_latitude=lat_c, central_longitude=lon_c)
     if key == "spstereo":
         return ccrs.SouthPolarStereo(central_longitude=lon_c)
@@ -399,6 +443,7 @@ class WindPlot:
         self.data_crs = ccrs.PlateCarree() if self.use_cartopy else None   # los datos vienen en lat/lon
         self.proj_key = "platecarree"
         self.proj = ccrs.PlateCarree() if self.use_cartopy else None       # proyección del mapa
+        self.tangent = None             # WA de tangencia de la estereográfica (dict) o None
         self.ax = None
         self.has_data = False
         self._features = None           # (costas, fronteras) ya cargadas
@@ -464,14 +509,17 @@ class WindPlot:
         self.ax.callbacks.connect("xlim_changed", self._on_lim_changed)
         self.ax.callbacks.connect("ylim_changed", self._on_lim_changed)
 
-    def set_projection(self, key, lons=None, lats=None):
+    def set_projection(self, key, lons=None, lats=None, tangent=None):
         """Cambia la proyección del mapa y recrea los ejes. Devuelve True si
-        la proyección cambió (sin cartopy sólo existe lat/lon)."""
+        la proyección cambió (sin cartopy sólo existe lat/lon). `tangent`:
+        Working Area de tangencia para la estereográfica (ver make_projection)."""
         if not self.use_cartopy:
             self.proj_key = "platecarree"
+            self.tangent = None
             return False
         self.proj_key = key if key in dict(PROJECTIONS) else "platecarree"
-        self.proj = make_projection(self.proj_key, lons, lats)
+        self.tangent = dict(tangent) if (tangent and self.proj_key == "stereo") else None
+        self.proj = make_projection(self.proj_key, lons, lats, self.tangent)
         self._fir_cache = {}            # la geometría proyectada depende de la proyección
         self._area_key = None
         self._wa_key = None

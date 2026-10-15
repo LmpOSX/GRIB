@@ -475,6 +475,36 @@ configuración (`working_areas`, `wa_show`, `wa_color`, `wa_line_width`,
 (Snyder 21-2 a 21-4 y 20-14/20-15) con el radio indicado; el módulo es
 `app/working_area.py` y se puede usar sin la interfaz.
 
+**Variación magnética.** Cada WA tiene una columna `Var. mag.`: la
+declinación magnética en su punto de tangencia, que gira el plano de la WA
+para que el eje y apunte al norte magnético (con variación oeste, el norte
+verdadero queda a la derecha). Se acepta `10W`, `7°W`, `6°55'E`,
+`6°55'30"E`, `W10` y también un número sin letra, que se interpreta con la
+**convención de signo** elegida en Preferencias ▸ Mapa: *este positivo*
+(−10 = 10° W, la de la navegación, por defecto) u *oeste positivo* (10 =
+10° W). Internamente se guarda siempre este positivo (`variation_deg`).
+Para Ezeiza (34°49'S 058°32'W) el WMM-2025 da 10,0° W en octubre de 2026,
+con cambio anual de 0,14° hacia el oeste; el AIP indicaba 8° W en 2015 con
+variación anual 10' W, que extrapolado coincide. Verificar en el AIP
+Argentina (AD 2 SAEZ) antes de usarla.
+
+**Tangencia de la proyección.** La columna `Tangencia` marca, como mucho,
+una WA (marcar otra desmarca la anterior). La proyección *Estereográfica
+conforme* del mapa deja de centrarse en el centro del dominio y pasa a ser
+tangente al punto de tangencia de esa WA, con su radio de esfera conforme y
+girada por su variación magnética: el norte magnético queda arriba, el
+cuadrado de esa WA se ve con lados rectos y exactos, y las costas, FIR,
+grilla de grados y barbas giran con él. No hace falta que la FIR esté
+mostrada ni que la WA esté activa. El combo de proyección del panel y Vista
+▸ Proyección dicen "(tangente a WA SAEF)", la barra de estado describe la
+proyección al elegirla, y con el mapa girado el cursor agrega la dirección
+magnética del viento (`304.8° (314.8°M)`); los números del viento siguen
+siendo verdaderos. Sin ninguna tangencia marcada (o con una WA inválida) se
+usa el centro del dominio como siempre; las demás proyecciones no cambian.
+Técnicamente PROJ no gira el plano de `stere`, así que se usa `ob_tran`
+con un polo rotado a 90° del punto de tangencia en el acimut de la
+variación (`working_area.tangent_projection_params`).
+
 * **Diálogo «Límites de FIR»** (botón `FIR…`, Vista ▸ FIR ▸ Configurar
   FIR…), en cuatro pestañas (la cuarta, *Working Area*, se describe arriba). *Regiones*: casillas por FIR y estilo (color
   de las argentinas y de las vecinas, grosor, relleno semitransparente en
@@ -716,8 +746,9 @@ con siete pestañas:
 * **Apariencia**: color de acento (presets o personalizado, con vista previa
   en vivo) y transparencia de la ventana.
 * **Mapa**: proyección, valores iniciales de VIENTO y MAPA (viento, Extra Info, grilla,
-  fondo de velocidad, densidad), rótulos de Extra Info, y zoom y
-  desplazamiento (% por paso de la rueda y divisor del modo fino).
+  fondo de velocidad, densidad), rótulos de Extra Info, zoom y
+  desplazamiento (% por paso de la rueda y divisor del modo fino) y la
+  convención de signo de la variación magnética de las Working Areas.
 * **Fuentes**: lista de fuentes con su casilla de habilitación, tipo y
   `✓ FL`; `Configurar…` abre la fuente: parámetros por defecto (el mismo
   formulario que el diálogo de descarga), credenciales si las exige

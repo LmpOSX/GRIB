@@ -240,7 +240,7 @@ class MainWindow(QMainWindow):
         side_lay = QVBoxLayout(side)
         side_lay.setContentsMargins(0, 0, 0, 0)
         side_lay.setSpacing(6)
-        self.plot.set_projection(self.panel.projection())
+        self._set_plot_projection(self.panel.projection())
         side_lay.addWidget(self.panel)
         inv_frame = QFrame()
         inv_frame.setObjectName("GlassPanel")
@@ -856,7 +856,7 @@ class MainWindow(QMainWindow):
         self._set_empty_state(False)
         self.inventory.set_text(reader.inventory_text())
         self.panel.populate(reader)
-        self.plot.set_projection(self.panel.projection(), reader.lons, reader.lats)
+        self._set_plot_projection(self.panel.projection(), reader.lons, reader.lats)
         self._apply_area_layer(redraw=False)     # el marco pasa a ser el de este archivo
         self.redraw(keep_extent=False)
 
@@ -1051,16 +1051,89 @@ class MainWindow(QMainWindow):
             txt += " (convertido)"
         return txt
 
+    def _wa_tangent(self):
+        """Working Area marcada como punto de tangencia (válida), como dict
+        para wind_plot.set_projection, o None (centro del dominio)."""
+        wa = wamod.find_tangency(wamod.working_areas_from_config(self._cfg))
+        if wa is None:
+            return None
+        return {"lat": wa.tangent_lat, "lon": wa.tangent_lon, "radius_km": wa.radius_km,
+                "up_bearing": wa.variation_deg, "code": wa.code, "variation_deg": wa.variation_deg}
+
+    def _set_plot_projection(self, key, lons=None, lats=None):
+        """Fija la proyección del mapa con la tangencia de la WA si la hay."""
+        try:
+            self.plot.set_projection(key, lons, lats, tangent=self._wa_tangent())
+        except Exception as exc:
+            traceback.print_exc()
+            self.set_status(f"No se pudo usar la tangencia de la WA: {exc}; se usa el centro del dominio.")
+            self.plot.set_projection(key, lons, lats)
+        self._refresh_projection_labels()
+
+    def projection_text(self) -> str:
+        """Descripción de la proyección vigente (barra de estado)."""
+        t = self.plot.tangent
+        name = dict(PROJECTIONS).get(self.plot.proj_key, self.plot.proj_key)
+        if not t:
+            return f"Proyección: {name}."
+        var = float(t.get("variation_deg", 0.0))
+        txt = (f"Proyección: estereográfica tangente a la WA {t['code']} "
+               f"({areasmod.format_coord(t['lat'], 'lat', 'gm')} {areasmod.format_coord(t['lon'], 'lon', 'gm')}), "
+               f"R {t['radius_km']:.3f} km")
+        if abs(var) >= 0.05:
+            txt += f"; norte magnético arriba (variación {wamod.format_variation(var)})"
+        else:
+            txt += "; norte verdadero arriba"
+        return txt + "."
+
+    def _refresh_projection_labels(self):
+        """El nombre de la estereográfica en el combo del panel y en Vista ▸
+        Proyección dice a qué está tangente."""
+        t = self.plot.tangent if self.plot.proj_key == "stereo" else None
+        tang = wamod.find_tangency(wamod.working_areas_from_config(self._cfg))
+        if t:
+            label = f"Estereográfica conforme (tangente a WA {t['code']})"
+        elif tang is not None:
+            label = f"Estereográfica conforme (tangente a WA {tang.code})"
+        else:
+            label = dict(PROJECTIONS)["stereo"]
+        try:
+            cb = self.panel.cb_proj
+            idx = cb.findData("stereo")
+            if idx >= 0 and cb.itemText(idx) != label:
+                cb.setItemText(idx, label)
+        except Exception:
+            pass
+        act = getattr(self, "_proj_actions", {}).get("stereo")
+        if act is not None and act.text() != label:
+            act.setText(label)
+
+    def _refresh_tangent_projection(self):
+        """Si cambió la WA de tangencia (diálogo FIR o Preferencias) y la
+        estereográfica está en uso, se rehace la proyección."""
+        self._refresh_projection_labels()
+        if self.plot.proj_key != "stereo":
+            return
+        want = self._wa_tangent()
+        have = self.plot.tangent
+        same = (want is None and have is None) or (
+            want is not None and have is not None
+            and all(abs(float(want[k]) - float(have[k])) < 1e-9 for k in ("lat", "lon", "radius_km", "up_bearing"))
+            and want["code"] == have["code"])
+        if not same:
+            self.set_projection("stereo")
+
     def set_projection(self, key: str):
-        """Cambia la proyección del mapa (centrada en el dominio del archivo)
-        y redibuja con la vista completa."""
+        """Cambia la proyección del mapa (centrada en el dominio del archivo
+        o tangente a la WA marcada) y redibuja con la vista completa."""
         r = self._reader
         lons = r.lons if r is not None else None
         lats = r.lats if r is not None else None
-        self.plot.set_projection(key, lons, lats)
+        self._set_plot_projection(key, lons, lats)
         self._cfg["projection"] = key
         save_config(self._cfg)
         self._sync_view_menu()
+        self.set_status(self.projection_text())
         if r is not None:
             self.redraw(keep_extent=False)
         else:
@@ -1314,6 +1387,7 @@ class MainWindow(QMainWindow):
             self._cfg.update(dlg.values())
             save_config(self._cfg)
         self._load_fir_layer()
+        self._refresh_tangent_projection()
 
     def fir_hover_text(self, event) -> str:
         """Texto para la barra de estado: FIR que contiene el cursor y, si el
@@ -1451,6 +1525,9 @@ class MainWindow(QMainWindow):
                     d = cur["dir"][j, i]
                     if not np.isnan(s):
                         txt += f"   | Viento {s:5.1f} kt / {d:5.1f}°"
+                        var = float((self.plot.tangent or {}).get("variation_deg", 0.0))
+                        if abs(var) >= 0.05:
+                            txt += f" ({(d - var) % 360.0:5.1f}°M)"
                     else:
                         txt += "   | Viento: sin dato"
                 if cur["t"] is not None:
@@ -1590,6 +1667,7 @@ class MainWindow(QMainWindow):
         self._apply_theme(values.get("accent_color"), opacity=values.get("opacity"))
         self.panel.set_options(self._map_options_from_cfg())
         self._apply_fine_divisor()
+        self._refresh_tangent_projection()
         self._sync_view_menu()
         self._refresh_sources_combo()
         self._apply_area_layer(redraw=False)
