@@ -29,7 +29,7 @@ from ..config import OPACITY_MAX
 from ..utils import MOD_KEY
 from .. import gfs_download as gfs
 from ..grib_engines import ENGINES, ec, find_wgrib2, wgrib2_version
-from ..wind_plot import PROJECTIONS, HAVE_CARTOPY, WIND_STYLES, GRID_STEPS
+from ..wind_plot import PROJECTIONS, WA_PROJECTIONS, HAVE_CARTOPY, WIND_STYLES, GRID_STEPS
 from ..working_area import MAGVAR_CONVENTIONS
 from ..sources import all_sources, source_config, set_source_config, source_label
 from ..sources.cache import DownloadCache
@@ -194,8 +194,14 @@ class SettingsDialog(GlassDialog):
         w, lay = self._page()
         self._sub(lay, "Proyección del mapa")
         self.cb_proj = QComboBox()
+        from .. import working_area as wamod
+        tang = wamod.find_tangency(wamod.working_areas_from_config(self._cfg))
         for key, name in PROJECTIONS:
+            if key in WA_PROJECTIONS and tang is not None:
+                name = name.replace("tangente a WA", f"tangente a WA {tang.code}")
             self.cb_proj.addItem(name, key)
+            if key in WA_PROJECTIONS and tang is None:
+                self.cb_proj.model().item(self.cb_proj.count() - 1).setEnabled(False)
         idx = self.cb_proj.findData(self._cfg.get("projection", "platecarree"))
         self.cb_proj.setCurrentIndex(max(0, idx))
         if not HAVE_CARTOPY:

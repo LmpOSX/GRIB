@@ -298,7 +298,13 @@ class TestVentana(unittest.TestCase):
         r.path = os.path.join(self.tmp, "s.grib2")
         w.load_reader(r, r.path)
         w._cfg["working_areas"] = [dict(SAEF, variation_deg=-10.0, tangency=True), dict(SACF)]
+        cb = w.panel.cb_proj
+        # la variante del centro del dominio no usa la tangencia aunque exista
         w.set_projection("stereo")
+        self.assertIsNone(w.plot.tangent)
+        self.assertEqual(type(w.plot.proj).__name__, "Stereographic")
+        self.assertEqual(cb.itemText(cb.findData("stereo")), "Estereográfica conforme (centro del dominio)")
+        w.set_projection("stereo_wa")
         t = w.plot.tangent
         self.assertEqual(t["code"], "SAEF")
         self.assertAlmostEqual(t["up_bearing"], -10.0)
@@ -318,27 +324,43 @@ class TestVentana(unittest.TestCase):
         self.assertIn("°M)", w.cursor_text(-60.0, -35.0))
         self.assertIn("tangente a la WA SAEF", w.projection_text())
         self.assertIn("10.0°W", w.projection_text())
-        self.assertIn("tangente a WA SAEF", w.panel.cb_proj.itemText(w.panel.cb_proj.findData("stereo")))
-        self.assertIn("tangente a WA SAEF", w._proj_actions["stereo"].text())
+        self.assertEqual(cb.itemText(cb.findData("stereo_wa")), "Estereográfica conforme (tangente a WA SAEF)")
+        self.assertTrue(cb.model().item(cb.findData("stereo_wa")).isEnabled())
+        self.assertIn("tangente a WA SAEF", w._proj_actions["stereo_wa"].text())
+        self.assertTrue(w._proj_actions["stereo_wa"].isEnabled())
         w.set_wa_show(True)
         w.set_fir_codes(["SAEF", "SACF"])
         w.plot.canvas.draw()
         self.assertEqual(w.plot.wa_visible(), ["SACF", "SAEF"])
-        # sin tangencia (o con una inválida): centro del dominio, como siempre
+        # sin tangencia: la variante «tangente a WA» se grisa y la proyección
+        # vuelve a la del centro del dominio
         w._cfg["working_areas"][0]["tangency"] = False
         w._refresh_tangent_projection()
         self.assertIsNone(w.plot.tangent)
+        self.assertEqual((w.plot.proj_key, w._cfg["projection"], w.panel.projection()), ("stereo",) * 3)
         self.assertEqual(type(w.plot.proj).__name__, "Stereographic")
         self.assertNotIn("°M", w.cursor_text(-60.0, -35.0))
-        self.assertEqual(w.panel.cb_proj.itemText(w.panel.cb_proj.findData("stereo")),
-                         "Estereográfica conforme (centro del dominio)")
+        self.assertEqual(cb.itemText(cb.findData("stereo_wa")), "Estereográfica conforme (tangente a WA)")
+        self.assertFalse(cb.model().item(cb.findData("stereo_wa")).isEnabled())
+        self.assertFalse(w._proj_actions["stereo_wa"].isEnabled())
+        self.assertFalse(w._proj_actions["lambert_wa"].isEnabled())
+        # pedirla igual (p. ej. desde config.json) cae en el centro del dominio
+        w.set_projection("stereo_wa")
+        self.assertIsNone(w.plot.tangent)
+        self.assertEqual(type(w.plot.proj).__name__, "Stereographic")
+        # con una WA de tangencia inválida, lo mismo
         w._cfg["working_areas"][0]["tangency"] = True
         w._cfg["working_areas"][0]["width_nm"] = 0.0
         w._refresh_tangent_projection()
         self.assertIsNone(w.plot.tangent)
+        self.assertEqual(w.plot.proj_key, "stereo")
         # Lambert: centrada en la tangencia con su radio, sin giro magnético
         w._cfg["working_areas"][0]["width_nm"] = 700.0
+        w._refresh_tangent_projection()
+        self.assertTrue(w._proj_actions["lambert_wa"].isEnabled())
         w.set_projection("lambert")
+        self.assertIsNone(w.plot.tangent)
+        w.set_projection("lambert_wa")
         t = w.plot.tangent
         self.assertEqual((t["code"], t["up_bearing"], t["variation_deg"]), ("SAEF", 0.0, 0.0))
         self.assertEqual(type(w.plot.proj).__name__, "LambertConformal")
@@ -349,12 +371,21 @@ class TestVentana(unittest.TestCase):
         self.assertIn("Lambert conforme centrada en la WA SAEF", w.projection_text())
         self.assertIn("norte verdadero arriba", w.projection_text())
         self.assertNotIn("°M", w.cursor_text(-60.0, -35.0))
-        self.assertIn("tangente a WA SAEF", w.panel.cb_proj.itemText(w.panel.cb_proj.findData("lambert")))
+        self.assertIn("tangente a WA SAEF", cb.itemText(cb.findData("lambert_wa")))
         # las demás proyecciones no usan la tangencia
         w.set_projection("mercator")
         self.assertIsNone(w.plot.tangent)
-        w.set_projection("stereo")
+        w.set_projection("stereo_wa")
         self.assertEqual(w.plot.tangent["code"], "SAEF")
+        # Preferencias: las variantes WA llevan el código o quedan grisadas
+        from app.dialogs.settings_dialog import SettingsDialog
+        d = SettingsDialog(w, cfg=w._cfg)
+        i = d.cb_proj.findData("stereo_wa")
+        self.assertEqual(d.cb_proj.itemText(i), "Estereográfica conforme (tangente a WA SAEF)")
+        self.assertTrue(d.cb_proj.model().item(i).isEnabled())
+        w._cfg["working_areas"][0]["tangency"] = False
+        d2 = SettingsDialog(w, cfg=w._cfg)
+        self.assertFalse(d2.cb_proj.model().item(d2.cb_proj.findData("lambert_wa")).isEnabled())
 
     def test_dialogo_variacion_y_tangencia(self):
         from app.dialogs import fir_dialog

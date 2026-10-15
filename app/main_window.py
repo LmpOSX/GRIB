@@ -31,7 +31,7 @@ from .dialogs.settings_dialog import SettingsDialog
 from . import areas as areasmod
 from .widgets.welcome_widget import WelcomeWidget
 from .widgets.control_panel import ControlPanel
-from .wind_plot import PROJECTIONS, WIND_STYLES, GRID_STEPS
+from .wind_plot import PROJECTIONS, WA_PROJECTIONS, WIND_STYLES, GRID_STEPS
 from .widgets.inventory_panel import InventoryPanel
 from .sources import enabled_sources, all_sources, get_source, source_label, read_provenance
 from . import fir as firmod
@@ -1083,7 +1083,7 @@ class MainWindow(QMainWindow):
         if not t:
             return f"Proyección: {name}."
         var = float(t.get("variation_deg", 0.0))
-        kind = "Lambert conforme centrada en" if self.plot.proj_key == "lambert" else "estereográfica tangente a"
+        kind = "Lambert conforme centrada en" if self.plot.proj_key == "lambert_wa" else "estereográfica tangente a"
         txt = (f"Proyección: {kind} la WA {t['code']} "
                f"({areasmod.format_coord(t['lat'], 'lat', 'gm')} {areasmod.format_coord(t['lon'], 'lon', 'gm')}), "
                f"R {t['radius_km']:.3f} km")
@@ -1094,31 +1094,45 @@ class MainWindow(QMainWindow):
         return txt + "."
 
     def _refresh_projection_labels(self):
-        """El nombre de la estereográfica y de la Lambert en el combo del
-        panel y en Vista ▸ Proyección dice a qué WA están tangentes."""
+        """Las variantes «tangente a WA» del combo del panel y de Vista ▸
+        Proyección llevan el código de la WA marcada y quedan grisadas si
+        ninguna WA tiene Tangencia."""
         tang = wamod.find_tangency(wamod.working_areas_from_config(self._cfg))
-        for key, base in (("stereo", "Estereográfica conforme"), ("lambert", "Lambert conforme")):
-            t = self.plot.tangent if self.plot.proj_key == key else None
-            code = t["code"] if t else (tang.code if tang is not None else None)
-            label = f"{base} (tangente a WA {code})" if code else dict(PROJECTIONS)[key]
+        for key, base in (("stereo_wa", "Estereográfica conforme"), ("lambert_wa", "Lambert conforme")):
+            label = f"{base} (tangente a WA {tang.code})" if tang is not None else dict(PROJECTIONS)[key]
+            enabled = tang is not None
             try:
                 cb = self.panel.cb_proj
                 idx = cb.findData(key)
-                if idx >= 0 and cb.itemText(idx) != label:
-                    cb.setItemText(idx, label)
+                if idx >= 0:
+                    if cb.itemText(idx) != label:
+                        cb.setItemText(idx, label)
+                    item = cb.model().item(idx)
+                    if item is not None:
+                        item.setEnabled(enabled)
             except Exception:
                 pass
             act = getattr(self, "_proj_actions", {}).get(key)
-            if act is not None and act.text() != label:
-                act.setText(label)
+            if act is not None:
+                if act.text() != label:
+                    act.setText(label)
+                act.setEnabled(enabled)
 
     def _refresh_tangent_projection(self):
         """Si cambió la WA de tangencia (diálogo FIR o Preferencias) y la
         estereográfica está en uso, se rehace la proyección."""
         self._refresh_projection_labels()
-        if self.plot.proj_key not in ("stereo", "lambert"):
+        if self.plot.proj_key not in WA_PROJECTIONS:
             return
         want = self._wa_tangent()
+        if want is None:
+            # Se quitó la tangencia: la variante «tangente a WA» ya no existe,
+            # se pasa a la del centro del dominio
+            base = WA_PROJECTIONS[self.plot.proj_key]
+            self.panel.set_projection(base)
+            self.set_projection(base)
+            self.set_status("Ninguna Working Area tiene Tangencia: " + self.projection_text())
+            return
         have = self.plot.tangent
         same = (want is None and have is None) or (
             want is not None and have is not None

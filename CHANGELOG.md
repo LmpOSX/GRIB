@@ -6,8 +6,11 @@
   Marco del GRIB, Fondo de velocidad, Extra Info, Costas y fronteras, Grilla
   de grados, Grilla del archivo, FIR y Working Areas, cada una
   independiente; costas y grilla de grados son nuevas capas apagables.
-- La Lambert conforme también se centra en la tangencia de la WA marcada
-  (con su radio, sin giro magnético).
+- La tangencia de la WA va en variantes propias del selector de proyección,
+  «Estereográfica conforme (tangente a WA XXXX)» y «Lambert conforme
+  (tangente a WA XXXX)», grisadas si ninguna WA tiene Tangencia; las de
+  «centro del dominio» no cambian. La Lambert tangente usa el punto y el
+  radio de la WA, sin giro magnético.
 
 ## 0.2.0 — 2026-10-15
 

@@ -348,9 +348,12 @@ la pantalla) y recuerda tamaño y posición.
   que no se pisen; `Fondo de velocidad` rellena el mapa con la misma
   escala de colores.
 * **MAPA**: `Proyección` elige cómo se dibuja el mapa: Lat/Lon
-  (PlateCarree), Estereográfica conforme centrada en el dominio del archivo,
-  Estereográfica polar sur o norte, Mercator o Lambert conforme (requieren
-  cartopy; la elección se guarda en la configuración); `Grilla de grados`
+  (PlateCarree), Estereográfica conforme centrada en el dominio del archivo
+  o tangente a la WA marcada, Estereográfica polar sur o norte, Mercator o
+  Lambert conforme centrada en el dominio o tangente a la WA (requieren
+  cartopy; la elección se guarda en la configuración; las variantes
+  «tangente a WA» están grisadas si ninguna Working Area tiene Tangencia,
+  ver «Working Area»); `Grilla de grados`
   elige los meridianos y paralelos: **10°** (sólo principales, etiquetadas
   en los bordes), **5°** (principales cada 10° y secundarias a rayas cada
   5°) o **1°** (principales cada 5°, iguales entre sí, y secundarias
@@ -499,21 +502,23 @@ variación anual 10' W, que extrapolado coincide. Verificar en el AIP
 Argentina (AD 2 SAEZ) antes de usarla.
 
 **Tangencia de la proyección.** La columna `Tangencia` marca, como mucho,
-una WA (marcar otra desmarca la anterior). La proyección *Estereográfica
-conforme* del mapa deja de centrarse en el centro del dominio y pasa a ser
-tangente al punto de tangencia de esa WA, con su radio de esfera conforme y
-girada por su variación magnética: el norte magnético queda arriba, el
-cuadrado de esa WA se ve con lados rectos y exactos, y las costas, FIR,
-grilla de grados y barbas giran con él. No hace falta que la FIR esté
-mostrada ni que la WA esté activa. El combo de proyección del panel y Vista
-▸ Proyección dicen "(tangente a WA SAEF)", la barra de estado describe la
-proyección al elegirla, y con el mapa girado el cursor agrega la dirección
-magnética del viento (`304.8° (314.8°M)`); los números del viento siguen
-siendo verdaderos. Sin ninguna tangencia marcada (o con una WA inválida) se
-usa el centro del dominio como siempre. La *Lambert conforme* también se
-centra en la tangencia de esa WA, con su radio, pero sin giro magnético (la
-cónica no se gira): el combo dice "(tangente a WA SAEF)" y la barra de
-estado "norte verdadero arriba". Las demás proyecciones no cambian.
+una WA (marcar otra desmarca la anterior). Con una marcada, el selector de
+proyección ofrece dos variantes más: *Estereográfica conforme (tangente a
+WA SAEF)* y *Lambert conforme (tangente a WA SAEF)*, además de las de
+siempre, *(centro del dominio)*, que no cambian. La estereográfica tangente
+se construye en el punto de tangencia de esa WA, con su radio de esfera
+conforme y girada por su variación magnética: el norte magnético queda
+arriba, el cuadrado de esa WA se ve con lados rectos y exactos, y las
+costas, FIR, grilla de grados y barbas giran con él; la barra de estado
+describe la proyección al elegirla y el cursor agrega la dirección
+magnética del viento (`304.8° (314.8°M)`), mientras los números del viento
+siguen siendo verdaderos. La Lambert tangente se centra en ese punto con
+ese radio, sin giro (la cónica no se gira; "norte verdadero arriba"). No
+hace falta que la FIR esté mostrada ni que la WA esté activa: la casilla
+`WA` del panel y `Activa` sólo deciden si el cuadrado se dibuja. Sin
+ninguna WA con Tangencia (o con una inválida) las dos variantes quedan
+grisadas en el panel, en Vista ▸ Proyección y en Preferencias, y si estaba
+en uso una de ellas el mapa pasa solo a la variante del centro del dominio.
 Técnicamente PROJ no gira el plano de `stere`, así que se usa `ob_tran`
 con un polo rotado a 90° del punto de tangencia en el acimut de la
 variación (`working_area.tangent_projection_params`).

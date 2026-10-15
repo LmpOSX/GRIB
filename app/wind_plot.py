@@ -102,11 +102,17 @@ TEMP_LABEL = "#ffb3f7"
 PROJECTIONS = [
     ("platecarree", "Lat/Lon (PlateCarree)"),
     ("stereo", "Estereográfica conforme (centro del dominio)"),
+    ("stereo_wa", "Estereográfica conforme (tangente a WA)"),
     ("spstereo", "Estereográfica polar sur"),
     ("npstereo", "Estereográfica polar norte"),
     ("mercator", "Mercator"),
     ("lambert", "Lambert conforme (centro del dominio)"),
+    ("lambert_wa", "Lambert conforme (tangente a WA)"),
 ]
+# Las variantes «tangente a WA» usan el punto de tangencia, el radio y (la
+# estereográfica) el giro magnético de la Working Area marcada; sin ninguna
+# marcada caen en la variante del centro del dominio.
+WA_PROJECTIONS = {"stereo_wa": "stereo", "lambert_wa": "lambert"}
 
 
 if HAVE_CARTOPY:
@@ -156,6 +162,10 @@ def make_projection(key, lons=None, lats=None, tangent=None):
         return None
     lon_c = float(np.mean(lons)) if lons is not None and len(lons) else 0.0
     lat_c = float(np.mean(lats)) if lats is not None and len(lats) else 0.0
+    if key in WA_PROJECTIONS:
+        key = WA_PROJECTIONS[key]       # con tangente usa la WA; sin ella, el centro
+    else:
+        tangent = None
     if key == "stereo":
         if tangent:
             return TangentStereographic(tangent["lat"], tangent["lon"], tangent.get("radius_km", 6371.0),
@@ -527,9 +537,9 @@ class WindPlot:
             self.tangent = None
             return False
         self.proj_key = key if key in dict(PROJECTIONS) else "platecarree"
-        if tangent and self.proj_key == "stereo":
+        if tangent and self.proj_key == "stereo_wa":
             self.tangent = dict(tangent)
-        elif tangent and self.proj_key == "lambert":
+        elif tangent and self.proj_key == "lambert_wa":
             # La cónica se centra en la tangencia pero no se gira
             self.tangent = dict(tangent, up_bearing=0.0, variation_deg=0.0)
         else:
