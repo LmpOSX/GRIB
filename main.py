@@ -2,6 +2,14 @@ import sys
 import os
 import platform
 
+# pyproj (PROJ, que trae sus propias libcurl, libtiff y libsqlite3) tiene que
+# cargarse antes que PyQt6 y ecCodes: en Linux, si se carga después, la
+# finalización del intérprete aborta ("double free" / "corrupted size").
+try:
+    import pyproj  # noqa: F401
+except ImportError:
+    pass
+
 # Permite ejecutar desde cualquier directorio
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 
@@ -135,18 +143,11 @@ def main():
     rc = app.exec()
 
     # Salida ordenada: el mapa (matplotlib) y la ventana se destruyen antes
-    # que QApplication. En el paquete de Linux la finalización del
-    # intérprete abortaba con "double free" después de cerrar la ventana;
-    # ya está todo guardado (closeEvent), así que ahí se termina sin pasar
-    # por la finalización.
+    # que QApplication
     window.close()
     window.deleteLater()
     app.processEvents()
     del window
-    if getattr(sys, "frozen", False) and sys.platform.startswith("linux"):
-        sys.stdout.flush()
-        sys.stderr.flush()
-        os._exit(rc)
     sys.exit(rc)
 
 

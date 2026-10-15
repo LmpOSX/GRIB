@@ -706,7 +706,15 @@ Si cambia el motor con un archivo abierto, se reabre con el nuevo.
 
 ```bash
 QT_QPA_PLATFORM=offscreen python -m unittest discover -s tests -p "test_*.py"
+QT_QPA_PLATFORM=offscreen python tests/run_tests.py     # lo mismo; es lo que corre la CI
 ```
+
+En Linux, `pyproj` (PROJ con sus propias libcurl, libtiff y libsqlite3)
+tiene que cargarse antes que PyQt6 y ecCodes: si no, la finalización del
+intérprete aborta con un error de glibc *después* de que la suite terminó en
+OK. `main.py`, `app/__init__.py` y `tests/run_tests.py` lo importan primero;
+con `python -m unittest` el orden lo decide el primer test y puede terminar
+en código 134 aunque todo haya pasado.
 
 Cubren el lector (ISA, viento, colores, grilla, ln(p), lectura de un GRIB2
 sintético generado con ecCodes), el parseo de la salida de wgrib2, el
