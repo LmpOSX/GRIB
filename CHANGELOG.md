@@ -1,6 +1,6 @@
 # Cambios
 
-## Sin publicar
+## 0.2.0 — 2026-10-15
 
 - Working Area por FIR: cuadrado en millas náuticas sobre un plano
   estereográfico tangente (punto de tangencia, vértice SO, ancho, alto y
