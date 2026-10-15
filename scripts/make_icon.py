@@ -133,6 +133,21 @@ def png_to_icns(png_path: str, icns_path: str):
         subprocess.run(["iconutil", "-c", "icns", iconset, "-o", icns_path], check=True)
 
 
+def png_to_ico(ico_path: str, sizes=(256, 128, 64, 48, 32, 16), document: bool = False):
+    """ICO con una entrada PNG por tamaño (Windows Vista o posterior)."""
+    entries = [(sz, create_png(sz, document=document)) for sz in sizes]
+    header = struct.pack("<HHH", 0, 1, len(entries))
+    offset = len(header) + 16 * len(entries)
+    directory = b""
+    payload = b""
+    for sz, png in entries:
+        directory += struct.pack("<BBBBHHII", sz % 256, sz % 256, 0, 0, 1, 32, len(png), offset)
+        payload += png
+        offset += len(png)
+    with open(ico_path, "wb") as f:
+        f.write(header + directory + payload)
+
+
 def main():
     os.makedirs(RESOURCES, exist_ok=True)
 
@@ -146,6 +161,14 @@ def main():
         print(f"Creado {icns_path}")
     except Exception as e:
         print(f"No se pudo crear el .icns (hace falta macOS): {e}")
+
+    ico_path = os.path.join(RESOURCES, "VisorGRIB.ico")
+    png_to_ico(ico_path)
+    print(f"Creado {ico_path}")
+    png256 = os.path.join(RESOURCES, "app_icon_256.png")
+    with open(png256, "wb") as f:
+        f.write(create_png(256))
+    print(f"Creado {png256}")
 
     doc_png = os.path.join(RESOURCES, "doc_icon.png")
     with open(doc_png, "wb") as f:

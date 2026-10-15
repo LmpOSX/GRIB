@@ -8,8 +8,23 @@ import sys
 import platform
 
 
+def native_window_available() -> bool:
+    """True sólo si el plugin de plataforma de Qt es el nativo (cocoa o
+    windows). Con `QT_QPA_PLATFORM=offscreen` (tests, prueba de humo del
+    empaquetado) `winId()` no es un NSView ni un HWND y usarlo como tal
+    termina en un fallo de segmentación."""
+    try:
+        from PyQt6.QtGui import QGuiApplication
+        name = (QGuiApplication.platformName() or "").lower()
+    except Exception:
+        return False
+    return name in ("cocoa", "windows")
+
+
 def apply_blur(widget) -> bool:
     """Apply native blur to a QWidget's backing window. Call after widget.show()."""
+    if not native_window_available():
+        return False
     system = platform.system()
     if system == "Darwin":
         return _blur_macos(widget)
@@ -24,7 +39,7 @@ def disable_native_fullscreen(widget) -> bool:
     negro), así que el desenfoque "detrás de la ventana" no tiene nada que
     mostrar y la ventana se ve opaca. Maximizada sobre el escritorio ocupa
     la pantalla y conserva la translucidez. Devuelve True si se aplicó."""
-    if platform.system() != "Darwin":
+    if platform.system() != "Darwin" or not native_window_available():
         return False
     try:
         import objc

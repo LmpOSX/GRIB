@@ -103,7 +103,8 @@ class GlassDialog(QDialog):
 def _apply_dialog_blur(widget):
     """Apply native blur + transparent titlebar to a dialog's NSWindow."""
     import platform
-    if platform.system() != "Darwin":
+    from ..platform_blur import native_window_available
+    if platform.system() != "Darwin" or not native_window_available():
         return
     try:
         import objc

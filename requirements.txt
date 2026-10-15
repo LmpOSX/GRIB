@@ -18,5 +18,5 @@ netCDF4>=1.7         # fuentes en NetCDF (SMN WRF) y pesos de regrillado de ICON
 ecmwf-opendata>=0.3  # cliente oficial de ECMWF Open Data
 paramiko>=3.4        # SFTP de la fuente genérica
 
-# Empaquetado macOS (.app + DMG)
-py2app>=0.28; sys_platform == "darwin"
+# Empaquetado (instaladores de macOS, Linux y Windows: scripts/build*.sh, build_windows.ps1)
+pyinstaller>=6.16

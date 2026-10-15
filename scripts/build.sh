@@ -1,49 +1,53 @@
 #!/bin/bash
-# Construye "Visor GRIB.app" y el instalador DMG (macOS).
+# Construye "Visor GRIB.app" con PyInstaller y el instalador DMG (macOS).
+#   scripts/build.sh            → dist/Visor GRIB.app  y  dist/Visor_GRIB_<ver>_macOS_<arch>.dmg
 set -e
 
 cd "$(dirname "$0")/.."
-ROOT="$(pwd)"
 APP_NAME="Visor GRIB"
+EXE_NAME="VisorGRIB"
+VERSION=$(python -c "from app import __version__; print(__version__)")
+ARCH=$(uname -m)
 
+echo "=== Visor GRIB $VERSION (macOS $ARCH) ==="
 echo "=== Generando iconos ==="
 python scripts/make_icon.py
-
-echo "=== Instalando dependencias de build ==="
-pip install py2app >/dev/null 2>&1 || pip install py2app
 
 echo "=== Limpiando builds anteriores ==="
 rm -rf build dist
 
-echo "=== Construyendo aplicación ==="
-python setup.py py2app 2>&1
+echo "=== Construyendo aplicación (PyInstaller) ==="
+pyinstaller --noconfirm --clean packaging/visor_grib.spec
 
 APP_PATH="dist/${APP_NAME}.app"
 if [ ! -d "$APP_PATH" ]; then
     echo "ERROR: No se generó la aplicación"
     exit 1
 fi
+rm -rf "dist/${EXE_NAME}"     # la carpeta suelta; en macOS se distribuye el .app
+cp resources/GribDocument.icns "$APP_PATH/Contents/Resources/"
 
-echo "=== Aplicación creada en: $APP_PATH ==="
+echo "=== Prueba de humo: abrir un GRIB WAFS dentro del paquete ==="
+SMOKE_DIR=$(mktemp -d)
+cp tests/data/WAFS_like_test.grib2 "$SMOKE_DIR/"
+VISOR_GRIB_SMOKE=8 QT_QPA_PLATFORM=offscreen \
+    "$APP_PATH/Contents/MacOS/${EXE_NAME}" "$SMOKE_DIR/WAFS_like_test.grib2"
+rm -rf "$SMOKE_DIR"
 
-# Instalador DMG
 echo "=== Creando instalador DMG ==="
-VERSION=$(python -c "from app import __version__; print(__version__)")
-DMG_NAME="Visor_GRIB_${VERSION}"
+DMG_NAME="Visor_GRIB_${VERSION}_macOS_${ARCH}"
 DMG_PATH="dist/${DMG_NAME}.dmg"
 DMG_TMP="dist/${DMG_NAME}_tmp.dmg"
 
-# DMG temporal
-SIZE_MB=$(du -sm "$APP_PATH" | awk '{print int($1 * 1.5 + 20)}')
+SIZE_MB=$(du -sm "$APP_PATH" | awk '{print int($1 * 1.3 + 30)}')
 hdiutil create -size "${SIZE_MB}m" -fs HFS+ -volname "$APP_NAME" "$DMG_TMP"
-
-# Montar, copiar la app y agregar el enlace a Aplicaciones
 MOUNT_DIR=$(hdiutil attach "$DMG_TMP" | grep "/Volumes" | awk -F'\t' '{print $NF}')
 cp -R "$APP_PATH" "$MOUNT_DIR/"
 ln -s /Applications "$MOUNT_DIR/Applications"
 
-# Disposición de la ventana del instalador
-osascript <<APPLESCRIPT
+# Disposición de la ventana del instalador (requiere Finder: se omite en CI)
+if [ -z "$CI" ]; then
+osascript <<APPLESCRIPT || true
 tell application "Finder"
     tell disk "$APP_NAME"
         open
@@ -60,11 +64,10 @@ tell application "Finder"
     end tell
 end tell
 APPLESCRIPT
+fi
 
-# Desmontar
+sync
 hdiutil detach "$MOUNT_DIR"
-
-# Convertir a DMG comprimido
 hdiutil convert "$DMG_TMP" -format UDZO -o "$DMG_PATH"
 rm -f "$DMG_TMP"
 
@@ -73,5 +76,6 @@ echo "=== Build completado ==="
 echo "  App:        $APP_PATH"
 echo "  Instalador: $DMG_PATH"
 echo ""
-echo "Para instalar: abrir el DMG y arrastrar a Aplicaciones."
-echo "Las extensiones .grib2 / .grb2 / .grib / .grb quedan asociadas al visor."
+echo "Para instalar: abrir el DMG y arrastrar a Aplicaciones. La app no está"
+echo "firmada con certificado de Apple: la primera vez, clic derecho ▸ Abrir"
+echo "(o: xattr -cr \"/Applications/${APP_NAME}.app\")."

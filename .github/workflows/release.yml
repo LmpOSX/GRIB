@@ -1,0 +1,78 @@
+# Instaladores de Visor GRIB para macOS (arm64 e Intel), Linux y Windows.
+# Se dispara al publicar una etiqueta vX.Y.Z (o a mano desde "Actions") y
+# adjunta los archivos a la "release" de esa etiqueta en GitHub.
+name: Instaladores
+
+on:
+  push:
+    tags: ["v*"]
+  workflow_dispatch:
+
+jobs:
+  build:
+    name: ${{ matrix.name }}
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - os: macos-latest
+            name: macOS_arm64
+            script: bash scripts/build.sh
+          - os: macos-15-intel
+            name: macOS_x86_64
+            script: bash scripts/build.sh
+          - os: ubuntu-22.04
+            name: Linux_x86_64
+            script: bash scripts/build_linux.sh
+          - os: windows-latest
+            name: Windows_x64
+            script: pwsh scripts/build_windows.ps1
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.14"
+          cache: pip
+      - name: Bibliotecas de Qt, dpkg y FUSE (Linux)
+        if: runner.os == 'Linux'
+        run: |
+          sudo apt-get update -q
+          sudo apt-get install -y -q libegl1 libgl1 libglib2.0-0 libxkbcommon0 libxkbcommon-x11-0 \
+              libdbus-1-3 libfontconfig1 libxcb-cursor0 libfuse2 dpkg-dev
+      - name: Dependencias
+        run: |
+          python -m pip install --upgrade pip
+          pip install -r requirements.txt
+      - name: Construir instalador
+        env:
+          CI: "1"
+        run: ${{ matrix.script }}
+      - uses: actions/upload-artifact@v4
+        with:
+          name: instaladores-${{ matrix.name }}
+          path: |
+            dist/Visor_GRIB_*
+          if-no-files-found: error
+
+  release:
+    name: Publicar en la release
+    if: startsWith(github.ref, 'refs/tags/v')
+    needs: build
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          path: instaladores
+          pattern: instaladores-*
+          merge-multiple: true
+      - name: Listar
+        run: ls -la instaladores
+      - uses: softprops/action-gh-release@v2
+        with:
+          tag_name: ${{ github.ref_name }}
+          name: Visor GRIB ${{ github.ref_name }}
+          files: instaladores/*
+          fail_on_unmatched_files: true

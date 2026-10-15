@@ -35,10 +35,13 @@ config.json
 *.csv
 !resources/*.png
 
-# py2app / installer artifacts
+# Instaladores generados (scripts/build*.sh, build_windows.ps1, PyInstaller)
 dist/
 build/
 *.dmg
+*.AppImage
+*.deb
+*.spec.bak
 
 # Carpeta de trabajo local (GRIB de prueba, borradores)
 trabajo/
@@ -46,9 +49,11 @@ trabajo/
 # Log de errores no controlados (modo desarrollo lo escribe junto a config.json)
 errores.log
 
-# Iconos generados por scripts/make_icon.py (los crea build.sh)
+# Iconos generados por scripts/make_icon.py (los crean los scripts de build)
 *.icns
+*.ico
 resources/doc_icon.png
+resources/app_icon_256.png
 
 # Datos de prueba del formato WAFS (caso de referencia)
 !tests/data/*.grib2

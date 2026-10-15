@@ -1,0 +1,12 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<mime-info xmlns="http://www.freedesktop.org/standards/shared-mime-info">
+  <mime-type type="application/x-grib">
+    <comment>Archivo GRIB</comment>
+    <comment xml:lang="es">Archivo GRIB</comment>
+    <glob pattern="*.grib2"/>
+    <glob pattern="*.grb2"/>
+    <glob pattern="*.grib"/>
+    <glob pattern="*.grb"/>
+    <magic priority="60"><match type="string" offset="0" value="GRIB"/></magic>
+  </mime-type>
+</mime-info>

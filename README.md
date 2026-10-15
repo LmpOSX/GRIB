@@ -37,8 +37,12 @@ resources/fir/              copia filtrada de Boundaries.geojson (VATSpy, CC BY-
 docs/FUENTES_FIR.md         fuentes de los límites de FIR y sus licencias
 tests/                      unittest (lector, ventana y mapa en offscreen); tests/data: caso de referencia WAFS
 docs/referencia/            make_wafs_like.py, conversor de referencia del formato WAFS
-docs/PLAN_PRUEBAS_2_0_0.md  plan de pruebas manual
-scripts/build.sh, setup.py  .app + DMG con py2app (macOS)
+docs/PLAN_PRUEBAS.md        plan de pruebas manual
+packaging/                  spec de PyInstaller, Inno Setup (.iss), .desktop y MIME de Linux
+scripts/build.sh            instalador de macOS (.app + DMG)
+scripts/build_linux.sh      instaladores de Linux (.deb, AppImage, tar.gz)
+scripts/build_windows.ps1   instalador de Windows (Setup.exe + zip)
+.github/workflows/          tests en cada push; instaladores de los tres sistemas al etiquetar vX.Y.Z
 ```
 
 Módulos del esquema de fuentes: `app/sources/base.py` (clase `Source`,
@@ -49,6 +53,10 @@ descarga genérica), `app/sources/gfs.py`, `app/sources/cache.py`,
 `app/sources/openaip_fir.py` es la fuente de límites de FIR de openAIP.
 
 ## Instalación
+
+Para usar el programa sin instalar Python, bajar el instalador del sistema
+desde la sección «Instaladores» más abajo. Lo que sigue es el entorno de
+desarrollo.
 
 ### Entorno `Grib` (pyenv, Python 3.14)
 
@@ -106,8 +114,8 @@ python main.py                        # abre la bienvenida
 python main.py FDP_MULTI.grib2        # abre directamente un archivo
 ```
 
-También se abre un `.grib2` con doble clic en el Finder cuando la app está
-empaquetada (`scripts/build.sh`).
+También se abre un `.grib2` con doble clic desde el Finder o el Explorador
+cuando la app está instalada (ver «Instaladores»).
 
 ### Obtener datos (fuentes)
 
@@ -723,11 +731,48 @@ test de inventario, y si hay un `wgrib2` en el PATH (o en la variable
 `WGRIB2`) se compara la lectura completa de los dos motores; ambos se saltan
 si no están.
 
-## Empaquetado macOS
+## Instaladores
+
+Los instaladores de cada versión están en la página de *Releases* del
+repositorio (`https://github.com/LmpOSX/GRIB/releases`):
+
+| Sistema | Archivo | Instalación |
+|---|---|---|
+| macOS 12+ (Apple Silicon) | `Visor_GRIB_<ver>_macOS_arm64.dmg` | Abrir el DMG y arrastrar a Aplicaciones. La app no está firmada con certificado de Apple: la primera vez, clic derecho ▸ Abrir (o `xattr -cr "/Applications/Visor GRIB.app"`). |
+| macOS 12+ (Intel) | `Visor_GRIB_<ver>_macOS_x86_64.dmg` | Igual que arriba. |
+| Linux x86_64 (Debian/Ubuntu) | `Visor_GRIB_<ver>_Linux_x86_64.deb` | `sudo apt install ./Visor_GRIB_<ver>_Linux_x86_64.deb`; queda el comando `visor-grib` y la entrada en el menú. |
+| Linux x86_64 (cualquier distro) | `Visor_GRIB_<ver>_Linux_x86_64.AppImage` | `chmod +x` y ejecutar. También hay un `.tar.gz` portable con la carpeta `VisorGRIB/`. |
+| Windows 10/11 x64 | `Visor_GRIB_<ver>_Windows_x64_Setup.exe` | Ejecutar el instalador (SmartScreen avisa porque no está firmado: *Más información ▸ Ejecutar de todas formas*). También hay un `.zip` portable. |
+
+La configuración del usuario queda en `~/Library/Application Support/Visor GRIB/`
+(macOS), `%APPDATA%\Visor GRIB\` (Windows) o `~/.config/Visor GRIB/` (Linux).
+Las costas de Natural Earth se bajan la primera vez que se dibujan, igual que
+en modo desarrollo.
+
+### Generar los instaladores
+
+Todo sale de un único spec de PyInstaller (`packaging/visor_grib.spec`); cada
+script arma el instalador propio del sistema y antes corre una prueba de humo
+(abre `tests/data/WAFS_like_test.grib2` dentro del paquete con
+`VISOR_GRIB_SMOKE=8` y `QT_QPA_PLATFORM=offscreen`):
 
 ```bash
-scripts/build.sh      # genera iconos, "dist/Visor GRIB.app" y el DMG
+scripts/build.sh              # macOS: dist/Visor GRIB.app y dist/Visor_GRIB_<ver>_macOS_<arch>.dmg
+scripts/build_linux.sh        # Linux: .tar.gz, .deb (dpkg-deb) y AppImage (baja appimagetool)
+pwsh scripts/build_windows.ps1   # Windows: .zip y Setup.exe (requiere Inno Setup 6)
 ```
+
+PyInstaller no cruza plataformas: cada instalador se genera en su sistema.
+El workflow `.github/workflows/release.yml` lo hace por los cuatro
+(macOS arm64 e Intel, Linux, Windows) al publicar una etiqueta `vX.Y.Z`:
+
+```bash
+# nueva versión: cambiar app/__init__.py y CHANGELOG.md, commitear y
+git tag v0.2.0 && git push origin main v0.2.0
+```
+
+Los archivos se adjuntan a la *release* de esa etiqueta. Si la release no
+existe, el workflow la crea con el nombre `Visor GRIB vX.Y.Z`.
 
 ## Verificación con wgrib2
 

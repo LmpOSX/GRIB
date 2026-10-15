@@ -94,10 +94,25 @@ def main():
     app.set_window(window)
 
     # Archivo por línea de comandos: `python main.py archivo.grib2`
-    for arg in sys.argv[1:]:
-        if os.path.isfile(arg):
-            QTimer.singleShot(300, lambda p=arg: window.open_file(p))
-            break
+    file_arg = next((a for a in sys.argv[1:] if os.path.isfile(a)), None)
+    if file_arg:
+        QTimer.singleShot(300, lambda p=file_arg: window.open_file(p))
+
+    # Prueba de humo del empaquetado (scripts/build*.sh): con VISOR_GRIB_SMOKE=<seg>
+    # la app se cierra sola; código 0 si la ventana se mostró y el archivo
+    # pedido quedó cargado (ecCodes, matplotlib y cartopy dentro del paquete).
+    smoke = os.environ.get("VISOR_GRIB_SMOKE")
+    if smoke:
+        try:
+            wait_ms = int(float(smoke) * 1000)
+        except ValueError:
+            wait_ms = 6000
+
+        def _smoke_exit():
+            ok = window.isVisible() and (not file_arg or window._reader is not None)
+            print("smoke:", "ok" if ok else "FALLO", flush=True)
+            app.exit(0 if ok else 3)
+        QTimer.singleShot(wait_ms, _smoke_exit)
 
     # Desenfoque nativo directamente sobre la ventana principal. Si no hay
     # desenfoque (Windows sin acrílico, Linux), la ventana queda opaca con el

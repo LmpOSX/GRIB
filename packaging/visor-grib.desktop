@@ -1,0 +1,11 @@
+[Desktop Entry]
+Type=Application
+Name=Visor GRIB
+Comment=Viento y temperatura en altura (GRIB2 / WAFS) por nivel de vuelo
+Exec=VisorGRIB %f
+Icon=visor-grib
+Terminal=false
+Categories=Science;Geoscience;Education;
+MimeType=application/x-grib;
+Keywords=GRIB;WAFS;GFS;viento;meteorología;aviación;
+StartupWMClass=VisorGRIB
