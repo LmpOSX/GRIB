@@ -857,6 +857,7 @@ class MainWindow(QMainWindow):
         self.inventory.set_text(reader.inventory_text())
         self.panel.populate(reader)
         self.plot.set_projection(self.panel.projection(), reader.lons, reader.lats)
+        self._apply_area_layer(redraw=False)     # el marco pasa a ser el de este archivo
         self.redraw(keep_extent=False)
 
     def _file_close(self):
@@ -865,6 +866,7 @@ class MainWindow(QMainWindow):
         self._provenance = None
         self._current = None
         self.inventory.set_text("Sin archivo abierto.")
+        self._apply_area_layer(redraw=False)     # vuelve el marco de la última selección
         self.plot.draw_empty()
         self._update_title()
         self._set_empty_state(True)
@@ -1363,11 +1365,16 @@ class MainWindow(QMainWindow):
     # ── Área de descarga (rectángulos) ───────────────────────────────────────
 
     def area_layer_geometry(self):
-        """(envolvente, [(código, región)]) según la última selección del
-        bloque Área de «Obtener datos…», o (None, []) si no se dibuja."""
+        """(envolvente, [(código, región)]) del rectángulo del área, o
+        (None, []) si no se dibuja. Con un archivo abierto el marco es el
+        del archivo: la zona pedida de su procedencia (y las FIR con que se
+        bajó) o, si no tiene procedencia, el recuadro de su grilla. Sin
+        archivo, la última selección del bloque Área de «Obtener datos…»."""
         c = self._cfg
         if not c.get("download_area_draw", False):
             return None, []
+        if self._reader is not None:
+            return self._file_area_geometry()
         mode = c.get("download_area_mode", "fir")
         if mode == "fir":
             table = areasmod.areas_from_config(c)
@@ -1379,6 +1386,26 @@ class MainWindow(QMainWindow):
         if mr and len(mr) == 4:
             return tuple(float(v) for v in mr), []
         return None, []
+
+    def _file_area_geometry(self):
+        """Marco del archivo abierto (ver area_layer_geometry)."""
+        prov = self._provenance or {}
+        area = prov.get("area") if isinstance(prov.get("area"), dict) else None
+        if area and area.get("zona_pedida") and len(area["zona_pedida"]) == 4:
+            env = tuple(float(v) for v in area["zona_pedida"])
+            boxes = []
+            if area.get("modo") == "fir":
+                table = areasmod.areas_from_config(self._cfg)
+                for code in area.get("codigos") or []:
+                    a = areasmod.find_area(table, code)
+                    if a is not None:
+                        boxes.append((a.code, a.region))
+            return env, boxes
+        bbox = self._grid_bbox()
+        if bbox is None:
+            return None, []
+        lonmin, lonmax, latmin, latmax = bbox
+        return (float(latmax), float(latmin), float(lonmin), float(lonmax)), []
 
     def _apply_area_layer(self, redraw=True):
         env, boxes = self.area_layer_geometry()

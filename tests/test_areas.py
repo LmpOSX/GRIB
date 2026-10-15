@@ -670,6 +670,13 @@ class TestMapaYVentana(_QtBase):
         w.set_area_draw(True)
         self.assertTrue(w._act_area.isChecked())
         self.assertTrue(w.plot.area_visible())
+        # con un archivo sin procedencia el marco es el recuadro de su grilla
+        env, boxes = w.area_layer_geometry()
+        self.assertEqual((env, boxes), ((4.0, -64.0, -90.0, -22.0), []))
+        w.plot.canvas.draw()
+        self.assertEqual(len(w.plot._area_artists), 1)        # sólo la envolvente
+        # sin archivo, el marco es la última selección del bloque Área
+        w._file_close()
         env, boxes = w.area_layer_geometry()
         self.assertEqual(env, (-20.72, -47.0, -72.85, -9.0))
         self.assertEqual([c for c, _r in boxes], ["SAEF", "SACF"])
@@ -688,10 +695,11 @@ class TestMapaYVentana(_QtBase):
         w._apply_area_layer()
         env, boxes = w.area_layer_geometry()
         self.assertEqual((env, boxes), ((11.0, -11.0, -21.0, 16.0), []))
-        # todas las proyecciones, con el polo
+        # todas las proyecciones, con el polo (archivo abierto: marco de la grilla)
         from app.wind_plot import PROJECTIONS
         w._cfg["download_area_mode"] = "fir"
         w._cfg["download_area_codes"] = ["SAVF"]
+        w.load_reader(self.reader, self.reader.path)
         for key, _name in PROJECTIONS:
             w.set_projection(key)
             w.plot.canvas.draw()
@@ -741,12 +749,57 @@ class TestMapaYVentana(_QtBase):
         self.assertIn("SAEF", FakeAreas.regions)
         self.assertEqual(w._cfg["areas_margin_deg"], 0.5)
         self.assertEqual(A.find_area(A.areas_from_config(w._cfg), "SAEF").north, -29.0)
-        # Preferencias aplica la tabla y la capa
+        # Preferencias aplica la tabla y la capa (sin archivo: marco de la selección)
+        w._file_close()
         w.apply_settings({"areas": A.areas_to_config(A.default_areas()), "areas_margin_deg": 2.0,
                           "download_area_draw": True})
         self.assertTrue(w.plot.area_visible())
         env, _boxes = w.area_layer_geometry()
         self.assertEqual(env, (-19.72, -90.0, -75.57, -8.0))
+
+    def test_marco_sigue_al_archivo(self):
+        """Al abrir un archivo el marco pasa a ser el de ese archivo (zona
+        pedida de su procedencia o recuadro de su grilla); al abrir otro se
+        reemplaza, y al cerrar vuelve el de la última selección."""
+        from tests.test_grib_reader import _reader_sintetico
+        w = self._window()
+        w._cfg["download_area_codes"] = ["SAVF"]
+        w.set_area_draw(True)
+        prov = {"fuente": "gfs", "area": A.area_info("fir", ["SAEF", "SACF"], 1.0,
+                                                      (-20.72, -47.0, -72.85, -9.0))}
+        r1 = _reader_sintetico([850, 700], shape=(69, 69))
+        r1.lats = np.arange(-64.0, 4.1, 1.0)
+        r1.lons = np.arange(-90.0, -21.9, 1.0)
+        r1.path = os.path.join(self._tmp.name, "a.grib2")
+        w.load_reader(r1, r1.path, prov)
+        env, boxes = w.area_layer_geometry()
+        self.assertEqual(env, (-20.72, -47.0, -72.85, -9.0))
+        self.assertEqual([c for c, _r in boxes], ["SAEF", "SACF"])
+        w.plot.canvas.draw()
+        self.assertEqual(len(w.plot._area_artists), 3)
+        # otro archivo, sin procedencia: marco de su grilla y nada del anterior
+        r2 = _reader_sintetico([850, 700], shape=(21, 31))
+        r2.lats = np.arange(-50.0, -29.9, 1.0)
+        r2.lons = np.arange(-75.0, -44.9, 1.0)
+        r2.path = os.path.join(self._tmp.name, "b.grib2")
+        w.load_reader(r2, r2.path, None)
+        env, boxes = w.area_layer_geometry()
+        self.assertEqual((env, boxes), ((-30.0, -50.0, -75.0, -45.0), []))
+        w.plot.canvas.draw()
+        self.assertEqual(len(w.plot._area_artists), 1)
+        texts = [t.get_text() for t in w.plot._area_artists if hasattr(t, "get_text")]
+        self.assertEqual(texts, [])
+        # procedencia manual: envolvente sola
+        w.load_reader(r1, r1.path, {"area": A.area_info("manual", [], 0.0, (0.0, -60.0, -80.0, -30.0))})
+        self.assertEqual(w.area_layer_geometry(), ((0.0, -60.0, -80.0, -30.0), []))
+        # cerrar: vuelve la selección del bloque Área
+        w._file_close()
+        env, boxes = w.area_layer_geometry()
+        self.assertEqual([c for c, _r in boxes], ["SAVF"])
+        # con los rectángulos apagados, nada en ningún caso
+        w.set_area_draw(False)
+        w.load_reader(r1, r1.path, prov)
+        self.assertEqual(w.area_layer_geometry(), (None, []))
 
 
 if __name__ == "__main__":

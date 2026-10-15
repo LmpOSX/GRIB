@@ -228,7 +228,11 @@ servidor recortó distinto se avisa y la procedencia anota `cubre: false`
 **En el mapa.** `Mostrar el área en el mapa` en el diálogo (o Vista ▸ FIR ▸
 Rectángulos del área de descarga) dibuja en naranja el rectángulo de la
 envolvente (con el margen) y, a rayas, el de cada FIR marcada con su
-código, además de los contornos de la capa de FIR si está activa.
+código, además de los contornos de la capa de FIR si está activa. El marco
+acompaña al archivo abierto: con un archivo descargado es la zona pedida de
+su procedencia (y las FIR con que se bajó); con un archivo sin procedencia,
+el recuadro de su grilla; al abrir otro archivo se reemplaza y al cerrarlo
+vuelve el de la última selección del bloque Área.
 
 #### Fuentes disponibles
 

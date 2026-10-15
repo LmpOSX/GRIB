@@ -12,6 +12,9 @@
   arrastre se dividen por 5; botones `+` y `−` en la barra (Vista ▸ Acercar
   / Alejar (fino), ⌘⇧+ / ⌘⇧−); la rueda del trackpad ya no acerca de golpe;
   % por paso y divisor fino en Preferencias ▸ Mapa.
+- El marco del área de descarga acompaña al archivo abierto (zona pedida de
+  su procedencia o recuadro de su grilla); al abrir otro archivo se
+  reemplaza en vez de quedar el anterior.
 
 ## 0.1.0 — 2026-10-15
 

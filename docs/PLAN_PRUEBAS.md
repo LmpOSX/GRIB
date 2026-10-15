@@ -160,6 +160,7 @@ detalle.
 | Q11 | Grilla más chica que lo pedido | Fuente genérica con un GRIB regional más chico que el área | Aviso "La grilla obtenida es más chica que la zona pedida … lados que faltan"; STATUS `área … (incompleta)`; `.json` con `cubre: false`. |
 | Q12 | Rectángulos en el mapa | `Mostrar el área en el mapa` (o Vista ▸ FIR ▸ Rectángulos del área de descarga) con la capa FIR activa | Rectángulo naranja de la envolvente (con margen) y a rayas el de cada FIR marcada con su código, sobre los contornos de FIR; en manual sólo la envolvente; se ve en las seis proyecciones; el PNG lo incluye. |
 | Q13 | Extremos de la capa FIR | Seleccionar la fila SAEF ▸ `Extremos de la capa FIR` | Toma N/S/W/E del polígono de la capa (VATSpy) y deja *A verificar* tildada. |
+| Q14 | El marco sigue al archivo | Con «Rectángulos del área de descarga» activos: bajar con SAEF+SACF, luego abrir un archivo local sin procedencia, luego otro bajado con SAVF, luego cerrar | Tras la descarga, envolvente + rectángulos SAEF y SACF; al abrir el archivo local sólo el recuadro de su grilla (los rectángulos anteriores desaparecen); con el de SAVF, su envolvente y su rectángulo; al cerrar vuelve la última selección del bloque Área. |
 
 ## H. Exportar
 
