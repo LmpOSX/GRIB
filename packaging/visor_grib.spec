@@ -35,6 +35,11 @@ datas = [
     (os.path.join(RES, "app_icon.png"), "resources"),
     (os.path.join(RES, "fir"), os.path.join("resources", "fir")),
 ]
+if IS_MAC:
+    # Icono de documento del Info.plist: va dentro del paquete ANTES de que
+    # PyInstaller lo firme (copiarlo después rompe el sello de la firma y
+    # macOS dice que la app "está dañada")
+    datas.append((os.path.join(RES, "GribDocument.icns"), "."))
 # cartopy: siteconfig y datos pequeños (las costas de Natural Earth se bajan
 # al usarlas, igual que en modo desarrollo)
 datas += collect_data_files("cartopy", excludes=["**/tests/**"])

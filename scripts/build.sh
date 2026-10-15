@@ -25,7 +25,12 @@ if [ ! -d "$APP_PATH" ]; then
     exit 1
 fi
 rm -rf "dist/${EXE_NAME}"     # la carpeta suelta; en macOS se distribuye el .app
-cp resources/GribDocument.icns "$APP_PATH/Contents/Resources/"
+
+echo "=== Verificando la firma (ad hoc) del paquete ==="
+# Nada se toca dentro del .app después de que PyInstaller lo firma: cualquier
+# archivo agregado o modificado invalida el sello y Gatekeeper lo rechaza
+# como "dañado" en vez de ofrecer "Abrir igualmente".
+codesign --verify --deep --strict --verbose=2 "$APP_PATH"
 
 echo "=== Prueba de humo: abrir un GRIB WAFS dentro del paquete ==="
 SMOKE_DIR=$(mktemp -d)
@@ -77,5 +82,5 @@ echo "  App:        $APP_PATH"
 echo "  Instalador: $DMG_PATH"
 echo ""
 echo "Para instalar: abrir el DMG y arrastrar a Aplicaciones. La app no está"
-echo "firmada con certificado de Apple: la primera vez, clic derecho ▸ Abrir"
-echo "(o: xattr -cr \"/Applications/${APP_NAME}.app\")."
+echo "firmada con certificado de Apple: la primera vez macOS la bloquea; en Ajustes"
+echo "del Sistema ▸ Privacidad y seguridad tocar Abrir igualmente (o: xattr -cr \"/Applications/${APP_NAME}.app\")."
