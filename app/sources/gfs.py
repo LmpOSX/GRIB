@@ -59,6 +59,9 @@ class GFSSource(Source):
         p = self.merged_params(params)
         return bool(p["niveles_intermedios"]) and gfs.extra_levels_available(self.download_resolution(p))
 
+    def grid_resolution(self, params=None):
+        return RES_DEG[self.merged_params(params)["resolucion"]]
+
     def download_resolution(self, params):
         """Resolución que realmente se pide al servidor."""
         p = self.merged_params(params)
@@ -79,7 +82,7 @@ class GFSSource(Source):
         if not p["niveles_intermedios"]:
             levels = [lv for lv in levels if lv not in gfs.EXTRA_LEVELS]
         return gfs.DownloadSpec(job.run_date, job.cycle, job.steps, job.variables, levels,
-                                resolution=self.download_resolution(p), region=job.region,
+                                resolution=self.download_resolution(p), region=self.server_region(job),
                                 dest_dir=job.dest_dir, basename=job.basename or "x", merge=job.merge)
 
     def validate(self, job):

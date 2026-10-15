@@ -395,11 +395,13 @@ class TestDialogoDescarga(_Base):
         capturado = {}
 
         class FakeDlg:
-            def __init__(self, parent, cfg=None, dest_dir=".", region=None, source_key=None):
+            def __init__(self, parent, cfg=None, dest_dir=".", region=None, source_key=None,
+                         regions_fn=None):
                 capturado["region"] = region
                 capturado["dest"] = dest_dir
                 capturado["cfg"] = cfg
                 capturado["source"] = source_key
+                capturado["regions"] = regions_fn() if regions_fn else None
                 self.downloaded_paths = []
                 self.open_after = False
                 self.source = None
@@ -415,8 +417,11 @@ class TestDialogoDescarga(_Base):
             self.w.get_data()
         finally:
             dd.DownloadDialog = old
-        self.assertEqual(capturado["region"], (10.0, -10.0, -60.0, -30.0))
-        self.assertEqual(capturado["btn"], capturado["region"])
+        # El dominio del archivo va al botón «Dominio del archivo abierto»; no
+        # fuerza el modo manual (se recuerda el último modo del bloque Área)
+        self.assertIsNone(capturado["region"])
+        self.assertEqual(capturado["btn"], (10.0, -10.0, -60.0, -30.0))
+        self.assertIn("SAEF", capturado["regions"])
         self.assertEqual(capturado["source"], "gfs")
         self.assertIs(capturado["cfg"], self.w._cfg)
 

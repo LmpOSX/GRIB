@@ -594,7 +594,7 @@ EXPORT_REGRID = [("ninguno", "Sin regrillar (grilla del archivo)"),
 def export_wafs(src, dest_dir, steps=None, fls=None, variables="basicas", region=None,
                 regrid="ninguno", per_step=True, model="gfs", basename=None,
                 tables_version=25, centre=None, sub_centre=None, idx=True, convert_opts=None,
-                progress_cb=None):
+                progress_cb=None, provenance=None):
     """Escribe lo cargado como WAFS.
 
     src        ruta (o bytes) del archivo abierto en el visor; si no está en
@@ -607,6 +607,9 @@ def export_wafs(src, dest_dir, steps=None, fls=None, variables="basicas", region
     per_step   True: un archivo por plazo con nombre gfs.tHHz.wafs_0p25.fFFF.grib2;
                False: un único archivo multi-plazo (`basename` o
                model.tHHz.wafs_RES.fFFF-FFF.grib2).
+    provenance procedencia del archivo de origen (dict) o None: si se da, se
+               escribe `archivo.json` junto a cada salida (conserva fuente,
+               corrida y el área de descarga con sus códigos de FIR).
     Devuelve un dict con 'archivos', 'verificacion' (por archivo) y 'avisos'
     del validador."""
     from .regrid import crop_grib, regrid_bilinear_grib
@@ -683,6 +686,14 @@ def export_wafs(src, dest_dir, steps=None, fls=None, variables="basicas", region
             fh.write(blob)
         if idx:
             write_idx(path)
+        if provenance:
+            prov = dict(provenance)
+            prov["exportado"] = dt.datetime.now(dt.timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
+            prov["plazos_h"] = list(hs)
+            if region is not None:
+                prov["zona_exportada"] = list(region)
+            with open(path + ".json", "w", encoding="utf-8") as fh:
+                json.dump(prov, fh, ensure_ascii=False, indent=2)
         written.append(path)
         verification.append(verify_written(path, blob))
     val = validate_wafs(written[0]) if written else {"avisos": []}

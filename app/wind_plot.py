@@ -197,6 +197,7 @@ MAX_LABELS = 900        # rótulos de Extra Info visibles como máximo
 # la temperatura). La ventana lo reemplaza con la configuración.
 FIR_STYLE_DEFAULT = {"color": "#b39ddb", "neighbor_color": "#8d8da8", "line_width": 1.3,
                      "fill_alpha": 0.08, "label_size": 9}
+AREA_STYLE_DEFAULT = {"color": "#ffb74d", "line_width": 1.6, "label_size": 8}
 FIR_EDGE_TOL_PX = 5.0   # distancia al contorno (px) para «pasar el mouse sobre un límite»
 SETTLE_MS = 150         # espera tras el último cambio de vista para reconstruir
 
@@ -417,6 +418,10 @@ class WindPlot:
         self._fir_key = None
         self._fir_cache = {}
         self._fir_regions_id = None
+        # Rectángulos del área de descarga (ver set_download_area)
+        self._area = None
+        self._area_artists = []
+        self._area_key = None
         self.on_click = None            # callable(event): clic sin arrastre sobre el mapa
         self._press_xy = None
         self._in_draw = False
@@ -448,6 +453,7 @@ class WindPlot:
         self._static_artists, self._view_artists, self._label_artists = [], [], []
         self._base_key = None
         self._fir_artists, self._fir_key = [], None
+        self._area_artists, self._area_key = [], None
         self.ax.callbacks.connect("xlim_changed", self._on_lim_changed)
         self.ax.callbacks.connect("ylim_changed", self._on_lim_changed)
 
@@ -460,6 +466,7 @@ class WindPlot:
         self.proj_key = key if key in dict(PROJECTIONS) else "platecarree"
         self.proj = make_projection(self.proj_key, lons, lats)
         self._fir_cache = {}            # la geometría proyectada depende de la proyección
+        self._area_key = None
         self._make_axes()
         self._style_axes()
         self.has_data = False
@@ -721,11 +728,13 @@ class WindPlot:
             self._static_artists, self._view_artists, self._label_artists = [], [], []
             self._base_key = None
             self._fir_artists, self._fir_key = [], None
+            self._area_artists, self._area_key = [], None
             self._data = None
             self._style_axes()
             self.has_data = False
             self._base_map()
             self._ensure_fir()
+            self._ensure_area()
             self.ax.text(0.5, 0.5, message, transform=self.ax.transAxes, ha="center",
                          va="center", color=self.pal["text_dim"], fontsize=self._fs(12))
             if self.use_cartopy:
@@ -925,6 +934,7 @@ class WindPlot:
             # Capa base (se conserva entre redibujos)
             self._ensure_base(dlon, dlat, opts.get("grid", False), opts.get("grid_step", 10))
             self._ensure_fir()
+            self._ensure_area()
 
             # Capa estática: se reconstruye entera
             self._remove_all(self._static_artists)
@@ -1526,6 +1536,103 @@ class WindPlot:
         inside = self.fir_at_lonlat(lon, lat) if lon is not None else []
         edges = self.fir_near_edge(event.x, event.y)
         return inside, edges
+
+    # ------------------------------------------------- área de descarga
+    def set_download_area(self, envelope=None, boxes=(), style=None):
+        """Rectángulos del área de descarga: `envelope` (top, bottom, left,
+        right) con el margen incluido, y `boxes` = [(código, región)] con
+        el recuadro de cada FIR marcada. None/vacío = no dibujar. Se dibuja
+        además de los contornos de FIR, no en su lugar."""
+        st = dict(AREA_STYLE_DEFAULT)
+        st.update({k: v for k, v in (style or {}).items() if k in st and v is not None})
+        if envelope is None and not boxes:
+            self._area = None
+        else:
+            self._area = {"envelope": tuple(envelope) if envelope is not None else None,
+                          "boxes": [(str(c), tuple(r)) for c, r in boxes], "style": st}
+        self._area_key = None
+
+    def _rect_xy(self, region):
+        """Rectángulo lat/lon → polilínea proyectada (lados densificados)."""
+        top, bottom, left, right = region
+        bottom = max(-89.999, bottom) if self.use_cartopy and self.proj_key == "mercator" else bottom
+        ring = np.array([[left, top], [right, top], [right, bottom], [left, bottom]], dtype=float)
+        dense = densify(ring, step=0.5)
+        shift = 0.0
+        if not self.use_cartopy and self._data is not None and float(self._data["lons"].max()) > 180.0:
+            shift = 360.0
+        if self.use_cartopy:
+            xyz = self.proj.transform_points(self.data_crs, dense[:, 0], dense[:, 1])
+            xy = xyz[:, :2]
+        else:
+            xy = np.column_stack([dense[:, 0] + shift, dense[:, 1]])
+        ok = np.isfinite(xy).all(axis=1) & (np.abs(xy) < 1e12).all(axis=1)
+        xy = xy[ok]
+        return xy if len(xy) >= 3 else None
+
+    def _ensure_area(self):
+        """Reconstruye los rectángulos sólo si cambió algo que los afecta."""
+        a = self._area
+        if not a:
+            self._remove_all(self._area_artists)
+            self._area_key = None
+            return
+        st = a["style"]
+        key = (self.proj_key, a["envelope"], tuple(a["boxes"]), tuple(sorted(st.items())),
+               round(self.font_scale, 3), self.pal["ax_bg"])
+        if key == self._area_key:
+            return
+        self._remove_all(self._area_artists)
+        ax = self.ax
+        scale = max(0.8, self.font_scale)
+        color = st["color"]
+        lw = float(st["line_width"]) * scale
+        halo = [patheffects.withStroke(linewidth=2.5 * scale, foreground=self.pal["ax_bg"])]
+        fs = self._fs(float(st["label_size"]))
+        segs, widths, styles = [], [], []
+        labels = []
+        for code, region in a["boxes"]:
+            xy = self._rect_xy(region)
+            if xy is None:
+                continue
+            segs.append(np.vstack([xy, xy[:1]]))
+            widths.append(lw * 0.8)
+            styles.append((0, (4, 3)))
+            labels.append((code, region))
+        if a["envelope"] is not None:
+            xy = self._rect_xy(a["envelope"])
+            if xy is not None:
+                segs.append(np.vstack([xy, xy[:1]]))
+                widths.append(lw)
+                styles.append("solid")
+        if segs:
+            lc = LineCollection(segs, colors=[matplotlib.colors.to_rgba(color, 0.95)] * len(segs),
+                                linewidths=widths, linestyles=styles, zorder=3.6,
+                                transform=ax.transData)
+            lc.set_clip_box(ax.bbox)
+            lc.set_clip_on(True)
+            ax.add_collection(lc, autolim=False)
+            self._area_artists.append(lc)
+        for code, (top, bottom, left, right) in labels:
+            # Etiqueta en la esquina noroeste, por dentro del rectángulo
+            lon = left + 0.35 * min(2.0, right - left)
+            lat = top - 0.35 * min(2.0, top - bottom)
+            if self.use_cartopy:
+                xy = self.proj.transform_points(self.data_crs, np.array([lon]), np.array([lat]))[0, :2]
+                if not np.isfinite(xy).all():
+                    continue
+                x, y = float(xy[0]), float(xy[1])
+            else:
+                x, y = lon, lat
+                if self._data is not None and float(self._data["lons"].max()) > 180.0 and lon < 0:
+                    x = lon + 360.0
+            t = ax.text(x, y, code, ha="left", va="top", fontsize=fs, color=color, zorder=6.6,
+                        clip_on=True, path_effects=halo)
+            self._area_artists.append(t)
+        self._area_key = key
+
+    def area_visible(self):
+        return bool(self._area)
 
     def save_png(self, path, dpi=150):
         """Guarda la vista actual con fondo opaco (el alfa es sólo para la

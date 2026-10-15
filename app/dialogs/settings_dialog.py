@@ -6,6 +6,8 @@
   densidad).
 * Fuentes: habilitar cada fuente, sus parámetros, credenciales y prueba.
 * Descarga: plazos y destino por defecto de «Obtener datos…», caché.
+* Áreas / FIR: tabla de áreas de descarga (recuadros por FIR), margen y
+  formato de coordenadas; exportar / importar la tabla.
 * Motor: biblioteca ecCodes o programa wgrib2 (con su ruta y un botón para
   probarlo).
 
@@ -30,6 +32,7 @@ from ..grib_engines import ENGINES, ec, find_wgrib2, wgrib2_version
 from ..wind_plot import PROJECTIONS, HAVE_CARTOPY, WIND_STYLES, GRID_STEPS
 from ..sources import all_sources, source_config, set_source_config, source_label
 from ..sources.cache import DownloadCache
+from ..widgets.areas_editor import AreasEditor
 
 
 class ColorPreview(QFrame):
@@ -65,7 +68,7 @@ class SettingsDialog(GlassDialog):
         ("#8A3A5F", "Bordo"),
     ]
 
-    TABS = ("Apariencia", "Mapa", "Fuentes", "Descarga", "WAFS", "Motor")
+    TABS = ("Apariencia", "Mapa", "Fuentes", "Descarga", "Áreas / FIR", "WAFS", "Motor")
 
     def __init__(self, parent=None, cfg: dict = None):
         super().__init__(parent)
@@ -100,8 +103,9 @@ class SettingsDialog(GlassDialog):
         self.tabs.addTab(self._tab_mapa(), self.TABS[1])
         self.tabs.addTab(self._tab_fuentes(), self.TABS[2])
         self.tabs.addTab(self._tab_descarga(), self.TABS[3])
-        self.tabs.addTab(self._tab_wafs(), self.TABS[4])
-        self.tabs.addTab(self._tab_motor(), self.TABS[5])
+        self.tabs.addTab(self._tab_areas(), self.TABS[4])
+        self.tabs.addTab(self._tab_wafs(), self.TABS[5])
+        self.tabs.addTab(self._tab_motor(), self.TABS[6])
         lay.addWidget(self.tabs, 1)
 
         btn_row = QHBoxLayout()
@@ -110,7 +114,7 @@ class SettingsDialog(GlassDialog):
         cancel_btn.clicked.connect(self.reject)
         ok_btn = QPushButton("Aplicar")
         ok_btn.setObjectName("AccentBtn")
-        ok_btn.clicked.connect(self.accept)
+        ok_btn.clicked.connect(self._accept)
         btn_row.addWidget(cancel_btn)
         btn_row.addWidget(ok_btn)
         lay.addLayout(btn_row)
@@ -386,6 +390,28 @@ class SettingsDialog(GlassDialog):
         self._cache().clear()
         self._refresh_cache_label()
 
+    # ── Áreas / FIR ──
+    def _tab_areas(self):
+        w, lay = self._page()
+        self._sub(lay, "Áreas de descarga por FIR (envolvente de las marcadas + margen)")
+        regions_fn = None
+        parent = self.parent()
+        if parent is not None and hasattr(parent, "_fir_regions"):
+            regions_fn = lambda: getattr(parent, "_fir_regions", {})   # noqa: E731
+        self.areas_editor = AreasEditor(self._cfg, regions_fn=regions_fn)
+        lay.addWidget(self.areas_editor, 1)
+        return w
+
+    def _accept(self):
+        from PyQt6.QtWidgets import QMessageBox
+        errs = self.areas_editor.errors()
+        if errs:
+            self.tabs.setCurrentIndex(self.TABS.index("Áreas / FIR"))
+            QMessageBox.warning(self, "Preferencias", "Corregí la tabla de áreas antes de aplicar:\n"
+                                + "\n".join(errs[:6]))
+            return
+        self.accept()
+
     # ── WAFS ──
     def _tab_wafs(self):
         w, lay = self._page()
@@ -554,6 +580,7 @@ class SettingsDialog(GlassDialog):
             "download_h_from": int(self.h_from.value()),
             "download_h_to": int(self.h_to.value()),
             "download_h_step": int(self.h_step.value()),
+            **self.areas_editor.values(),
             "wafs_convert": self.chk_wafs.isChecked(),
             "wafs_convert_local": self.chk_wafs_local.isChecked(),
             "wafs_fl_min": int(self.wafs_fl_min.value()),

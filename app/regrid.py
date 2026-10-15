@@ -152,10 +152,34 @@ def regrid_grib(data, factor, method="ninguno"):
     return bytes(out)
 
 
+def _enclosing(axis, lo, hi, eps=1e-9):
+    """Índices (en el orden del eje) de los puntos que encierran el
+    intervalo [lo, hi]: se toma desde el último punto ≤ lo hasta el primero
+    ≥ hi, así la zona recortada nunca queda más chica que la pedida
+    (redondeo hacia afuera). Vacío si el eje no toca el intervalo."""
+    axis = np.asarray(axis, dtype=float)
+    inside = (axis >= lo - eps) & (axis <= hi + eps)
+    below = axis <= lo + eps
+    above = axis >= hi - eps
+    if not inside.any():
+        # ¿el intervalo cae entre dos puntos? → los dos vecinos
+        if below.any() and above.any():
+            lo_i = int(np.argmax(np.where(below, axis, -np.inf)))
+            hi_i = int(np.argmin(np.where(above, axis, np.inf)))
+            return np.array(sorted({lo_i, hi_i}))
+        return np.array([], dtype=int)
+    lo_eff = float(np.max(axis[below])) if below.any() else float(np.min(axis))
+    hi_eff = float(np.min(axis[above])) if above.any() else float(np.max(axis))
+    return np.where((axis >= lo_eff - eps) & (axis <= hi_eff + eps))[0]
+
+
 def crop_grib(data, region):
     """Recorta cada mensaje (grilla lat/lon regular) a la zona
-    (top, bottom, left, right) en grados; las longitudes del archivo pueden
-    estar en 0…360. Devuelve los bytes del nuevo GRIB2."""
+    (top, bottom, left, right) en grados, **hacia afuera**: se conservan los
+    puntos de grilla que encierran la zona, nunca menos. Las longitudes del
+    archivo pueden estar en 0…360; una zona que cruza Greenwich (oeste
+    negativo, este positivo) sobre una grilla 0…360 se reordena para que el
+    recorte sea contiguo. Devuelve los bytes del nuevo GRIB2."""
     if ec is None:
         raise RuntimeError("recortar requiere eccodes")
     top, bottom, left, right = region
@@ -174,15 +198,24 @@ def crop_grib(data, region):
             lat1d, lon1d = grid_axes(gid)
             lon_norm = ((lon1d + 180) % 360) - 180
             l_, r_ = ((left + 180) % 360) - 180, ((right + 180) % 360) - 180
-            if l_ <= r_:
-                sel_i = np.where((lon_norm >= l_ - 1e-9) & (lon_norm <= r_ + 1e-9))[0]
+            if right - left >= 360 - 1e-9:
+                sel_i = np.arange(ni)
+            elif l_ <= r_:
+                # Orden por longitud normalizada: una grilla 0…360 con la zona
+                # a caballo de Greenwich queda contigua (…, 359.75, 0, 0.25, …)
+                order = np.argsort(lon_norm, kind="stable")
+                sel = _enclosing(lon_norm[order], l_, r_)
+                sel_i = order[sel]
             else:   # cruza el antimeridiano
                 sel_i = np.where((lon_norm >= l_ - 1e-9) | (lon_norm <= r_ + 1e-9))[0]
-            sel_j = np.where((lat1d >= bottom - 1e-9) & (lat1d <= top + 1e-9))[0]
+            sel_j = _enclosing(lat1d, bottom, top)
             if len(sel_i) == 0 or len(sel_j) == 0:
                 raise ValueError("La zona pedida no contiene puntos de la grilla.")
-            # Sólo bloques contiguos (sin cruce del antimeridiano) se recortan
-            if np.any(np.diff(sel_i) != 1) or np.any(np.diff(sel_j) != 1):
+            contiguous_j = not np.any(np.diff(sel_j) != 1)
+            steps_i = np.diff(sel_i)
+            contiguous_i = len(sel_i) == 1 or np.all(steps_i == 1) or \
+                (np.sum(steps_i != 1) == 1 and np.all((steps_i == 1) | (steps_i == 1 - ni)))
+            if not (contiguous_i and contiguous_j):
                 out += data[pos:pos + total]
                 continue
             vals = np.asarray(ec.codes_get_double_array(gid, "values"), dtype=float).reshape(nj, ni)
@@ -199,6 +232,37 @@ def crop_grib(data, region):
             pos += total
             ec.codes_release(gid)
     return bytes(out)
+
+
+def grid_bbox(data):
+    """(lonmin, lonmax, latmin, latmax) de la primera grilla regular lat/lon
+    del GRIB2 (bytes o ruta), con las longitudes en −180…180 (si el dominio
+    cruza el antimeridiano se informa toda la vuelta). None si no hay."""
+    if ec is None:
+        return None
+    if isinstance(data, str):
+        with open(data, "rb") as fh:
+            data = fh.read()
+    pos = 0
+    while pos < len(data):
+        gid = ec.codes_new_from_message(data[pos:])
+        if gid is None:
+            return None
+        try:
+            total = ec.codes_get_message_size(gid)
+            if ec.codes_get(gid, "gridType") != "regular_ll":
+                continue
+            lat1d, lon1d = grid_axes(gid)
+            lon_norm = ((lon1d + 180.0) % 360.0) - 180.0
+            lonmin, lonmax = float(lon_norm.min()), float(lon_norm.max())
+            if len(lon1d) > 1 and (lon1d.max() - lon1d.min()) > 180.0 and \
+                    float(np.max(np.diff(np.sort(lon_norm)))) > 2.0 * float(abs(lon1d[1] - lon1d[0])):
+                lonmin, lonmax = -180.0, 180.0     # cruza el antimeridiano: toda la vuelta
+            return (lonmin, lonmax, float(lat1d.min()), float(lat1d.max()))
+        finally:
+            pos += total
+            ec.codes_release(gid)
+    return None
 
 
 def filter_grib(data, keep_levels_hpa=None, keep_vars=None, tol=0.6):

@@ -135,6 +135,24 @@ detalle.
 | P12 | Archivo propio KML/SHP | `Cargar archivo propio…` con un KML o un .shp con el código en el nombre o en un campo `ICAO` | Se lee, se copia a la carpeta de datos y reemplaza esas FIR; `Quitar` vuelve a las fuentes descargadas. Un archivo sin códigos reconocibles da un aviso. |
 | P13 | PNG | Exportar PNG con la capa activa | El PNG incluye los límites y etiquetas. |
 
+## Q. Áreas de descarga por FIR
+
+| # | Caso | Pasos | Resultado esperado |
+|---|---|---|---|
+| Q1 | Tabla precargada | `⚙` ▸ Áreas / FIR | Cinco filas SARR/SACF/SAMF/SAEF/SAVF con los valores iniciales, *Habilitada* y *A verificar* tildadas (tooltip "a verificar contra AIP ENR 2.1"); margen 1,00°; formato decimal. |
+| Q2 | Editar coordenadas | Escribir `22°15'S` en Lat norte de SARR; luego `xx`; luego `-10` en Lat sur | Se muestra `-22.25`; `xx` vuelve al valor anterior con aviso "Coordenada inválida"; con sur > norte aparece el aviso "la latitud norte … debe ser mayor que la sur" y `Aplicar` no cierra (vuelve a la pestaña). |
+| Q3 | Formato grados-minutos | Formato = "Grados y minutos con hemisferio" | Toda la tabla pasa a `22°15.0'S`, `062°40.2'W`; el diálogo de descarga muestra los campos en ese formato. |
+| Q4 | Agregar / borrar | `Agregar área`, código `sueo`, nombre Montevideo, límites; `Borrar` | El código queda `SUEO`; aparece como casilla en el diálogo de descarga; al borrar desaparece. `Las cinco FIR por defecto` restaura las cinco y conserva las demás. |
+| Q5 | Exportar / importar | `Exportar tabla…` (JSON y CSV), modificar una fila, `Importar tabla…` | Los archivos se escriben; al importar vuelve la tabla exportada (y el margen del JSON); un CSV con norte < sur se rechaza con el detalle. |
+| Q6 | Modo por FIR | `Obtener datos…`, bloque Área, `Por FIR`; marcar sólo SAEF; luego SAEF + SACF | Campos bloqueados: SAEF sola → N −29.22 S −47.00 W −72.85 E −9.00 (caja + 1°); SAEF + SACF → N −20.72 S −47.00 W −72.85 E −9.00. Debajo: Δlat/Δlon, puntos a la resolución elegida y MB estimados; `Todas` / `Ninguna` funcionan; con ninguna marcada `Descargar` avisa. |
+| Q7 | Pasar a manual | Con SAEF + SACF marcadas, `Manual` | Los cuatro campos se copian y se habilitan; se pueden retocar (también en grados-minutos); `Todo el globo` y `Dominio del archivo abierto` aparecen sólo en manual. |
+| Q8 | Memoria | Cerrar el diálogo sin bajar y reabrir | Mismo modo, mismas casillas, misma zona manual y margen. |
+| Q9 | Descarga por FIR (red) | GFS 0,25°, `Por FIR` SAEF + SACF, un plazo, `Descargar` | URL de NOMADS con `toplat=-20.5 bottomlat=-47 leftlon=-73 rightlon=-9` (redondeo hacia afuera a 0,25°); archivo `gfs_…_0p25_SACF+SAEF_wafs.grib2`; `.json` con bloque `area` (`etiqueta`, `codigos`, `margen_deg`, `zona_pedida`, `zona_servidor`, `zona_obtenida`, `cubre: true`); STATUS `… · área SACF+SAEF`. |
+| Q10 | Polo y Greenwich (red) | Marcar SAVF (llega a −90); luego manual N 11 S −11 W −21 E 16 con ECMWF | El pedido lleva `bottomlat=-90`; el archivo llega al polo y se dibuja en estereográfica sur. Con ECMWF (grilla 0…360) el recorte local devuelve lon −21…16 contiguas; el mapa no muestra costura en Greenwich. |
+| Q11 | Grilla más chica que lo pedido | Fuente genérica con un GRIB regional más chico que el área | Aviso "La grilla obtenida es más chica que la zona pedida … lados que faltan"; STATUS `área … (incompleta)`; `.json` con `cubre: false`. |
+| Q12 | Rectángulos en el mapa | `Mostrar el área en el mapa` (o Vista ▸ FIR ▸ Rectángulos del área de descarga) con la capa FIR activa | Rectángulo naranja de la envolvente (con margen) y a rayas el de cada FIR marcada con su código, sobre los contornos de FIR; en manual sólo la envolvente; se ve en las seis proyecciones; el PNG lo incluye. |
+| Q13 | Extremos de la capa FIR | Seleccionar la fila SAEF ▸ `Extremos de la capa FIR` | Toma N/S/W/E del polígono de la capa (VATSpy) y deja *A verificar* tildada. |
+
 ## H. Exportar
 
 | # | Caso | Pasos | Resultado esperado |

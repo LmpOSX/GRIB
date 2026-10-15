@@ -29,9 +29,10 @@ app/
   wind_plot.py              mapa matplotlib (QtAgg) + cartopy opcional; capa de límites de FIR
   fir.py, fir_aip.py        límites de FIR: carga GeoJSON/KML/SHP, extremos, cobertura, VATSpy; conversor AIP → GeoJSON (CLI)
   main_window.py            ventana principal: mapa, panel, menús, atajos
+  areas.py                  áreas de descarga por FIR: tabla, coordenadas, envolvente + margen, redondeo hacia afuera, exportar/importar
   config.py, theme.py, platform_blur.py, crash_guard.py, utils.py
-  widgets/                  control_panel, inventory_panel, welcome_widget
-  dialogs/                  glass_dialog, settings_dialog, shortcuts_dialog, about_dialog, export_wafs_dialog, fir_dialog, aip_convert_dialog
+  widgets/                  control_panel, inventory_panel, welcome_widget, areas_editor (tabla de áreas, CoordEdit)
+  dialogs/                  glass_dialog, settings_dialog, shortcuts_dialog, about_dialog, export_wafs_dialog, fir_dialog, aip_convert_dialog, areas_dialog
 resources/fir/              copia filtrada de Boundaries.geojson (VATSpy, CC BY-SA 4.0)
 docs/FUENTES_FIR.md         fuentes de los límites de FIR y sus licencias
 tests/                      unittest (lector, ventana y mapa en offscreen); tests/data: caso de referencia WAFS
@@ -123,9 +124,17 @@ vuelo) y `Obtener datos…` (⌘⇧D) abre el diálogo de descarga de esa fuente
 * **Opciones de la fuente**: formulario generado a partir de sus parámetros
   (para el GFS: resolución, "bajar siempre 0,25° y regrillar", suavizado y
   niveles intermedios).
-* **Zona**: lat norte/sur y lon oeste/este o todo el globo; con un archivo
-  abierto, "Dominio del archivo abierto" copia su recuadro. Si el servidor
-  filtra por zona se le pide recortado; si no, se recorta localmente.
+* **Área**: dos modos excluyentes. *Manual*: lat N/S y lon W/E (grados
+  decimales con signo o grados-minutos con hemisferio, p. ej. `34°02'S`),
+  todo el globo, o "Dominio del archivo abierto". *Por FIR*: una casilla
+  por área habilitada en Preferencias ▸ Áreas / FIR; los cuatro campos se
+  recalculan solos como la **envolvente** de las marcadas (la latitud más
+  al norte, la más al sur, la longitud más al oeste y la más al este) más
+  el margen, y quedan bloqueados (al pasar a manual se copian como punto de
+  partida). Botones `Todas` / `Ninguna`, margen, y al lado el tamaño
+  resultante: grados, puntos de grilla a la resolución elegida y tamaño
+  estimado. Se recuerdan el último modo y las casillas marcadas. Ver
+  «Áreas de descarga por FIR».
 * **Destino**: carpeta y nombre; un archivo por plazo o uno con todos;
   abrir al terminar.
 
@@ -147,10 +156,70 @@ fuentes de superficie (SMN) no se tocan. Se desactiva en Preferencias ▸
 WAFS.
 
 Junto a cada archivo se escribe `archivo.grib2.json` con la **procedencia**
-(fuente, modelo, corrida, plazos, parámetros, resolución efectiva). Al
-abrirlo, la franja STATUS muestra `FUENTE: …` con fuente, modelo, corrida,
-plazo y, si se regrilló, desde qué resolución y con qué método. Un archivo
-sin ese JSON se muestra como "archivo local (sin procedencia)".
+(fuente, modelo, corrida, plazos, parámetros, resolución efectiva y el
+bloque `area`: modo, códigos de FIR, margen, zona pedida, zona pedida al
+servidor y zona obtenida). Al abrirlo, la franja STATUS muestra `FUENTE: …`
+con fuente, modelo, corrida, plazo, resolución, el área (`área SAEF+SACF`
+o `área MANUAL`) y, si se regrilló, desde qué resolución y con qué método.
+Un archivo sin ese JSON se muestra como "archivo local (sin procedencia)".
+
+#### Áreas de descarga por FIR
+
+El recorte de las descargas no es fijo: se define a partir de una **tabla
+de áreas** (Preferencias ▸ Áreas / FIR, o `Configurar áreas…` en el
+diálogo de descarga, o Vista ▸ FIR ▸ Áreas de descarga…). Cada fila tiene
+código OACI (hasta 4 letras), nombre, latitud norte y sur, longitud oeste y
+este, y las casillas *Habilitada* (aparece en el bloque Área) y *A
+verificar*. Las cinco FIR argentinas vienen precargadas **a verificar
+contra el AIP Argentina ENR 2.1** (el visor no inventa coordenadas: estos
+valores los carga y coteja el usuario):
+
+| Código | FIR | Lat N | Lat S | Lon W | Lon E |
+|---|---|---|---|---|---|
+| SARR | Resistencia | −22.25 | −30.70 | −62.67 | −53.67 |
+| SACF | Córdoba | −21.72 | −34.03 | −69.65 | −60.20 |
+| SAMF | Mendoza | −28.50 | −38.50 | −71.21 | −64.50 |
+| SAEF | Ezeiza | −30.22 | −46.00 | −71.85 | −10.00 |
+| SAVF | Comodoro Rivadavia | −39.28 | −90.00 | −73.57 | −10.00 |
+
+* Las coordenadas se cargan en grados decimales con signo (S y W negativos)
+  o en grados-minutos(-segundos) con hemisferio (`22°15'S`, `06240W`,
+  `221530S`, `22 15 30 S`) y se muestran siempre en el formato elegido
+  (decimal o grados-minutos). Se valida que norte > sur y oeste < este, con
+  aviso claro; `Aplicar` no cierra con la tabla inválida.
+* `Agregar área` / `Borrar` para FIR vecinas, el área del sistema o un
+  área de prueba; `Las cinco FIR por defecto` las restaura; `Extremos de
+  la capa FIR` copia a la fila los extremos del polígono de esa FIR (de la
+  capa de límites, VATSpy u otra: no oficial, queda "a verificar").
+* **Margen de seguridad** (por defecto 1°): se suma por fuera a cada
+  límite al momento de usar el área; no se guarda sumado en la tabla.
+* `Exportar tabla…` / `Importar tabla…` en JSON o CSV (columnas `codigo,
+  nombre, lat_norte, lat_sur, lon_oeste, lon_este, habilitada,
+  a_verificar`) para compartirla.
+* Todo queda en `config.json` (`areas`, `areas_margin_deg`,
+  `areas_coord_format`, `download_area_mode`, `download_area_codes`,
+  `download_manual_region`, `download_area_draw`).
+
+**Cómo se usa el área al descargar.** La zona elegida reemplaza al recorte
+fijo en todas las fuentes: donde el servidor recorta (filtro de NOMADS) se
+pide directamente esa caja; donde no (ECMWF, ICON, WAFS, SMN, genérica) se
+baja completo y se recorta localmente (`regrid.crop_grib`, la misma
+función que usa la exportación WAFS). El redondeo a la grilla del modelo
+se hace **hacia afuera**: nunca se achica el área pedida. Un área que llega
+al polo (lat S = −90) o que cruza el meridiano de Greenwich (oeste negativo
+y este positivo) se pide y se recorta correctamente, también sobre grillas
+0…360. El nombre automático lleva los códigos de las FIR usadas
+(`gfs_20261014_06z_0p25_SAEF+SACF_wafs.grib2`) o `MANUAL`, la procedencia
+los conserva (y los archivos convertidos o exportados a WAFS heredan ese
+JSON), y STATUS muestra con qué área se bajó lo que está en pantalla. Al
+terminar se comprueba que la grilla obtenida contenga la caja pedida; si el
+servidor recortó distinto se avisa y la procedencia anota `cubre: false`
+(STATUS agrega "(incompleta)").
+
+**En el mapa.** `Mostrar el área en el mapa` en el diálogo (o Vista ▸ FIR ▸
+Rectángulos del área de descarga) dibuja en naranja el rectángulo de la
+envolvente (con el margen) y, a rayas, el de cada FIR marcada con su
+código, además de los contornos de la capa de FIR si está activa.
 
 #### Fuentes disponibles
 
@@ -584,7 +653,7 @@ se pone en 25 al exportar.
 ## Preferencias
 
 `⚙` en la barra de acciones o Vista ▸ Preferencias… (⌘,) abre un diálogo
-con seis pestañas:
+con siete pestañas:
 
 * **Apariencia**: color de acento (presets o personalizado, con vista previa
   en vivo) y transparencia de la ventana.
@@ -601,6 +670,9 @@ con seis pestañas:
 * **Descarga**: plazos, unir plazos y abrir al terminar como valores
   iniciales de `Obtener datos…`; tamaño y antigüedad máximos de la caché y
   `Vaciar caché`.
+* **Áreas / FIR**: tabla de áreas de descarga (código, nombre, N/S/W/E,
+  habilitada, a verificar), margen de seguridad, formato de coordenadas,
+  exportar/importar (ver «Áreas de descarga por FIR»).
 * **WAFS**: convertir a WAFS al descargar y al abrir archivos locales,
   rango de FL (por defecto FL050–FL530), ampliar el rango si la fuente trae
   niveles por debajo de 850 o por encima de 100 hPa, y extrapolar con el

@@ -28,6 +28,7 @@ from .config import (
 from .theme import build_stylesheet, generate_palette
 from .grib_reader import KELVIN, fl_to_hpa, fmt_dt, speed_dir_from_uv
 from .dialogs.settings_dialog import SettingsDialog
+from . import areas as areasmod
 from .widgets.welcome_widget import WelcomeWidget
 from .widgets.control_panel import ControlPanel
 from .wind_plot import PROJECTIONS, WIND_STYLES, GRID_STEPS
@@ -270,6 +271,7 @@ class MainWindow(QMainWindow):
         # ── Capa de límites de FIR ──
         self.plot.on_click = self._on_map_click
         self._load_fir_layer(redraw=False)
+        self._apply_area_layer(redraw=False)
 
         # ── Eventos del canvas ──
         self.plot.canvas.mpl_connect("motion_notify_event", self._on_motion)
@@ -491,6 +493,11 @@ class MainWindow(QMainWindow):
         self._menu_fir.addSeparator()
         self._add_action(self._menu_fir, "Extremos y cobertura…", lambda: self.open_fir_dialog(1))
         self._add_action(self._menu_fir, "Configurar FIR…", lambda: self.open_fir_dialog(0))
+        self._menu_fir.addSeparator()
+        self._act_area = self._add_action(self._menu_fir, "Rectángulos del área de descarga",
+                                          self.set_area_draw)
+        self._act_area.setCheckable(True)
+        self._add_action(self._menu_fir, "Áreas de descarga…", self.open_areas_dialog)
         self._sync_view_menu()
         vista.addSeparator()
         act_prefs = self._add_action(vista, "Preferencias…", self._open_settings, "Ctrl+,")
@@ -536,6 +543,10 @@ class MainWindow(QMainWindow):
                 act.blockSignals(False)
             self._act_fir_nb.setEnabled(on)
             self.panel.set_fir_options(on, nb)
+        if hasattr(self, "_act_area"):
+            self._act_area.blockSignals(True)
+            self._act_area.setChecked(bool(self._cfg.get("download_area_draw", False)))
+            self._act_area.blockSignals(False)
 
     def _menu_set_option(self, key, value):
         """Opción de VIENTO / MAPA elegida desde el menú: se refleja en el
@@ -736,11 +747,17 @@ class MainWindow(QMainWindow):
             r = self._reader
             region = (float(r.lats.max()), float(r.lats.min()),
                       float(r.lons.min()), float(r.lons.max()))
-        dlg = DownloadDialog(self, cfg=self._cfg, dest_dir=working_dir(self._cfg), region=region,
-                             source_key=self.cb_source.currentData())
+        dlg = DownloadDialog(self, cfg=self._cfg, dest_dir=working_dir(self._cfg), region=None,
+                             source_key=self.cb_source.currentData(),
+                             regions_fn=lambda: self._fir_regions)
         if region is not None:
             dlg.enable_domain_button(region)
-        if dlg.exec() and dlg.downloaded_paths:
+        ok = dlg.exec()
+        # El diálogo deja en la configuración el último modo y las casillas
+        # del bloque Área (también si se cerró sin bajar)
+        save_config(self._cfg)
+        self._apply_area_layer()
+        if ok and dlg.downloaded_paths:
             first = dlg.downloaded_paths[0]
             self._cfg["last_directory"] = os.path.dirname(first)
             if dlg.source is not None:
@@ -948,7 +965,12 @@ class MainWindow(QMainWindow):
             return f"{r.replace('p', ',')}°" if "p" in r and r[0].isdigit() else r
         if res:
             line2 += f"  ·  {deg(res)}"
-            lines[1] = line2
+        area = prov.get("area") or {}
+        if area.get("etiqueta"):
+            line2 += f"  ·  área {area['etiqueta']}"
+            if area.get("cubre") is False:
+                line2 += " (incompleta)"
+        lines[1] = line2
         if prov.get("regrillado"):
             # Tercer renglón corto: el panel tiene ancho fijo y no ajusta texto
             src_res = prov.get("resolucion_descargada")
@@ -1159,6 +1181,54 @@ class MainWindow(QMainWindow):
         self.set_status(text.splitlines()[0])
         QToolTip.showText(QCursor.pos(), text.replace("\n", "<br>"), self.plot.canvas)
 
+    # ── Área de descarga (rectángulos) ───────────────────────────────────────
+
+    def area_layer_geometry(self):
+        """(envolvente, [(código, región)]) según la última selección del
+        bloque Área de «Obtener datos…», o (None, []) si no se dibuja."""
+        c = self._cfg
+        if not c.get("download_area_draw", False):
+            return None, []
+        mode = c.get("download_area_mode", "fir")
+        if mode == "fir":
+            table = areasmod.areas_from_config(c)
+            codes = [k for k in (c.get("download_area_codes") or []) if areasmod.find_area(table, k)]
+            chosen = [areasmod.find_area(table, k) for k in codes]
+            env = areasmod.envelope(chosen, float(c.get("areas_margin_deg", areasmod.DEFAULT_MARGIN_DEG)))
+            return env, [(a.code, a.region) for a in chosen]
+        mr = c.get("download_manual_region")
+        if mr and len(mr) == 4:
+            return tuple(float(v) for v in mr), []
+        return None, []
+
+    def _apply_area_layer(self, redraw=True):
+        env, boxes = self.area_layer_geometry()
+        self.plot.set_download_area(env, boxes)
+        self._sync_view_menu()
+        if not redraw:
+            return
+        if self._reader is not None:
+            self.redraw()
+        else:
+            self.plot.draw_empty()
+
+    def set_area_draw(self, on: bool):
+        """Vista ▸ FIR ▸ Rectángulos del área de descarga."""
+        on = bool(on)
+        if self._cfg.get("download_area_draw", False) != on:
+            self._cfg["download_area_draw"] = on
+            save_config(self._cfg)
+        self._apply_area_layer()
+
+    def open_areas_dialog(self):
+        """Tabla de áreas (la misma que Preferencias ▸ Áreas / FIR)."""
+        from .dialogs.areas_dialog import AreasDialog
+        dlg = AreasDialog(self, cfg=self._cfg, regions_fn=lambda: self._fir_regions)
+        if dlg.exec():
+            self._cfg.update(dlg.values())
+            save_config(self._cfg)
+            self._apply_area_layer()
+
     def cursor_text(self, lon: float, lat: float) -> str:
         txt = f"Lat {lat:7.2f}   Lon {lon:8.2f}"
         cur = self._current
@@ -1315,6 +1385,7 @@ class MainWindow(QMainWindow):
         self.panel.set_options(self._map_options_from_cfg())
         self._sync_view_menu()
         self._refresh_sources_combo()
+        self._apply_area_layer(redraw=False)
         if values.get("projection", old_proj) != old_proj:
             self.panel.set_projection(values["projection"])
             self.set_projection(values["projection"])     # redibuja y guarda

@@ -80,6 +80,7 @@ class WAFSSource(Source):
     cycles = [0, 6, 12, 18]
     availability_lag_h = 5.0
     region_filter = "local"
+    grid_resolution_deg = 0.25
 
     def steps(self, params=None, cycle=None):
         return list(range(6, 25)) + list(range(27, 49, 3)) + list(range(54, 121, 6))

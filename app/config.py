@@ -84,6 +84,14 @@ DEFAULTS = {
     "download_h_from": 6,
     "download_h_to": 12,
     "download_h_step": 3,
+    # Áreas de descarga por FIR (ver app/areas.py): tabla, margen y formato
+    "areas": [],                        # vacío = las cinco FIR argentinas por defecto
+    "areas_margin_deg": 1.0,            # margen que se suma por fuera al usar el área
+    "areas_coord_format": "decimal",    # 'decimal' | 'gm' (grados-minutos con hemisferio)
+    "download_area_mode": "fir",        # último modo del bloque Área: 'fir' | 'manual'
+    "download_area_codes": ["SARR", "SACF", "SAMF", "SAEF", "SAVF"],   # casillas marcadas
+    "download_manual_region": [4.0, -64.0, -90.0, -22.0],              # última zona manual (N, S, W, E)
+    "download_area_draw": False,        # dibujar los rectángulos del área en el mapa
     # Formato WAFS (formato interno único del visor)
     "wafs_convert": True,               # convertir a WAFS lo que se descarga (fuentes de altura)
     "wafs_convert_local": True,         # convertir también los archivos locales al abrirlos

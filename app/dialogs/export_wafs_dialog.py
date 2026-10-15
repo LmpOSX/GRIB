@@ -277,6 +277,7 @@ class ExportWafsDialog(GlassDialog):
             basename=(self.ed_name.text().strip() or None),
             idx=self.chk_idx.isChecked(),
             convert_opts=wf.options_from_config(self._cfg) or {},
+            provenance=dict(self._prov) if self._prov else None,
         )
 
     def _validate(self, opts):

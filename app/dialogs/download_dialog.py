@@ -1,15 +1,21 @@
 # -*- coding: utf-8 -*-
 """Diálogo «Obtener datos…»: fuente, corrida y plazos entre los que la fuente
 ofrece, variables, niveles (si es de altura), parámetros propios de la
-fuente, zona y destino. La descarga corre en un hilo con caché, progreso y
-cancelación; al terminar puede abrir el archivo."""
+fuente, área y destino. La descarga corre en un hilo con caché, progreso y
+cancelación; al terminar puede abrir el archivo.
+
+El bloque **Área** tiene dos modos excluyentes (ver app/areas.py): *manual*
+(cuatro campos) y *por FIR* (una casilla por área habilitada en la
+configuración; los campos se recalculan solos como la envolvente de las
+marcadas más el margen y quedan bloqueados). Se recuerdan el último modo y
+las casillas marcadas."""
 import os
 
 from PyQt6.QtCore import Qt, QThread, pyqtSignal
 from PyQt6.QtWidgets import (
     QVBoxLayout, QHBoxLayout, QGridLayout, QLabel, QPushButton, QFrame,
-    QComboBox, QSpinBox, QDoubleSpinBox, QCheckBox, QLineEdit,
-    QProgressBar, QFileDialog, QMessageBox, QWidget,
+    QComboBox, QSpinBox, QDoubleSpinBox, QCheckBox, QLineEdit, QRadioButton,
+    QButtonGroup, QProgressBar, QFileDialog, QMessageBox, QWidget,
 )
 
 from .glass_dialog import GlassDialog, add_shadow as _add_shadow
@@ -17,6 +23,8 @@ from ..sources import (DownloadJob, DownloadError, DownloadCancelled, enabled_so
                        get_source, source_config, source_label, all_sources)
 from ..sources.cache import DownloadCache
 from ..widgets.params_form import ParamsForm
+from ..widgets.areas_editor import CoordEdit
+from .. import areas as A
 
 
 class _Worker(QThread):
@@ -49,17 +57,23 @@ class _Worker(QThread):
 class DownloadDialog(GlassDialog):
     """Devuelve en `downloaded_paths` las rutas bajadas si se aceptó."""
 
-    def __init__(self, parent=None, cfg=None, dest_dir=".", region=None, source_key=None):
+    def __init__(self, parent=None, cfg=None, dest_dir=".", region=None, source_key=None,
+                 regions_fn=None):
         super().__init__(parent)
         self.setWindowTitle("Obtener datos")
         self.setMinimumWidth(700)
-        self._cfg = cfg or {}
+        self._cfg = cfg if cfg is not None else {}
         self.downloaded_paths = []
         self.open_after = True
+        self.last_provenance = None
         self._worker = None
         self._dest_dir = dest_dir
         self._region = region
         self._domain_region = None
+        self._regions_fn = regions_fn       # capa FIR (para «Extremos de la capa FIR»)
+        self._areas = [a for a in A.areas_from_config(self._cfg)]
+        self._area_checks = {}
+        self._area_updating = False
         self.source = None
         self._build_ui()
         key = source_key or self._cfg.get("source") or "gfs"
@@ -68,6 +82,7 @@ class DownloadDialog(GlassDialog):
         self._on_source_changed()
         if region is not None:
             self.set_region(*region)
+        self._refresh_area()
 
     # ── Construcción ─────────────────────────────────────────────────────────
 
@@ -180,24 +195,94 @@ class DownloadDialog(GlassDialog):
         lv_lay.addLayout(row)
         lay.addWidget(self.levels_box)
 
-        # ── Zona ──
-        self.lbl_zone = self._section(lay, "Zona geográfica (grados; longitudes −180…180)")
+        # ── Área ──
+        self.lbl_zone = self._section(lay, "Área (grados; longitudes −180…180)")
         self.zone_box = QWidget()
-        g = QGridLayout(self.zone_box)
-        g.setContentsMargins(0, 0, 0, 0)
-        g.setHorizontalSpacing(8)
+        zl = QVBoxLayout(self.zone_box)
+        zl.setContentsMargins(0, 0, 0, 0)
+        zl.setSpacing(4)
+        row = QHBoxLayout()
+        self.rb_manual = QRadioButton("Manual")
+        self.rb_fir = QRadioButton("Por FIR")
+        self._mode_group = QButtonGroup(self)
+        self._mode_group.addButton(self.rb_manual)
+        self._mode_group.addButton(self.rb_fir)
+        (self.rb_fir if self._cfg.get("download_area_mode", "fir") == "fir" else self.rb_manual).setChecked(True)
+        self.rb_manual.toggled.connect(self._on_mode_changed)
+        row.addWidget(self.rb_manual)
+        row.addWidget(self.rb_fir)
+        row.addSpacing(12)
+        self.btn_areas = QPushButton("Configurar áreas…")
+        self.btn_areas.clicked.connect(self._configure_areas)
+        row.addWidget(self.btn_areas)
+        row.addStretch()
+        self.chk_draw = QCheckBox("Mostrar el área en el mapa")
+        self.chk_draw.setChecked(bool(self._cfg.get("download_area_draw", False)))
+        row.addWidget(self.chk_draw)
+        zl.addLayout(row)
+        # Casillas por FIR (una fila de cinco)
+        self.fir_box = QWidget()
+        fl = QVBoxLayout(self.fir_box)
+        fl.setContentsMargins(0, 0, 0, 0)
+        fl.setSpacing(2)
+        self.area_grid_w = QWidget()
+        self.area_grid = QGridLayout(self.area_grid_w)
+        self.area_grid.setContentsMargins(0, 0, 0, 0)
+        self.area_grid.setHorizontalSpacing(10)
+        self.area_grid.setVerticalSpacing(2)
+        fl.addWidget(self.area_grid_w)
+        row = QHBoxLayout()
+        self.btn_all = QPushButton("Todas")
+        self.btn_all.clicked.connect(lambda: self._set_all_areas(True))
+        self.btn_none = QPushButton("Ninguna")
+        self.btn_none.clicked.connect(lambda: self._set_all_areas(False))
+        row.addWidget(self.btn_all)
+        row.addWidget(self.btn_none)
+        row.addSpacing(12)
+        row.addWidget(QLabel("Margen"))
+        self.spin_margin = QDoubleSpinBox()
+        self.spin_margin.setRange(0.0, 10.0)
+        self.spin_margin.setDecimals(2)
+        self.spin_margin.setSingleStep(0.25)
+        self.spin_margin.setSuffix("°")
+        self.spin_margin.setValue(float(self._cfg.get("areas_margin_deg", A.DEFAULT_MARGIN_DEG)))
+        self.spin_margin.setToolTip("Se suma por fuera a cada límite de la envolvente")
+        self.spin_margin.valueChanged.connect(lambda _v: self._refresh_area())
+        row.addWidget(self.spin_margin)
+        row.addStretch()
+        fl.addLayout(row)
+        zl.addWidget(self.fir_box)
+        self._build_area_checks()
+        # Modo manual: todo el globo / dominio del archivo
+        self.manual_box = QWidget()
+        row = QHBoxLayout(self.manual_box)
+        row.setContentsMargins(0, 0, 0, 0)
         self.chk_global = QCheckBox("Todo el globo")
         self.chk_global.toggled.connect(self._on_global_toggled)
-        g.addWidget(self.chk_global, 0, 0, 1, 2)
-        self.lat_n = self._coord(g, "Lat norte", 1, 0, -90, 90, 4.0)
-        self.lat_s = self._coord(g, "Lat sur", 1, 2, -90, 90, -64.0)
-        self.lon_w = self._coord(g, "Lon oeste", 2, 0, -180, 360, -90.0)
-        self.lon_e = self._coord(g, "Lon este", 2, 2, -180, 360, -22.0)
+        row.addWidget(self.chk_global)
         self.btn_domain = QPushButton("Dominio del archivo abierto")
         self.btn_domain.setEnabled(False)
         self.btn_domain.clicked.connect(
             lambda: self._domain_region and self.set_region(*self._domain_region))
-        g.addWidget(self.btn_domain, 1, 4, 2, 1)
+        row.addWidget(self.btn_domain)
+        row.addStretch()
+        zl.addWidget(self.manual_box)
+        # Cuatro campos en una fila (editables en manual, bloqueados por FIR)
+        g = QGridLayout()
+        g.setContentsMargins(0, 0, 0, 0)
+        g.setHorizontalSpacing(6)
+        fmt = self._cfg.get("areas_coord_format", "decimal")
+        mr = self._cfg.get("download_manual_region") or [4.0, -64.0, -90.0, -22.0]
+        self.lat_n = self._coord(g, "Lat N", 0, 0, "lat", float(mr[0]), fmt)
+        self.lat_s = self._coord(g, "Lat S", 0, 2, "lat", float(mr[1]), fmt)
+        self.lon_w = self._coord(g, "Lon W", 0, 4, "lon", float(mr[2]), fmt)
+        self.lon_e = self._coord(g, "Lon E", 0, 6, "lon", float(mr[3]), fmt)
+        g.setColumnStretch(8, 1)
+        zl.addLayout(g)
+        self.lbl_size = QLabel("")
+        self.lbl_size.setObjectName("Hint")
+        self.lbl_size.setWordWrap(True)
+        zl.addWidget(self.lbl_size)
         lay.addWidget(self.zone_box)
 
         # ── Destino ──
@@ -243,15 +328,160 @@ class DownloadDialog(GlassDialog):
         row.addWidget(self.btn_download)
         lay.addLayout(row)
 
-    def _coord(self, grid, text, r, c, lo, hi, val):
+    def _coord(self, grid, text, r, c, kind, val, fmt="decimal"):
         grid.addWidget(QLabel(text), r, c, alignment=Qt.AlignmentFlag.AlignRight)
-        sb = QDoubleSpinBox()
-        sb.setRange(lo, hi)
-        sb.setDecimals(2)
-        sb.setSingleStep(1.0)
-        sb.setValue(val)
-        grid.addWidget(sb, r, c + 1)
-        return sb
+        ed = CoordEdit(kind, val, fmt)
+        ed.value_changed.connect(lambda _v: self._refresh_area())
+        ed.invalid.connect(lambda msg: self.lbl_size.setText("Coordenada inválida: " + msg))
+        grid.addWidget(ed, r, c + 1)
+        return ed
+
+    # ── Área ─────────────────────────────────────────────────────────────────
+
+    def _build_area_checks(self):
+        """Una casilla por área habilitada en la configuración."""
+        self._clear_layout(self.area_grid)
+        self._area_checks = {}
+        wanted = set(self._cfg.get("download_area_codes") or A.ARGENTINA_CODES)
+        enabled = [a for a in self._areas if a.enabled]
+        cols = 5
+        for k, a in enumerate(enabled):
+            c = QCheckBox(f"{a.code}  {a.name}".strip())
+            if a.verify:
+                c.setToolTip(A.VERIFY_NOTE)
+            c.setChecked(a.code in wanted)
+            c.toggled.connect(lambda _on: self._refresh_area())
+            self._area_checks[a.code] = c
+            self.area_grid.addWidget(c, k // cols, k % cols)
+        if not enabled:
+            self.area_grid.addWidget(QLabel("No hay áreas habilitadas: Configurar áreas…"), 0, 0)
+
+    def area_mode(self):
+        return "fir" if self.rb_fir.isChecked() else "manual"
+
+    def selected_codes(self):
+        """Códigos marcados, en el orden de la tabla."""
+        return [a.code for a in self._areas if a.code in self._area_checks
+                and self._area_checks[a.code].isChecked()]
+
+    def margin(self):
+        return float(self.spin_margin.value())
+
+    def fir_envelope(self):
+        """Envolvente de las áreas marcadas más el margen, o None."""
+        codes = set(self.selected_codes())
+        return A.envelope([a for a in self._areas if a.code in codes], self.margin())
+
+    def _set_all_areas(self, on):
+        self._area_updating = True
+        try:
+            for c in self._area_checks.values():
+                c.setChecked(on)
+        finally:
+            self._area_updating = False
+        self._refresh_area()
+
+    def _on_mode_changed(self, _checked):
+        manual = self.rb_manual.isChecked()
+        if manual:
+            # Los campos calculados quedan como punto de partida
+            env = self.fir_envelope() if not self.chk_global.isChecked() else None
+            if env is not None:
+                self._set_fields(env)
+        self._refresh_area()
+
+    def _set_fields(self, region):
+        top, bottom, left, right = region
+        for ed, v in ((self.lat_n, top), (self.lat_s, bottom), (self.lon_w, left), (self.lon_e, right)):
+            ed.set_value(v)
+
+    def _refresh_area(self):
+        """Recalcula los campos (modo por FIR), habilita lo que corresponde
+        y muestra el tamaño resultante."""
+        if self._area_updating or not hasattr(self, "lbl_size"):
+            return
+        fir = self.area_mode() == "fir"
+        self.fir_box.setVisible(fir)
+        self.manual_box.setVisible(not fir)
+        if fir:
+            env = self.fir_envelope()
+            if env is not None:
+                self._set_fields(env)
+        glob = (not fir) and self.chk_global.isChecked()
+        for ed in (self.lat_n, self.lat_s, self.lon_w, self.lon_e):
+            ed.setEnabled(not fir and not glob)
+        region = self.region()
+        if fir and not self.selected_codes():
+            self.lbl_size.setText("Marcá al menos una FIR (o pasá a modo manual).")
+        elif region is None:
+            self.lbl_size.setText("Todo el globo.")
+        else:
+            res = self.source.grid_resolution(self.params()) if self.source is not None else None
+            n_msgs = self._n_messages()
+            txt = A.describe_size(region, res, n_msgs)
+            notes = []
+            if A.reaches_pole(region):
+                notes.append("llega al polo")
+            if A.crosses_greenwich(region):
+                notes.append("cruza el meridiano de Greenwich")
+            if fir:
+                notes.append(f"margen {self.margin():g}° incluido")
+            if notes:
+                txt += "  ·  " + ", ".join(notes)
+            self.lbl_size.setText(txt)
+
+    def _n_messages(self):
+        """Campos (variable × nivel × plazo) que se van a bajar, para la
+        estimación de tamaño."""
+        n_var = max(1, sum(1 for c in self.var_checks.values() if c.isChecked()))
+        n_lev = max(1, sum(1 for c in self.level_checks.values() if c.isChecked())) \
+            if self.level_checks else 1
+        return n_var * n_lev * max(1, len(self.hours()))
+
+    def region(self):
+        """Zona (top, bottom, left, right) con lo elegido, o None (global /
+        fuente sin zona)."""
+        if self.source is not None and self.source.region_filter == "ninguno":
+            return None
+        if self.area_mode() == "fir":
+            return self.fir_envelope()
+        if self.chk_global.isChecked():
+            return None
+        return (self.lat_n.value(), self.lat_s.value(), self.lon_w.value(), self.lon_e.value())
+
+    def _configure_areas(self):
+        from .areas_dialog import AreasDialog
+        dlg = AreasDialog(self, cfg=self._cfg, regions_fn=self._regions_fn)
+        if dlg.exec():
+            self._cfg.update(dlg.values())
+            self._areas = A.areas_from_config(self._cfg)
+            self._cfg["download_area_codes"] = self.selected_codes()
+            self._build_area_checks()
+            self.spin_margin.setValue(float(self._cfg.get("areas_margin_deg", A.DEFAULT_MARGIN_DEG)))
+            fmt = self._cfg.get("areas_coord_format", "decimal")
+            for ed in (self.lat_n, self.lat_s, self.lon_w, self.lon_e):
+                ed.set_format(fmt)
+            self._refresh_area()
+
+    def area_state(self):
+        """Claves de configuración con la última selección del bloque Área."""
+        return {"download_area_mode": self.area_mode(),
+                "download_area_codes": self.selected_codes(),
+                "download_manual_region": [self.lat_n.value(), self.lat_s.value(),
+                                           self.lon_w.value(), self.lon_e.value()],
+                "download_area_draw": self.chk_draw.isChecked(),
+                "areas_margin_deg": self.margin()}
+
+    def _sync_area_to_cfg(self):
+        self._cfg.update(self.area_state())
+
+    def done(self, result):
+        """Se recuerdan modo, casillas y zona manual aunque se cierre sin bajar."""
+        try:
+            self._sync_area_to_cfg()
+        except Exception:
+            pass
+        super().done(result)
 
     @staticmethod
     def _clear_layout(lay):
@@ -290,8 +520,9 @@ class DownloadDialog(GlassDialog):
         for k, (vk, name) in enumerate(src.variables):
             c = QCheckBox(name)
             c.setChecked(vk in src.default_variables)
+            c.toggled.connect(lambda _on: self._refresh_area())
             self.var_checks[vk] = c
-            self.var_grid.addWidget(c, k // 3, k % 3)
+            self.var_grid.addWidget(c, k // 5, k % 5)
         self.var_box.setVisible(bool(src.variables))
         # Parámetros propios
         self._clear_layout(self.params_lay)
@@ -307,9 +538,10 @@ class DownloadDialog(GlassDialog):
         self.level_checks = {}
         is_alt = src.kind == "altura" and bool(src.levels)
         if is_alt:
-            cols = 10
+            cols = 14
             for k, lv in enumerate(src.levels):
                 c = QCheckBox(f"{lv}")
+                c.toggled.connect(lambda _on: self._refresh_area())
                 self.level_checks[lv] = c
                 self.level_grid.addWidget(c, k // cols, k % cols)
             self._set_viewer_levels()
@@ -322,8 +554,9 @@ class DownloadDialog(GlassDialog):
         self.zone_box.setVisible(has_zone)
         default_region = getattr(src, "default_region", None)
         if has_zone and default_region and self._region is None:
-            self.set_region(*default_region)
+            self._set_fields(default_region)
         self._refresh_steps_hint()
+        self._refresh_area()
         self.adjustSize()
 
     def params(self):
@@ -340,6 +573,7 @@ class DownloadDialog(GlassDialog):
             c.setEnabled(ok)
             if not ok:
                 c.setChecked(False)
+        self._refresh_area()
 
     def _refresh_steps_hint(self):
         if self.source is None:
@@ -353,6 +587,7 @@ class DownloadDialog(GlassDialog):
             self.lbl_steps.setText(f"{len(chosen)} plazo(s): "
                                    + ", ".join(f"+{h}" for h in chosen[:12])
                                    + (" …" if len(chosen) > 12 else ""))
+        self._refresh_area()
 
     def _set_viewer_levels(self):
         p = self.source.merged_params(self.params())
@@ -365,16 +600,15 @@ class DownloadDialog(GlassDialog):
         for lv, c in self.level_checks.items():
             c.setChecked(lv in levels and self.source.level_enabled(lv, p))
 
-    def _on_global_toggled(self, on):
-        for sb in (self.lat_n, self.lat_s, self.lon_w, self.lon_e):
-            sb.setEnabled(not on)
+    def _on_global_toggled(self, _on):
+        self._refresh_area()
 
     def set_region(self, top, bottom, left, right):
-        self.lat_n.setValue(top)
-        self.lat_s.setValue(bottom)
-        self.lon_w.setValue(left)
-        self.lon_e.setValue(right)
+        """Zona manual explícita: pasa al modo manual con esos valores."""
+        self.rb_manual.setChecked(True)      # (al pasar a manual se copia la envolvente)
+        self._set_fields((top, bottom, left, right))
         self.chk_global.setChecked(False)
+        self._refresh_area()
 
     def enable_domain_button(self, region):
         """Botón «Dominio del archivo abierto» con la zona del archivo actual."""
@@ -395,10 +629,8 @@ class DownloadDialog(GlassDialog):
     def job(self):
         """DownloadJob con lo elegido en el diálogo."""
         day, cyc = self.cb_run.currentData() or self.source.latest_run()
-        region = None
-        if self.source.region_filter != "ninguno" and not self.chk_global.isChecked():
-            region = (self.lat_n.value(), self.lat_s.value(),
-                      self.lon_w.value(), self.lon_e.value())
+        region = self.region()
+        mode = self.area_mode() if region is not None else "manual"
         return DownloadJob(
             run_date=day, cycle=cyc, steps=self.hours(),
             variables=[k for k, c in self.var_checks.items() if c.isChecked()],
@@ -407,6 +639,8 @@ class DownloadDialog(GlassDialog):
             basename=self.name.text().strip() or None, merge=self.chk_merge.isChecked(),
             params=self.params(),
             suffix="_wafs" if (self._wafs_options() is not None and self.source.kind == "altura") else "",
+            area_mode=mode, area_codes=self.selected_codes() if mode == "fir" else [],
+            area_margin=self.margin() if mode == "fir" else 0.0,
         )
 
     # ── Descarga ─────────────────────────────────────────────────────────────
@@ -415,11 +649,11 @@ class DownloadDialog(GlassDialog):
         for w in self.findChildren(QWidget):
             if w not in (self.btn_cancel, self.progress, self.lbl_status):
                 if isinstance(w, (QPushButton, QCheckBox, QSpinBox, QDoubleSpinBox,
-                                  QComboBox, QLineEdit)):
+                                  QComboBox, QLineEdit, QRadioButton)):
                     w.setEnabled(not busy)
         if not busy:
-            self._on_global_toggled(self.chk_global.isChecked())
             self._refresh_levels()
+            self._refresh_area()
             self.btn_domain.setEnabled(self._domain_region is not None)
         self.btn_cancel.setText("Cancelar" if busy else "Cerrar")
 
@@ -433,11 +667,17 @@ class DownloadDialog(GlassDialog):
                              max_days=float(self._cfg.get("cache_max_days", 3)))
 
     def _start(self):
+        if self.area_mode() == "fir" and self.source.region_filter != "ninguno" \
+                and not self.selected_codes():
+            QMessageBox.warning(self, "Obtener datos",
+                                "Marcá al menos una FIR en el bloque Área, o pasá a modo manual.")
+            return
         job = self.job()
         err = self.source.validate(job)
         if err:
             QMessageBox.warning(self, "Obtener datos", err)
             return
+        self._sync_area_to_cfg()
         existing = [p for p in job.file_paths(self.source) if os.path.exists(p)]
         if existing:
             r = QMessageBox.question(
@@ -473,6 +713,11 @@ class DownloadDialog(GlassDialog):
         self.downloaded_paths = paths
         self.open_after = self.chk_open.isChecked()
         self.lbl_status.setText("Descarga completa: " + ", ".join(os.path.basename(p) for p in paths))
+        from ..sources import read_provenance
+        self.last_provenance = read_provenance(paths[0]) if paths else None
+        aviso = ((self.last_provenance or {}).get("area") or {}).get("aviso")
+        if aviso:
+            QMessageBox.warning(self, "Obtener datos", aviso)
         self.accept()
 
     def _on_cancel(self):

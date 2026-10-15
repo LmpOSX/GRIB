@@ -143,8 +143,12 @@ def smn_wrf_to_grib(data, region=None, res_deg=0.04, variables=("viento10", "T2"
             raise ValueError("La zona pedida no se cruza con el dominio del WRF del SMN "
                              f"({np.nanmin(lat2d):.1f}…{np.nanmax(lat2d):.1f}, "
                              f"{np.nanmin(lon2d):.1f}…{np.nanmax(lon2d):.1f}).")
-    lat1d = np.arange(np.ceil(lat_lo / res_deg) * res_deg, lat_hi + 1e-9, res_deg)
-    lon1d = np.arange(np.ceil(lon_lo / res_deg) * res_deg, lon_hi + 1e-9, res_deg)
+    # Grilla de salida que encierra la zona (redondeo hacia afuera), sin
+    # salirse del dominio del modelo
+    lat1d = np.arange(np.floor(lat_lo / res_deg + 1e-9) * res_deg, lat_hi + res_deg - 1e-9, res_deg)
+    lon1d = np.arange(np.floor(lon_lo / res_deg + 1e-9) * res_deg, lon_hi + res_deg - 1e-9, res_deg)
+    lat1d = lat1d[(lat1d >= np.nanmin(lat2d) - 1e-9) & (lat1d <= np.nanmax(lat2d) + 1e-9)]
+    lon1d = lon1d[(lon1d >= np.nanmin(lon2d) - 1e-9) & (lon1d <= np.nanmax(lon2d) + 1e-9)]
     lat1d = np.round(lat1d, 6)
     lon1d = np.round(lon1d, 6)
     out = bytearray()

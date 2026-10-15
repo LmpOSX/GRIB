@@ -171,6 +171,7 @@ class IconSource(Source):
     cycles = [0, 6, 12, 18]
     availability_lag_h = 5.0
     region_filter = "local"
+    grid_resolution_deg = 0.25
 
     def steps(self, params=None, cycle=None):
         last = 120 if cycle in (6, 18) else 180

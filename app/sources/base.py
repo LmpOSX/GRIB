@@ -80,9 +80,15 @@ class DownloadJob:
     """Qué bajar de una fuente."""
 
     def __init__(self, run_date, cycle, steps, variables=None, levels=None, region=None,
-                 dest_dir=".", basename=None, merge=True, params=None, suffix=""):
+                 dest_dir=".", basename=None, merge=True, params=None, suffix="",
+                 area_mode="manual", area_codes=None, area_margin=0.0):
         self.run_date = run_date              # datetime.date UTC
         self.suffix = suffix                  # p. ej. '_wafs' cuando se convierte al bajar
+        # Área de descarga (ver app/areas.py): 'manual' o 'fir' con los códigos
+        # de las áreas marcadas; `region` ya es la envolvente con el margen.
+        self.area_mode = area_mode if area_mode in ("manual", "fir") else "manual"
+        self.area_codes = list(area_codes or []) if self.area_mode == "fir" else []
+        self.area_margin = float(area_margin or 0.0)
         self.cycle = int(cycle)
         self.steps = sorted({int(s) for s in steps})
         self.variables = list(variables or [])
@@ -98,8 +104,22 @@ class DownloadJob:
         return dt.datetime(self.run_date.year, self.run_date.month, self.run_date.day,
                            self.cycle, tzinfo=dt.timezone.utc)
 
+    @property
+    def area_tag(self):
+        """'SAEF+SACF' o 'MANUAL': va en el nombre del archivo y en la procedencia."""
+        from .. import areas
+        return areas.area_tag(self.area_codes, self.area_mode)
+
     def file_paths(self, source):
-        base = (self.basename or source.default_basename(self)) + (self.suffix or "")
+        """Rutas de salida. El nombre automático lleva la etiqueta del área
+        (`..._SAEF+SACF_...` o `..._MANUAL`) salvo que la zona sea global."""
+        if self.basename:
+            base = self.basename
+        else:
+            base = source.default_basename(self)
+            if self.region is not None:
+                base += "_" + self.area_tag
+        base += (self.suffix or "")
         if self.merge:
             return [os.path.join(self.dest_dir, base + source.file_ext)]
         return [os.path.join(self.dest_dir, f"{base}_f{h:03d}{source.file_ext}") for h in self.steps]
@@ -172,6 +192,21 @@ class Source:
     cycles = [0, 6, 12, 18]
     availability_lag_h = 4.0
     region_filter = "servidor"   # 'servidor', 'local' o 'ninguno'
+    grid_resolution_deg = None   # resolución de la grilla entregada (grados) o None
+
+    def grid_resolution(self, params=None):
+        """Resolución (grados) de la grilla que entrega la fuente con estos
+        parámetros, o None si no se conoce (fuente genérica). Sirve para
+        redondear la zona hacia afuera y estimar el tamaño de la descarga."""
+        return self.grid_resolution_deg
+
+    def server_region(self, job):
+        """Zona que se le pide al servidor: la del trabajo redondeada hacia
+        afuera a la grilla del modelo (nunca más chica que la pedida)."""
+        from .. import areas
+        if job.region is None:
+            return None
+        return areas.round_outward(job.region, self.grid_resolution(job.params))
 
     # ── Descripción ──────────────────────────────────────────────────────────
 
@@ -286,8 +321,35 @@ class Source:
              "variables": job.variables, "niveles_hpa": job.levels, "zona": job.region,
              "parametros": self.merged_params(job.params), "descargado": dt.datetime.now(
                  dt.timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")}
+        if job.region is not None:
+            from .. import areas
+            d["area"] = areas.area_info(job.area_mode, job.area_codes, job.area_margin, job.region,
+                                        self.server_region(job))
         d.update(effective or {})
         return d
+
+    def check_region(self, data, job):
+        """Comprueba que la grilla obtenida contenga la zona pedida. Devuelve
+        un dict para la procedencia: zona_obtenida, cubre y, si quedó más
+        chica, `aviso` con los lados que faltan."""
+        if job.region is None or self.expect != "grib":
+            return {}
+        from .. import areas
+        from ..regrid import grid_bbox
+        try:
+            bbox = grid_bbox(data)
+        except Exception:
+            return {}
+        if bbox is None:
+            return {}
+        lonmin, lonmax, latmin, latmax = bbox
+        missing = areas.check_coverage(job.region, bbox, tol=1e-3)
+        info = {"zona_obtenida": [latmax, latmin, lonmin, lonmax], "cubre": not missing}
+        if missing:
+            info["aviso"] = ("La grilla obtenida es más chica que la zona pedida "
+                             f"({job.area_tag}): " + "; ".join(missing)
+                             + ". El servidor recortó distinto de lo pedido.")
+        return info
 
     def test_connection(self, params=None, credentials=None, fetch_fn=None):
         """Verifica acceso; por defecto pide el primer plazo de la última
@@ -407,6 +469,10 @@ class Source:
                     raise DownloadError(f"{self.name}: no se pudo procesar el plazo +{step} h: "
                                         f"{type(exc).__name__}: {exc}") from exc
                 effective.update(eff)
+                if i == 0:
+                    cov = self.check_region(data, job)
+                    if cov:
+                        effective["area"] = dict(effective.get("area") or {}, **cov)
                 if convert:
                     if progress_cb:
                         progress_cb(i, n, f"{msg}: convirtiendo a WAFS…", (i + 1) / n)
@@ -431,8 +497,13 @@ class Source:
                 except OSError:
                     pass
             raise
+        self.last_provenance = None
         if write_provenance:
+            area_eff = effective.pop("area", None)
             prov = self.provenance(job, effective)
+            if area_eff:
+                prov["area"] = dict(prov.get("area") or {}, **area_eff)
+            self.last_provenance = prov
             for p in written:
                 with open(p + ".json", "w", encoding="utf-8") as fh:
                     json.dump(prov, fh, ensure_ascii=False, indent=2)

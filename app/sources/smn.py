@@ -44,6 +44,9 @@ class SMNSource(Source):
     def steps(self, params=None, cycle=None):
         return list(range(0, 73))
 
+    def grid_resolution(self, params=None):
+        return float(self.merged_params(params)["resolucion"])
+
     def default_basename(self, job):
         return f"smn_wrf_{job.run_date:%Y%m%d}_{job.cycle:02d}z"
 
