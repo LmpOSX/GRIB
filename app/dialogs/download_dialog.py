@@ -305,6 +305,12 @@ class DownloadDialog(GlassDialog):
         self.chk_open = QCheckBox("Abrir en el visor al terminar")
         self.chk_open.setChecked(bool(self._cfg.get("download_open", True)))
         g.addWidget(self.chk_open, 3, 1)
+        self.chk_wafs = QCheckBox("Convertir a WAFS (FL cada 1000 ft, según Preferencias ▸ WAFS)")
+        self.chk_wafs.setChecked(bool(self._cfg.get("wafs_convert", True)))
+        self.chk_wafs.setToolTip("El valor inicial es «Convertir a WAFS por defecto» de "
+                                 "Preferencias ▸ WAFS. Sin marcar, el archivo queda en los "
+                                 "niveles de presión de la fuente.")
+        g.addWidget(self.chk_wafs, 4, 1)
         lay.addLayout(g)
 
         # ── Progreso y botones ──
@@ -503,6 +509,7 @@ class DownloadDialog(GlassDialog):
         kind = "altura (niveles de presión)" if src.kind == "altura" else "superficie"
         self.lbl_model.setText(f"{src.model}  ·  {kind}"
                                + ("  ·  ✓ niveles OACI por FL" if src.flight_levels else ""))
+        self._refresh_wafs_check()
         # Corridas
         self.cb_run.clear()
         for day, cyc in src.available_runs(count=12):
@@ -638,7 +645,7 @@ class DownloadDialog(GlassDialog):
             region=region, dest_dir=self.dest.text().strip() or ".",
             basename=self.name.text().strip() or None, merge=self.chk_merge.isChecked(),
             params=self.params(),
-            suffix="_wafs" if (self._wafs_options() is not None and self.source.kind == "altura") else "",
+            suffix="_wafs" if self._wafs_options() is not None else "",
             area_mode=mode, area_codes=self.selected_codes() if mode == "fir" else [],
             area_margin=self.margin() if mode == "fir" else 0.0,
         )
@@ -654,13 +661,38 @@ class DownloadDialog(GlassDialog):
         if not busy:
             self._refresh_levels()
             self._refresh_area()
+            self._refresh_wafs_check()
             self.btn_domain.setEnabled(self._domain_region is not None)
         self.btn_cancel.setText("Cancelar" if busy else "Cerrar")
 
+    def _refresh_wafs_check(self):
+        """La casilla «Convertir a WAFS» sólo tiene sentido en fuentes de altura
+        en niveles de presión; lo que ya viene por FL no se toca."""
+        src = self.source
+        if src.kind != "altura":
+            self.chk_wafs.setEnabled(False)
+            self.chk_wafs.setText("Convertir a WAFS (no aplica: fuente de superficie)")
+        elif src.flight_levels:
+            self.chk_wafs.setEnabled(False)
+            self.chk_wafs.setText("Convertir a WAFS (ya viene por FL: no se toca)")
+        else:
+            self.chk_wafs.setEnabled(True)
+            self.chk_wafs.setText("Convertir a WAFS (FL cada 1000 ft, según Preferencias ▸ WAFS)")
+
+    def wafs_enabled(self):
+        """True si esta descarga se convierte a WAFS: la casilla del diálogo
+        (que arranca con «Convertir a WAFS por defecto» de Preferencias) en
+        una fuente de altura en niveles de presión."""
+        return (self.chk_wafs.isChecked() and self.source.kind == "altura"
+                and not self.source.flight_levels)
+
     def _wafs_options(self):
-        """Conversión a WAFS según Preferencias (None = desactivada)."""
+        """Opciones de conversión a WAFS (rango, modo, extrapolación) de
+        Preferencias ▸ WAFS, o None si la casilla del diálogo está sin marcar."""
         from ..wafs_format import options_from_config
-        return options_from_config(self._cfg)
+        if not self.wafs_enabled():
+            return None
+        return options_from_config(dict(self._cfg, wafs_convert=True))
 
     def _cache(self):
         return DownloadCache(max_mb=float(self._cfg.get("cache_max_mb", 500)),

@@ -538,6 +538,36 @@ class TestDialogoDescargaArea(_QtBase):
         self.assertEqual(d.region(), (-28.0, -37.0, -62.0, -53.0))
         self.assertEqual(d.lat_n.text(), "28°00.0'S")
 
+    def test_casilla_convertir_a_wafs_en_el_dialogo(self):
+        from app.sources import get_source
+        d = self._dialog(wafs_convert=True)
+        self.assertTrue(d.chk_wafs.isChecked())
+        self.assertTrue(d.chk_wafs.isEnabled())
+        self.assertEqual(d.job().suffix, "_wafs")
+        self.assertIsNotNone(d._wafs_options())
+        d.chk_wafs.setChecked(False)
+        self.assertEqual(d.job().suffix, "")
+        self.assertIsNone(d._wafs_options())
+        d.close()
+        d = self._dialog(wafs_convert=False)
+        self.assertFalse(d.chk_wafs.isChecked())
+        self.assertEqual(d.job().suffix, "")
+        d.chk_wafs.setChecked(True)
+        self.assertEqual(d.job().suffix, "_wafs")
+        self.assertIsNotNone(d._wafs_options())
+        # Fuente de superficie o que ya viene por FL: la casilla no aplica
+        for key in ("smn_wrf", "wafs"):
+            if get_source(key) is None:
+                continue
+            i = d.cb_source.findData(key)
+            if i < 0:
+                continue
+            d.cb_source.setCurrentIndex(i)
+            self.assertFalse(d.chk_wafs.isEnabled(), key)
+            self.assertFalse(d.wafs_enabled(), key)
+            self.assertEqual(d.job().suffix, "", key)
+        d.close()
+
     def test_descarga_con_area_escribe_etiqueta(self):
         from app.dialogs import download_dialog as dd
         from app.sources import gfs as gfs_src

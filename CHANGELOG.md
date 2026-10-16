@@ -16,6 +16,10 @@
   la etiqueta nominal (300.9 hPa en vez de 300 para F300).
 - Botonera de niveles en cuatro columnas (cuatro filas de cuatro y F530);
   la lista «Otros FL» ocupa el hueco al lado de F530.
+- La casilla «Convertir a WAFS» está en el diálogo de descarga (bloque
+  Destino); la opción de Preferencias ▸ WAFS pasa a llamarse «Convertir a
+  WAFS por defecto» y sólo fija cómo arranca esa casilla. Sin marcar, el
+  GFS queda en niveles de presión y sin sufijo `_wafs`.
 
 ## 0.3.1 — 2026-10-16
 

@@ -146,7 +146,11 @@ vuelo) y `Obtener datos…` (⌘⇧D) abre el diálogo de descarga de esa fuente
   estimado. Se recuerdan el último modo y las casillas marcadas. Ver
   «Áreas de descarga por FIR».
 * **Destino**: carpeta y nombre; un archivo por plazo o uno con todos;
-  abrir al terminar.
+  abrir al terminar; **Convertir a WAFS** (FL cada 1000 ft, con el rango y
+  el modo de Preferencias ▸ WAFS). La casilla arranca como «Convertir a
+  WAFS por defecto» de Preferencias; sin marcar, el archivo queda en los
+  niveles de presión de la fuente y sin el sufijo `_wafs`. Queda inactiva
+  en fuentes de superficie y en las que ya publican por FL.
 
 La descarga corre en un hilo con progreso y cancelación, no deja archivos a
 medias, reintenta tres veces ante cortes de red o errores 5xx, y comprueba
@@ -889,7 +893,8 @@ con siete pestañas:
 * **Áreas / FIR**: tabla de áreas de descarga (código, nombre, N/S/W/E,
   habilitada, a verificar), margen de seguridad, formato de coordenadas,
   exportar/importar (ver «Áreas de descarga por FIR»).
-* **WAFS**: convertir a WAFS al descargar y al abrir archivos locales,
+* **WAFS**: convertir a WAFS por defecto (valor inicial de la casilla del
+  diálogo de descarga) y al abrir archivos locales,
   rango de FL (por defecto FL050–FL530), ampliar el rango si la fuente trae
   niveles por debajo de 850 o por encima de 100 hPa, y extrapolar con el
   nivel más cercano en vez de omitir (ver «Formato WAFS»).

@@ -106,7 +106,7 @@ DEFAULTS = {
     "download_manual_region": [4.0, -64.0, -90.0, -22.0],              # última zona manual (N, S, W, E)
     "download_area_draw": False,        # dibujar los rectángulos del área en el mapa
     # Formato WAFS (formato interno único del visor)
-    "wafs_convert": True,               # convertir a WAFS lo que se descarga (fuentes de altura)
+    "wafs_convert": True,               # valor inicial de «Convertir a WAFS» en el diálogo de descarga
     "wafs_convert_local": True,         # convertir también los archivos locales al abrirlos
     "wafs_mode": "OACI",                # modo de etiquetado de los FL (fl_table.MODES): INDRA | OACI (17, por defecto) | OACI56 | WAFS
     "wafs_fl_min": 50,                  # rango de FL por defecto (FL050–FL530 = GFS 850–100 hPa)

@@ -479,7 +479,8 @@ class SettingsDialog(GlassDialog):
         b.clicked.connect(self._show_fl_table)
         row.addWidget(b)
         lay.addLayout(row)
-        self.chk_wafs = QCheckBox("Convertir a WAFS al descargar")
+        self.chk_wafs = QCheckBox("Convertir a WAFS por defecto (así arranca la casilla del "
+                                  "diálogo de descarga)")
         self.chk_wafs.setChecked(bool(self._cfg.get("wafs_convert", True)))
         lay.addWidget(self.chk_wafs)
         self.chk_wafs_local = QCheckBox("Convertir también los archivos locales al abrirlos "
