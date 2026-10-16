@@ -1,6 +1,6 @@
 # Cambios
 
-## Sin publicar
+## 0.3.0 — 2026-10-16
 
 - Tabla de niveles de vuelo única (`app/fl_table.py`), copiada literal del
   generador WAFS del servidor: presión ISA exacta y etiqueta nominal OACI56

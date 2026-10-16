@@ -1,4 +1,4 @@
-# Plan de pruebas manual – Visor GRIB 0.2.2 (PyQt6)
+# Plan de pruebas manual – Visor GRIB 0.3.0 (PyQt6)
 
 Entorno: pyenv `Grib` (Python 3.14.3), macOS. Antes de empezar:
 
@@ -221,7 +221,7 @@ detalle.
 | # | Caso | Pasos | Resultado esperado |
 |---|---|---|---|
 | J1 | Atajos | Ayuda ▸ Atajos de teclado (⌘/) | Tabla con los atajos del README, con ⌘ en macOS. |
-| J2 | Acerca de | Ayuda ▸ Acerca de Visor GRIB | Versión 0.2.2, Qt, Python, ecCodes, matplotlib y cartopy. |
+| J2 | Acerca de | Ayuda ▸ Acerca de Visor GRIB | Versión 0.3.0, Qt, Python, ecCodes, matplotlib y cartopy. |
 
 ## L. Obtener datos: fuente NOAA GFS (requiere conexión)
 
@@ -276,7 +276,7 @@ detalle.
 
 | # | Caso | Pasos | Resultado esperado |
 |---|---|---|---|
-| K1 | Build | `scripts/build.sh` | Genera `dist/Visor GRIB.app` y `dist/Visor_GRIB_0.2.2_macOS_arm64.dmg` con icono propio. |
+| K1 | Build | `scripts/build.sh` | Genera `dist/Visor GRIB.app` y `dist/Visor_GRIB_0.3.0_macOS_arm64.dmg` con icono propio. |
 | K2 | App empaquetada | Instalar y abrir | Arranca, abre un GRIB, dibuja con costas (ecCodes y cartopy incluidos) y guarda la configuración en `~/Library/Application Support/Visor GRIB/`. |
 | K3 | Linux | `scripts/build_linux.sh` en Ubuntu 22.04 o posterior | Genera `.tar.gz`, `.deb` y `.AppImage`; `sudo apt install ./…deb` deja el comando `visor-grib` y la entrada del menú; la prueba de humo del script termina en `smoke: ok`. |
 | K4 | Windows | `pwsh scripts\build_windows.ps1` con Inno Setup 6 | Genera `…_Setup.exe` y `.zip`; el instalador asocia `.grib2` si se marca la tarea; la app arranca y abre un GRIB. |
