@@ -576,8 +576,11 @@ class TestDialogoDescargaArea(_QtBase):
         seen = {}
 
         def fake_exec(self_):
-            # Preferencias abierta en WAFS; el usuario apaga «por defecto» y aplica
+            # Preferencias abierta en WAFS, las demás pestañas bloqueadas; el
+            # usuario apaga «por defecto» y aplica
             seen["tab"] = self_.tabs.tabText(self_.tabs.currentIndex())
+            seen["enabled"] = [self_.tabs.tabText(i) for i in range(self_.tabs.count())
+                               if self_.tabs.isTabEnabled(i)]
             self_.chk_wafs.setChecked(False)
             return 1
         old = sd.SettingsDialog.exec
@@ -587,6 +590,7 @@ class TestDialogoDescargaArea(_QtBase):
         finally:
             sd.SettingsDialog.exec = old
         self.assertEqual(seen["tab"], "WAFS")
+        self.assertEqual(seen["enabled"], ["WAFS"])
         self.assertFalse(self.cfg.get("wafs_convert"))
         # Con la ventana principal detrás: Preferencias se apila sobre el diálogo
         # de descarga (su padre Qt) y sigue teniendo la ventana principal de dueña
@@ -598,6 +602,8 @@ class TestDialogoDescargaArea(_QtBase):
         def fake_exec2(self_):
             seen["parent"] = self_.parent()
             seen["owner"] = self_._owner
+            seen["enabled"] = [self_.tabs.tabText(i) for i in range(self_.tabs.count())
+                               if self_.tabs.isTabEnabled(i)]
             return 0
         sd.SettingsDialog.exec = fake_exec2
         try:
@@ -606,6 +612,7 @@ class TestDialogoDescargaArea(_QtBase):
             sd.SettingsDialog.exec = old
         self.assertIs(seen["parent"], d2)
         self.assertIs(seen["owner"], mw)
+        self.assertEqual(seen["enabled"], ["WAFS"])
         d2.close()
         mw.close()
         self.assertFalse(d.chk_wafs.isChecked())

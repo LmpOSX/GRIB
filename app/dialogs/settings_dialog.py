@@ -476,6 +476,17 @@ class SettingsDialog(GlassDialog):
         if name in self.TABS:
             self.tabs.setCurrentIndex(self.TABS.index(name))
 
+    def lock_tab(self, name):
+        """Deja sólo esa pestaña accesible (las demás grisadas): abiertas
+        desde otro diálogo, como «Preferencias WAFS…» de la descarga, las
+        Preferencias se limitan a lo que ese diálogo necesita."""
+        if name not in self.TABS:
+            return
+        self.select_tab(name)
+        for i, t in enumerate(self.TABS):
+            self.tabs.setTabEnabled(i, t == name)
+        self.setWindowTitle(f"Preferencias · {name}")
+
     def _accept(self):
         from PyQt6.QtWidgets import QMessageBox
         errs = self.areas_editor.errors()

@@ -674,16 +674,17 @@ class DownloadDialog(GlassDialog):
         self.btn_cancel.setText("Cancelar" if busy else "Cerrar")
 
     def _open_wafs_prefs(self):
-        """Preferencias ▸ WAFS. Por la ventana principal si la hay (aplica y
-        guarda); si no, el diálogo solo sobre la configuración recibida. Al
-        aplicar, la casilla toma el nuevo «Convertir a WAFS por defecto»."""
+        """Preferencias limitadas a la pestaña WAFS (las demás bloqueadas).
+        Por la ventana principal si la hay (aplica y guarda); si no, el
+        diálogo solo sobre la configuración recibida. Al aplicar, la casilla
+        toma el nuevo «Convertir a WAFS por defecto»."""
         parent = self.parent()
         if parent is not None and hasattr(parent, "_open_settings"):
-            applied = parent._open_settings(tab="WAFS", parent=self)   # apilada sobre este diálogo
+            applied = parent._open_settings(tab="WAFS", parent=self, only=True)   # sobre este diálogo
         else:
             from .settings_dialog import SettingsDialog
             dlg = SettingsDialog(self, cfg=self._cfg)
-            dlg.select_tab("WAFS")
+            dlg.lock_tab("WAFS")
             applied = bool(dlg.exec())
             if applied:
                 self._cfg.update(dlg.values())

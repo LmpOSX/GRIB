@@ -3,8 +3,9 @@
 ## Sin publicar
 
 - Botón «Preferencias WAFS…» al lado de la casilla «Convertir a WAFS» del
-  diálogo de descarga: abre Preferencias en la pestaña WAFS y, al aplicar,
-  la casilla toma el nuevo valor por defecto.
+  diálogo de descarga: abre Preferencias limitadas a la pestaña WAFS (las
+  demás bloqueadas), encima del diálogo, y al aplicar la casilla toma el
+  nuevo valor por defecto.
 - Botón «Límites de FIR y Working Areas…» en Preferencias ▸ Áreas / FIR
   que abre la ventana «Límites de FIR» (la de Vista ▸ FIR).
 - ⌘+ volvía a hacer zoom en el mapa en vez de agrandar la fuente: el zoom

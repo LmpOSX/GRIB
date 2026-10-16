@@ -1870,14 +1870,17 @@ class MainWindow(QMainWindow):
 
     # ── Preferencias ─────────────────────────────────────────────────────────
 
-    def _open_settings(self, tab=None, parent=None):
-        """Preferencias; `tab` abre una pestaña dada («WAFS», «Áreas / FIR»)
-        y `parent` es el diálogo que la abre (descarga), para que quede
-        apilada encima de él y no detrás. Devuelve True si se aplicó."""
+    def _open_settings(self, tab=None, parent=None, only=False):
+        """Preferencias; `tab` abre una pestaña dada («WAFS», «Áreas / FIR»),
+        con `only` las demás quedan bloqueadas, y `parent` es el diálogo que
+        la abre (descarga), para que quede apilada encima de él y no
+        detrás. Devuelve True si se aplicó."""
         saved_color = self._cfg["accent_color"]
         saved_opacity = self._cfg.get("opacity", 180)
         dlg = SettingsDialog(parent or self, cfg=self._cfg, owner=self)
-        if tab:
+        if tab and only:
+            dlg.lock_tab(tab)
+        elif tab:
             dlg.select_tab(tab)
         dlg.theme_changed.connect(self._apply_theme)
         dlg.opacity_changed.connect(lambda v: self._apply_theme(opacity=v))

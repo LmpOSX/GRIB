@@ -148,8 +148,8 @@ vuelo) y `Obtener datos…` (⌘⇧D) abre el diálogo de descarga de esa fuente
 * **Destino**: carpeta y nombre; un archivo por plazo o uno con todos;
   abrir al terminar; **Convertir a WAFS** (FL cada 1000 ft, con el rango y
   el modo de Preferencias ▸ WAFS; el botón `Preferencias WAFS…` de al lado
-  abre esa pestaña y, al aplicar, la casilla toma el nuevo valor por
-  defecto). La casilla arranca como «Convertir a
+  abre Preferencias limitadas a esa pestaña, con las demás bloqueadas, y
+  al aplicar la casilla toma el nuevo valor por defecto). La casilla arranca como «Convertir a
   WAFS por defecto» de Preferencias; sin marcar, el archivo queda en los
   niveles de presión de la fuente y sin el sufijo `_wafs`, y al abrirlo al
   terminar se muestra tal cual, en modo presión, aunque Preferencias
