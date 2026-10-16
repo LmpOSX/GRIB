@@ -12,6 +12,13 @@
   Shift+= chocaba con ⌘+ (Qt lo tomaba por ambiguo). El zoom fino pasa a
   ⌘⌥= / ⌘⌥− (Ctrl Alt en Windows y Linux); ⌘+ / ⌘− / ⌘0 son sólo para el
   tamaño de fuente de toda la ventana.
+- La franja STATUS y la barra de estado inferior siguen el tamaño de
+  fuente de la aplicación (antes tenían un tamaño fijo).
+- El clic (sin arrastrar) sobre el mapa abre una ficha con el tema, en
+  vez del tooltip amarillo: PUNTO (grados y minutos, origen de celda,
+  viento y temperatura en el nivel y paso actuales), ARCHIVO (lo de
+  STATUS) y FIR (extremos y cobertura), con el botón «Consultar punto…»
+  que lleva a la consulta por nivel y hora.
 
 ## 0.3.2 — 2026-10-16
 

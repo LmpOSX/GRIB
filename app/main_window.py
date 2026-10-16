@@ -19,7 +19,6 @@ from PyQt6.QtWidgets import (
 )
 from PyQt6.QtCore import Qt, QEvent
 from PyQt6.QtGui import QKeySequence, QShortcut, QAction, QActionGroup, QCursor
-from PyQt6.QtWidgets import QToolTip
 
 from .config import (
     load_config, save_config, FONT_SIZE_MIN, FONT_SIZE_MAX,
@@ -33,6 +32,8 @@ from .widgets.welcome_widget import WelcomeWidget
 from .widgets.control_panel import ControlPanel
 from .wind_plot import PROJECTIONS, WA_PROJECTIONS, WIND_STYLES, GRID_STEPS
 from .widgets.inventory_panel import InventoryPanel
+from .widgets.map_info_popup import MapInfoPopup
+from .point_query import geodesic_ddmm, wind_text, temp_text, layer_name
 from .sources import enabled_sources, all_sources, get_source, source_label, read_provenance
 from . import fir as firmod
 from . import working_area as wamod
@@ -279,6 +280,7 @@ class MainWindow(QMainWindow):
         self.plot.on_click = self._on_map_click
         self.plot.on_context = self._on_map_context
         self._point_dialog = None          # Consulta de punto (clic derecho), única
+        self._info_popup = None            # Ficha del clic izquierdo (punto, archivo, FIR)
         self._load_fir_layer(redraw=False)
         self._apply_area_layer(redraw=False)
 
@@ -1554,20 +1556,73 @@ class MainWindow(QMainWindow):
         return "\n".join(lines)
 
     def _on_map_click(self, event):
-        """Clic sin arrastre: nombre, extremos y cobertura de la FIR bajo el
-        cursor en la barra de estado y en un tooltip junto al mouse."""
+        """Clic sin arrastre: ficha junto al mouse con el punto (coordenadas,
+        origen de celda, viento y temperatura en el nivel y paso actuales),
+        el archivo (lo que muestra STATUS) y la FIR bajo el cursor (extremos
+        y cobertura), con un botón a la consulta de punto. La primera línea
+        de la FIR va también a la barra de estado."""
         try:
             inside, edges = self.plot.fir_hit(event)
         except Exception:
-            return
+            inside, edges = [], []
         regions = list(inside) + [r for r in edges if r not in inside]
-        if not regions:
+        fir_txt = self.fir_click_text(regions) if regions else ""
+        lat = lon = None
+        if event.xdata is not None and event.ydata is not None:
+            lon, lat = self.plot.to_lonlat(float(event.xdata), float(event.ydata))
+        if lon is None:
+            lat = lon = None
+        if fir_txt:
+            self.set_status(fir_txt.splitlines()[0])
+        point_txt = self.point_info_text(lat, lon) if lat is not None else ""
+        file_txt = self.file_info_text() if self._reader is not None else ""
+        if not (point_txt or file_txt or fir_txt):
             return
-        text = self.fir_click_text(regions)
-        if not text:
-            return
-        self.set_status(text.splitlines()[0])
-        QToolTip.showText(QCursor.pos(), text.replace("\n", "<br>"), self.plot.canvas)
+        if self._info_popup is None:
+            self._info_popup = MapInfoPopup(self.plot.canvas)   # hija del canvas del mapa
+            self._info_popup.consult_requested.connect(self.open_point_dialog)
+        pop = self._info_popup
+        # En la ficha, cada FIR en tres renglones (extremos / cobertura / fuente)
+        pop.set_sections([("PUNTO", point_txt), ("ARCHIVO", file_txt),
+                          ("FIR", fir_txt.replace("  ·  ", "\n  "))])
+        pop.show_at(self.plot.canvas.mapFromGlobal(QCursor.pos()), lat, lon)
+
+    def point_info_text(self, lat, lon) -> str:
+        """Sección PUNTO de la ficha: coordenadas en grados y minutos y
+        decimales; con archivo, el origen de celda (convención del FDP) y el
+        viento y la temperatura en el nivel y el paso que muestra el panel."""
+        lines = [f"{geodesic_ddmm(lat, lon)}  ({lat:.2f}, {lon:.2f})"]
+        r = self._reader
+        if r is None or not r.steps:
+            return "\n".join(lines)
+        panel = self.panel
+        step_idx = max(0, min(panel.step_index(), len(r.steps) - 1))
+        var = self._magnetic_variation()
+        if panel.level_mode == "fl":
+            res = r.point_query(step_idx, panel.sel_fl, lat, lon, cell="origin")
+            if res is None:
+                lines.append("origen de celda: fuera de la grilla del archivo")
+                return "\n".join(lines)
+            lines.append(f"origen de celda {geodesic_ddmm(res['lat'], res['lon'])}  "
+                         f"({res['lat']:.2f}, {res['lon']:.2f})")
+            val = res.get("value")
+            lines.append(f"F{int(panel.sel_fl):03d}  viento {wind_text(val, var)}  ·  T {temp_text(val)}")
+            if val is not None and val.get("label") is None:
+                near = res.get("lower") or res.get("upper")
+                if near is not None:
+                    lines.append(f"(capa más cercana: {layer_name(near)})")
+        else:
+            # Superficie o nivel de presión del archivo: el nodo más cercano, como la barra de estado
+            parts = [x.strip() for x in self.cursor_text(lon, lat).split("|")[1:]]
+            lines.extend(parts)
+        return "\n".join(lines)
+
+    def file_info_text(self) -> str:
+        """Sección ARCHIVO de la ficha: los renglones de la franja STATUS."""
+        panel = self.panel
+        parts = [panel.lbl_source.text(), panel.lbl_run.text(), panel.lbl_step.text(),
+                 panel.lbl_valid_utc.text(), panel.lbl_valid_loc.text(), panel.lbl_level.text()]
+        return "\n".join(x for x in parts if x and not x.endswith("--"))
 
     # ── Consulta de punto (clic derecho) ─────────────────────────────────────
 

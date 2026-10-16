@@ -410,7 +410,7 @@ aire: *datos* (`Abrir GRIB…`, el selector `Fuente` integrado en un solo
 control con borde, `Obtener datos…`), *mapa* (`Inicio`, `+`, `−`,
 `Actualizar`, `Capas`) y *salida* (`Guardar PNG`); a la derecha, `▥` (panel
 lateral) y `⚙` (preferencias). La franja STATUS y la barra de estado
-inferior usan un tamaño de letra fijo que no sigue ⌘ +/−. El mapa ocupa
+inferior siguen el tamaño de fuente de la aplicación (⌘ +/−). El mapa ocupa
 el área con márgenes justos para las etiquetas de lat/lon; el título
 (corrida, validez, nivel y variable) no se dibuja en pantalla, porque
 STATUS ya lo muestra, pero sí en el PNG exportado. El mapa se mueve arrastrándolo con el
@@ -580,8 +580,13 @@ variación (`working_area.tangent_projection_params`).
   grilla regional). *Datos*: de dónde salen los límites (ver abajo).
 * **Mouse**: con la capa activa la barra de estado agrega `FIR Ezeiza
   (SAEF)` cuando el cursor está dentro de una FIR y `límite SAEF · SAVF`
-  cuando pasa sobre un contorno (5 px). Un clic sin arrastrar muestra en la
-  barra de estado y en un tooltip los extremos y la cobertura de la FIR.
+  cuando pasa sobre un contorno (5 px). Un clic sin arrastrar abre junto
+  al mouse una **ficha** con tres secciones: *PUNTO* (grados y minutos y
+  decimales, origen de celda, viento y temperatura en el nivel y paso
+  actuales), *ARCHIVO* (lo que muestra STATUS) y *FIR* (extremos y
+  cobertura, también en la barra de estado), con el botón `Consultar
+  punto…` que abre la consulta por nivel y hora en ese punto (la del clic
+  derecho). Se cierra con un clic afuera o Escape.
 * **Dibujo**: los lados se densifican antes de proyectar, así los sectores
   oceánicos hasta 10° W y el de Comodoro Rivadavia hasta el Polo Sur se
   curvan bien en las proyecciones conformes y se recortan a la vista; los

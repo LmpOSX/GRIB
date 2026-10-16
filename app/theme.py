@@ -637,7 +637,29 @@ QFrame#StatusStrip {{
     border-radius: 10px;
 }}
 QFrame#StatusStrip QLabel#StatusMono {{
-    font-size: 13px;          /* fija: no sigue el zoom de fuente */
+    font-size: {font_size}px;     /* sigue el zoom de fuente (⌘ +/−) */
+}}
+QFrame#MapInfoPopup {{
+    background: {_rgba(p["bg1"], 245)};
+    border: 1px solid {acc};
+    border-radius: 10px;
+}}
+QFrame#MapInfoPopup QLabel#PopupHead {{
+    color: {accl};
+    font-size: {h3}px;
+    font-weight: 700;
+    letter-spacing: 1px;
+    margin-top: 4px;
+}}
+QFrame#MapInfoPopup QLabel#PopupMono {{
+    font-family: "Menlo", "Consolas", "DejaVu Sans Mono", monospace;
+    font-size: {font_size}px;
+    color: {txt};
+}}
+QFrame#MapInfoPopup QLabel#PopupHint {{
+    color: {txd};
+    font-size: {h3}px;
+    margin-top: 6px;
 }}
 QLabel#StatusMono {{
     font-family: "Menlo", "Consolas", "DejaVu Sans Mono", monospace;
@@ -721,7 +743,7 @@ QStatusBar {{
     border-top: 1px solid {brd};
     color: {txt};
     font-family: "Menlo", "Consolas", "DejaVu Sans Mono", monospace;
-    font-size: 12px;          /* fija: no sigue el zoom de fuente */
+    font-size: {h2}px;            /* sigue el zoom de fuente (⌘ +/−) */
 }}
 QStatusBar::item {{ border: none; }}
 QScrollArea {{

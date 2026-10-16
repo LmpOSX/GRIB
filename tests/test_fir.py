@@ -515,6 +515,29 @@ class TestVentana(unittest.TestCase):
         msg = w._statusbar.currentMessage()
         self.assertTrue(msg.startswith("FIR Córdoba (SACF): N -21.72°"), msg)
         self.assertIn("la grilla cubre la FIR completa", msg)
+        # Ficha junto al mouse: PUNTO, ARCHIVO y FIR, con botón a la consulta
+        pop = w._info_popup
+        self.assertIsNotNone(pop)
+        self.assertTrue(pop.isVisible())
+        txt = pop.text()
+        self.assertIn("PUNTO\n3124S06412W  (-31.40, -64.20)", txt)
+        self.assertIn("origen de celda", txt)
+        self.assertIn("ARCHIVO\nFUENTE:", txt)
+        self.assertIn("FIR\nFIR Córdoba (SACF)", txt)
+        self.assertIn("la grilla cubre la FIR completa", txt)
+        self.assertIn("Clic derecho", pop.lbl_hint.text())
+        pop.btn_consult.click()
+        self.assertFalse(pop.isVisible())
+        self.assertIsNotNone(w._point_dialog)
+        self.assertTrue(w._point_dialog.isVisible())
+        self.assertEqual(w._point_dialog.ed_geo.text(), "3124S06412W")
+        w._point_dialog.close()
+        # Fuera de toda FIR la ficha igual muestra el punto y el archivo
+        w._on_map_click(self._event(-85.0, 0.0))
+        self.assertTrue(pop.isVisible())
+        self.assertIn("PUNTO", pop.text())
+        self.assertNotIn("FIR\n", pop.text())
+        pop.hide()
         w._on_map_click(self._event(-40.0, -50.0))           # Comodoro: hasta el polo
         self.assertIn("la grilla cubre la FIR parcialmente", w._statusbar.currentMessage())
         v0 = w._fir_regions["SAVF"].rings[0][0]              # vértice del límite Ezeiza/Comodoro
