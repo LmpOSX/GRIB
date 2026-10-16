@@ -405,11 +405,11 @@ class MainWindow(QMainWindow):
         # Zoom fino con botones (la rueda es gruesa; con Cmd/Ctrl o Shift también es fina)
         self._btn_zoom_in = QPushButton("+")
         self._btn_zoom_in.setFixedWidth(40)
-        self._btn_zoom_in.setToolTip("Acercar un paso fino (Ctrl+Shift++); con Alt, un paso normal")
+        self._btn_zoom_in.setToolTip("Acercar un paso fino (Ctrl+Alt+=); con Alt, un paso normal")
         self._btn_zoom_in.clicked.connect(self._zoom_in_clicked)
         self._btn_zoom_out = QPushButton("−")
         self._btn_zoom_out.setFixedWidth(40)
-        self._btn_zoom_out.setToolTip("Alejar un paso fino (Ctrl+Shift+-); con Alt, un paso normal")
+        self._btn_zoom_out.setToolTip("Alejar un paso fino (Ctrl+Alt+-); con Alt, un paso normal")
         self._btn_zoom_out.clicked.connect(self._zoom_out_clicked)
         lay.addWidget(self._btn_home)
         lay.addWidget(self._btn_zoom_in)
@@ -454,9 +454,11 @@ class MainWindow(QMainWindow):
         # Ctrl+0 queda para el tamaño de fuente; el dominio usa Ctrl+Shift+0
         self._act_full = self._add_action(vista, "Todo el dominio", self.full_extent,
                                           "Ctrl+Shift+0")
-        self._act_zoom_in = self._add_action(vista, "Acercar (fino)", self.zoom_in_fine, "Ctrl+Shift+=")
-        self._act_zoom_in.setShortcuts([QKeySequence("Ctrl+Shift+="), QKeySequence("Ctrl+Shift++")])
-        self._act_zoom_out = self._add_action(vista, "Alejar (fino)", self.zoom_out_fine, "Ctrl+Shift+-")
+        # El zoom fino va con Alt: «+» es Shift+= en el teclado, así que
+        # Ctrl+Shift+= coincidiría con Ctrl++ (agrandar fuente) y Qt lo
+        # tomaría por ambiguo (⌘+ zoomeaba el mapa en vez de agrandar la fuente)
+        self._act_zoom_in = self._add_action(vista, "Acercar (fino)", self.zoom_in_fine, "Ctrl+Alt+=")
+        self._act_zoom_out = self._add_action(vista, "Alejar (fino)", self.zoom_out_fine, "Ctrl+Alt+-")
         self._act_update = self._add_action(vista, "Actualizar", self.redraw, "F5")
         self._act_point = self._add_action(vista, "Consultar punto…", self.open_point_dialog,
                                            "Ctrl+I")
@@ -1340,7 +1342,7 @@ class MainWindow(QMainWindow):
         self.plot.zoom_at(event.xdata, event.ydata, factor)
 
     def zoom_in_fine(self):
-        """Vista ▸ Acercar (fino), botón «+» o Cmd Shift +."""
+        """Vista ▸ Acercar (fino), botón «+» o Cmd Alt =."""
         self._zoom_buttons(1.0 / self._zoom_factors()[1])
 
     def zoom_out_fine(self):

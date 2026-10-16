@@ -136,8 +136,15 @@ class TestZoom(unittest.TestCase):
         w._btn_zoom_out.click()
         self.assertAlmostEqual(self._width(), w0, places=6)
         self.assertEqual(w._act_zoom_in.text(), "Acercar (fino)")
-        self.assertIn("Ctrl+Shift+=", [s.toString() for s in w._act_zoom_in.shortcuts()])
-        self.assertEqual(w._act_zoom_out.shortcut().toString(), "Ctrl+Shift+-")
+        # Con Alt, no con Shift: «+» es Shift+= y Ctrl+Shift+= chocaría con
+        # Ctrl++ (agrandar fuente), que Qt toma por ambiguo
+        self.assertEqual([s.toString() for s in w._act_zoom_in.shortcuts()], ["Ctrl+Alt+="])
+        self.assertEqual(w._act_zoom_out.shortcut().toString(), "Ctrl+Alt+-")
+        from PyQt6.QtGui import QAction
+        for a in w.findChildren(QAction):
+            for sc in a.shortcuts():
+                self.assertNotIn(sc.toString(), ("Ctrl+Shift+=", "Ctrl+Shift++", "Ctrl+Shift+-",
+                                                 "Ctrl++", "Ctrl+=", "Ctrl+-"), a.text())
         w._act_zoom_in.trigger()
         self.assertAlmostEqual(w0 / self._width(), 1.04, places=6)
         # sin archivo no hace nada ni falla

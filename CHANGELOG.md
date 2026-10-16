@@ -7,6 +7,11 @@
   la casilla toma el nuevo valor por defecto.
 - Botón «Límites de FIR y Working Areas…» en Preferencias ▸ Áreas / FIR
   que abre la ventana «Límites de FIR» (la de Vista ▸ FIR).
+- ⌘+ volvía a hacer zoom en el mapa en vez de agrandar la fuente: el zoom
+  fino de Vista ▸ Acercar / Alejar (fino) tenía ⌘⇧+ y ⌘⇧−, y como «+» es
+  Shift+= chocaba con ⌘+ (Qt lo tomaba por ambiguo). El zoom fino pasa a
+  ⌘⌥= / ⌘⌥− (Ctrl Alt en Windows y Linux); ⌘+ / ⌘− / ⌘0 son sólo para el
+  tamaño de fuente de toda la ventana.
 
 ## 0.3.2 — 2026-10-16
 

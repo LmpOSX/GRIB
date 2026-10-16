@@ -28,7 +28,7 @@ SHORTCUTS = [
     ("Vista", "Agrandar fuente", "Cmd + (o Alt +)"),
     ("Vista", "Achicar fuente", "Cmd − (o Alt −)"),
     ("Vista", "Tamaño de fuente normal", "Cmd 0 (o Alt 0)"),
-    ("Vista", "Acercar / alejar un paso fino", "Cmd Shift + / Cmd Shift −  (botones + y − de la barra)"),
+    ("Vista", "Acercar / alejar un paso fino", "Cmd Alt = / Cmd Alt −  (botones + y − de la barra)"),
     ("Mapa", "Desplazar el mapa (pan)", "Arrastrar con el botón izquierdo"),
     ("Mapa", "Desplazar fino (÷ N, Preferencias ▸ Mapa)", "Cmd (o Shift) + arrastrar"),
     ("Mapa", "Acercar / alejar alrededor del cursor", "Rueda del mouse"),

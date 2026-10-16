@@ -421,8 +421,8 @@ una muesca y un gesto nunca pasa de una muesca por evento). **Modo fino**:
 con ⌘ (Ctrl en Windows/Linux) o Shift apretados, la rueda y el arrastre se
 dividen por 5 (también configurable), para ajustar la vista con precisión;
 los botones `+` y `−` de la barra de acciones (Vista ▸ Acercar / Alejar
-(fino), ⌘⇧+ / ⌘⇧−) dan un paso fino alrededor del centro, y con Alt un paso
-normal. La vista se conserva al cambiar paso, nivel, variable u opciones;
+(fino), ⌘⌥= / ⌘⌥−) dan un paso fino alrededor del centro, y con Alt un paso
+normal. ⌘+ y ⌘− quedan para el tamaño de fuente de toda la ventana. La vista se conserva al cambiar paso, nivel, variable u opciones;
 `Inicio` o `Todo el dominio` la reinician. La vista siempre llena el área del mapa: al fijar el
 dominio o un recuadro se amplía en el sentido que haga falta.
 
@@ -657,7 +657,7 @@ licencias en `docs/FUENTES_FIR.md`.
 | Desplazar fino (÷ 5) | ⌘ o ⇧ + arrastrar | Ctrl o Shift + arrastrar |
 | Acercar / alejar alrededor del cursor | Rueda | Rueda |
 | Acercar / alejar fino alrededor del cursor | ⌘ o ⇧ + rueda | Ctrl o Shift + rueda |
-| Acercar / alejar un paso fino (botones + y −) | ⌘⇧+ / ⌘⇧− | Ctrl Shift + / Ctrl Shift − |
+| Acercar / alejar un paso fino (botones + y −) | ⌘⌥= / ⌘⌥− | Ctrl Alt = / Ctrl Alt − |
 | Consulta de punto (capas y valor en un FL) | Clic derecho en el mapa | Clic derecho en el mapa |
 | Atajos de teclado | ⌘ / | Ctrl / |
 
