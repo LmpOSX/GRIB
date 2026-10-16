@@ -925,7 +925,6 @@ repositorio (`https://github.com/LmpOSX/GRIB/releases`):
 | Sistema | Archivo | Instalación |
 |---|---|---|
 | macOS 12+ (Apple Silicon) | `Visor_GRIB_<ver>_macOS_arm64.dmg` | Abrir el DMG y arrastrar a Aplicaciones. La app lleva firma ad hoc, sin notarizar: al abrirla por primera vez macOS la bloquea; ir a Ajustes del Sistema ▸ Privacidad y seguridad y tocar **Abrir igualmente** (o en Terminal `xattr -cr "/Applications/Visor GRIB.app"`). Si dijera «está dañada», la firma se rompió: avisar, es un error del paquete. |
-| macOS 12+ (Intel) | `Visor_GRIB_<ver>_macOS_x86_64.dmg` | Igual que arriba. |
 | Linux x86_64 (Debian/Ubuntu) | `Visor_GRIB_<ver>_Linux_x86_64.deb` | `sudo apt install ./Visor_GRIB_<ver>_Linux_x86_64.deb`; queda el comando `visor-grib` y la entrada en el menú. |
 | Linux x86_64 (cualquier distro) | `Visor_GRIB_<ver>_Linux_x86_64.AppImage` | `chmod +x` y ejecutar. También hay un `.tar.gz` portable con la carpeta `VisorGRIB/`. |
 | Windows 10/11 x64 | `Visor_GRIB_<ver>_Windows_x64_Setup.exe` | Ejecutar el instalador (SmartScreen avisa porque no está firmado: *Más información ▸ Ejecutar de todas formas*). También hay un `.zip` portable. |
@@ -949,12 +948,18 @@ pwsh scripts/build_windows.ps1   # Windows: .zip y Setup.exe (requiere Inno Setu
 ```
 
 PyInstaller no cruza plataformas: cada instalador se genera en su sistema.
-El workflow `.github/workflows/release.yml` lo hace por los cuatro
-(macOS arm64 e Intel, Linux, Windows) al publicar una etiqueta `vX.Y.Z`:
+El DMG de macOS (Apple Silicon; no hay build para Intel) se construye en
+forma local y se sube a la release; el workflow
+`.github/workflows/release.yml` genera los de Linux y Windows al publicar
+una etiqueta `vX.Y.Z` (el job de macOS sólo corre si se lanza a mano desde
+*Actions* con la casilla «macos», por si no hay un Mac a mano):
 
 ```bash
 # nueva versión: cambiar app/__init__.py y CHANGELOG.md, commitear y
-git tag v0.2.0 && git push origin main v0.2.0
+QT_QPA_PLATFORM=offscreen python tests/run_tests.py   # lo mismo que tests.yml
+git tag v0.3.1 && git push origin main v0.3.1
+gh release create v0.3.1 --title "Visor GRIB v0.3.1" --notes-file notas.md
+bash scripts/build.sh && gh release upload v0.3.1 dist/Visor_GRIB_*_macOS_arm64.dmg
 ```
 
 Los archivos se adjuntan a la *release* de esa etiqueta. Si la release no

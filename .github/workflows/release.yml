@@ -1,12 +1,23 @@
-# Instaladores de Visor GRIB para macOS (arm64 e Intel), Linux y Windows.
-# Se dispara al publicar una etiqueta vX.Y.Z (o a mano desde "Actions") y
-# adjunta los archivos a la "release" de esa etiqueta en GitHub.
+# Instaladores de Visor GRIB para Linux y Windows (y, a pedido, macOS arm64).
+# Se dispara al publicar una etiqueta vX.Y.Z y adjunta los archivos a la
+# "release" de esa etiqueta en GitHub.
+#
+# El DMG de macOS (Apple Silicon) se construye en forma local con
+# scripts/build.sh y se sube con `gh release upload vX.Y.Z dist/*.dmg`; el
+# job de macOS de este workflow sólo corre si se lanza a mano desde
+# "Actions" con la casilla «macos» marcada (por ejemplo, sin un Mac a mano).
+# No hay build para macOS Intel.
 name: Instaladores
 
 on:
   push:
     tags: ["v*"]
   workflow_dispatch:
+    inputs:
+      macos:
+        description: "Construir también el DMG de macOS arm64 (normalmente se hace local)"
+        type: boolean
+        default: false
 
 jobs:
   build:
@@ -16,12 +27,6 @@ jobs:
       fail-fast: false
       matrix:
         include:
-          - os: macos-latest
-            name: macOS_arm64
-            script: bash scripts/build.sh
-          - os: macos-15-intel
-            name: macOS_x86_64
-            script: bash scripts/build.sh
           - os: ubuntu-22.04
             name: Linux_x86_64
             script: bash scripts/build_linux.sh
@@ -55,10 +60,39 @@ jobs:
             dist/Visor_GRIB_*
           if-no-files-found: error
 
+  macos:
+    name: macOS_arm64 (a pedido)
+    if: github.event_name == 'workflow_dispatch' && inputs.macos
+    runs-on: macos-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.14"
+          cache: pip
+      - name: Dependencias
+        run: |
+          python -m pip install --upgrade pip
+          pip install -r requirements.txt
+      - name: Construir instalador
+        env:
+          CI: "1"
+        run: bash scripts/build.sh
+      - uses: actions/upload-artifact@v4
+        with:
+          name: instaladores-macOS_arm64
+          path: |
+            dist/Visor_GRIB_*
+          if-no-files-found: error
+
   release:
     name: Publicar en la release
-    if: startsWith(github.ref, 'refs/tags/v')
-    needs: build
+    # Con etiqueta: espera a build y, si corrió, a macos (si se saltó no bloquea)
+    if: >-
+      ${{ !cancelled() && startsWith(github.ref, 'refs/tags/v')
+          && needs.build.result == 'success'
+          && (needs.macos.result == 'success' || needs.macos.result == 'skipped') }}
+    needs: [build, macos]
     runs-on: ubuntu-latest
     permissions:
       contents: write

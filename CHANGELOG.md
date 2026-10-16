@@ -15,6 +15,9 @@
   servidor, cuya tabla se compara con la del visor) y
   `tests/data/WAFS_oaci_test.grib2` (muestra OACI con su `.idx`, que el
   visor reproduce byte a byte).
+- Instaladores: se discontinúa el DMG de macOS Intel. El de Apple Silicon se
+  construye en forma local (`scripts/build.sh`) y se sube a la release; el
+  workflow genera los de Linux y Windows (macOS sólo a pedido).
 
 ## 0.3.0 — 2026-10-16
 
