@@ -570,6 +570,7 @@ class TestDialogoDescargaArea(_QtBase):
 
     def test_boton_preferencias_wafs_del_dialogo(self):
         from app.dialogs import settings_dialog as sd
+        from app.dialogs import download_dialog as dd
         d = self._dialog(wafs_convert=True)
         self.assertTrue(d.chk_wafs.isChecked())
         seen = {}
@@ -587,6 +588,26 @@ class TestDialogoDescargaArea(_QtBase):
             sd.SettingsDialog.exec = old
         self.assertEqual(seen["tab"], "WAFS")
         self.assertFalse(self.cfg.get("wafs_convert"))
+        # Con la ventana principal detrás: Preferencias se apila sobre el diálogo
+        # de descarga (su padre Qt) y sigue teniendo la ventana principal de dueña
+        from app.main_window import MainWindow
+        mw = MainWindow()
+        d2 = dd.DownloadDialog(mw, cfg=mw._cfg, dest_dir=self._tmp.name)
+        seen.clear()
+
+        def fake_exec2(self_):
+            seen["parent"] = self_.parent()
+            seen["owner"] = self_._owner
+            return 0
+        sd.SettingsDialog.exec = fake_exec2
+        try:
+            d2.btn_wafs_prefs.click()
+        finally:
+            sd.SettingsDialog.exec = old
+        self.assertIs(seen["parent"], d2)
+        self.assertIs(seen["owner"], mw)
+        d2.close()
+        mw.close()
         self.assertFalse(d.chk_wafs.isChecked())
         self.assertEqual(d.job().suffix, "")
         d.close()

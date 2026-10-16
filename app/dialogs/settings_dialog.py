@@ -72,8 +72,12 @@ class SettingsDialog(GlassDialog):
 
     TABS = ("Apariencia", "Mapa", "Fuentes", "Descarga", "Áreas / FIR", "WAFS", "Motor")
 
-    def __init__(self, parent=None, cfg: dict = None):
+    def __init__(self, parent=None, cfg: dict = None, owner=None):
+        """`parent` es la ventana sobre la que se apila (puede ser otro
+        diálogo, como el de descarga); `owner` la ventana principal, de la
+        que salen las FIR cargadas y el diálogo «Límites de FIR»."""
         super().__init__(parent)
+        self._owner = owner if owner is not None else parent
         self._cfg = dict(cfg or {})
         self._color = self._cfg.get("accent_color", "#4A90D9")
         self._opacity = int(self._cfg.get("opacity", 180))
@@ -448,9 +452,9 @@ class SettingsDialog(GlassDialog):
         row.addWidget(self.btn_fir)
         lay.addLayout(row)
         regions_fn = None
-        parent = self.parent()
-        if parent is not None and hasattr(parent, "_fir_regions"):
-            regions_fn = lambda: getattr(parent, "_fir_regions", {})   # noqa: E731
+        owner = self._owner
+        if owner is not None and hasattr(owner, "_fir_regions"):
+            regions_fn = lambda: getattr(owner, "_fir_regions", {})   # noqa: E731
         self.areas_editor = AreasEditor(self._cfg, regions_fn=regions_fn)
         lay.addWidget(self.areas_editor, 1)
         return w
@@ -458,9 +462,9 @@ class SettingsDialog(GlassDialog):
     def _open_fir_dialog(self):
         """«Límites de FIR»: por la ventana principal si la hay (aplica y
         guarda al cerrar); si no, el diálogo solo sobre la copia local."""
-        parent = self.parent()
-        if parent is not None and hasattr(parent, "open_fir_dialog"):
-            parent.open_fir_dialog()
+        owner = self._owner
+        if owner is not None and hasattr(owner, "open_fir_dialog"):
+            owner.open_fir_dialog(parent=self)      # apilado sobre Preferencias
             return
         from .fir_dialog import FirDialog
         dlg = FirDialog(self, cfg=self._cfg)

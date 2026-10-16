@@ -679,7 +679,7 @@ class DownloadDialog(GlassDialog):
         aplicar, la casilla toma el nuevo «Convertir a WAFS por defecto»."""
         parent = self.parent()
         if parent is not None and hasattr(parent, "_open_settings"):
-            applied = parent._open_settings(tab="WAFS")
+            applied = parent._open_settings(tab="WAFS", parent=self)   # apilada sobre este diálogo
         else:
             from .settings_dialog import SettingsDialog
             dlg = SettingsDialog(self, cfg=self._cfg)
