@@ -110,6 +110,7 @@ def build_stylesheet(accent_hex: str, font_size: int = 13,
     sel   = _rgba(p["accent"], 90)
 
     h1 = font_size + 4   # Heading
+    font_size_plus = font_size + 1   # InfoValue / InfoTable (consulta de punto)
     h2 = font_size - 1   # SubHeading
     h3 = font_size - 2   # SidebarSection / small labels
     total_sz = font_size + 1
@@ -760,6 +761,19 @@ QTabBar::tab:hover:!selected {{
 QLabel#Hint {{
     color: {txd};
     font-size: {h3}px;
+}}
+/* Consulta de punto: los datos que informa, un punto más grandes y con el
+   color del texto principal; la aclaración bajo cada rótulo, chica */
+QLabel#InfoValue {{
+    color: {txt};
+    font-size: {font_size_plus}px;
+}}
+QLabel#FieldNote {{
+    color: {txd};
+    font-size: {h3}px;
+}}
+QTableWidget#InfoTable {{
+    font-size: {font_size_plus}px;
 }}
 """
     import sys as _sys

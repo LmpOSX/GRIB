@@ -8,8 +8,8 @@ hora y la convención de celda que cargó el usuario se conservan. No
 conoce la ventana principal: recibe el lector con set_reader y un
 callable que devuelve la variación magnética vigente (norte magnético).
 """
-from PyQt6.QtCore import Qt
-from PyQt6.QtGui import QIntValidator, QGuiApplication
+from PyQt6.QtCore import Qt, QRegularExpression
+from PyQt6.QtGui import QRegularExpressionValidator, QGuiApplication
 from PyQt6.QtWidgets import (
     QVBoxLayout, QHBoxLayout, QGridLayout, QLabel, QPushButton, QFrame, QComboBox,
     QLineEdit, QSpinBox, QTableWidget, QTableWidgetItem, QHeaderView, QAbstractItemView,
@@ -27,7 +27,7 @@ class PointDialog(GlassDialog):
     def __init__(self, parent=None, variation_fn=None):
         super().__init__(parent)
         self.setWindowTitle("Consulta de punto")
-        self.setMinimumSize(640, 460)
+        self.setMinimumSize(560, 470)
         self._reader = None
         self._variation_fn = variation_fn
         self._variation = 0.0
@@ -48,68 +48,97 @@ class PointDialog(GlassDialog):
         lay.addWidget(title)
 
         grid = QGridLayout()
-        grid.setHorizontalSpacing(10)
-        grid.setVerticalSpacing(6)
-        grid.addWidget(QLabel("Geodésico (grados y minutos):"), 0, 0)
+        grid.setHorizontalSpacing(12)
+        grid.setVerticalSpacing(8)
+        edit_w = 170        # ancho de los campos: 12 caracteres sobran
+
+        def field_label(text, note):
+            """Rótulo en dos líneas: el nombre y, debajo, la aclaración chica."""
+            box = QVBoxLayout()
+            box.setSpacing(0)
+            box.setContentsMargins(0, 0, 0, 0)
+            lab = QLabel(text)
+            box.addWidget(lab)
+            if note:
+                n = QLabel(note)
+                n.setObjectName("FieldNote")
+                box.addWidget(n)
+            return box
+
+        def info_label():
+            lab = QLabel("")
+            lab.setObjectName("InfoValue")
+            lab.setWordWrap(True)
+            lab.setTextInteractionFlags(Qt.TextInteractionFlag.TextSelectableByMouse)
+            return lab
+
+        grid.addLayout(field_label("Geodésico", "grados y minutos"), 0, 0)
         self.ed_geo = QLineEdit()
         self.ed_geo.setPlaceholderText("3125S06411W")
-        self.ed_geo.setToolTip("Punto del clic; se puede escribir otro (DDMM[N|S]DDDMM[E|W])")
-        self.ed_geo.editingFinished.connect(self._geo_edited)
+        self.ed_geo.setMaxLength(13)
+        self.ed_geo.setFixedWidth(edit_w)
+        self.ed_geo.setToolTip("Punto del clic; se puede escribir otro: DDMM[N|S]DDDMM[E|W]")
+        self.ed_geo.textChanged.connect(self._geo_edited)
         grid.addWidget(self.ed_geo, 0, 1)
-        self.lbl_geo = QLabel("")
-        self.lbl_geo.setObjectName("Hint")
+        self.lbl_geo = info_label()
         grid.addWidget(self.lbl_geo, 0, 2)
 
-        grid.addWidget(QLabel("Hora de sobrevuelo (YYMMDDHHMM):"), 1, 0)
+        grid.addLayout(field_label("Hora de sobrevuelo", "YYMMDDHHMM, UTC"), 1, 0)
         self.ed_time = QLineEdit()
         self.ed_time.setPlaceholderText("2510221300")
-        self.ed_time.setValidator(QIntValidator(0, 999999999, self))
+        self.ed_time.setValidator(QRegularExpressionValidator(QRegularExpression(r"\d{0,12}"), self))
         self.ed_time.setMaxLength(12)
+        self.ed_time.setFixedWidth(edit_w)
         self.ed_time.setToolTip("Hora UTC; se usa el paso cuya ventana de validez la contiene")
         self.ed_time.textChanged.connect(lambda _t: self.refresh())
         grid.addWidget(self.ed_time, 1, 1)
-        self.lbl_step = QLabel("")
-        self.lbl_step.setObjectName("Hint")
-        self.lbl_step.setWordWrap(True)
+        self.lbl_step = info_label()
         grid.addWidget(self.lbl_step, 1, 2)
 
-        grid.addWidget(QLabel("Nivel de sobrevuelo (banda, sin F):"), 2, 0)
+        grid.addLayout(field_label("Nivel de sobrevuelo", "banda, sin F"), 2, 0)
         self.sp_fl = QSpinBox()
         self.sp_fl.setRange(0, 999)
         self.sp_fl.setSingleStep(10)
         self.sp_fl.setValue(300)
+        self.sp_fl.setFixedWidth(edit_w)
         self.sp_fl.setToolTip("Cualquier FL: si no es un nivel del archivo se interpola en ln(p) "
                               "entre la capa de abajo y la de arriba (no se extrapola)")
         self.sp_fl.valueChanged.connect(self._fl_changed)
         grid.addWidget(self.sp_fl, 2, 1)
-        self.lbl_fl = QLabel("")
-        self.lbl_fl.setObjectName("Hint")
-        self.lbl_fl.setWordWrap(True)
+        self.lbl_fl = info_label()
         grid.addWidget(self.lbl_fl, 2, 2)
 
-        grid.addWidget(QLabel("Celda:"), 3, 0)
+        grid.addLayout(field_label("Celda", "punto de grilla del dato"), 3, 0)
         self.cb_cell = QComboBox()
         for key, name in pq.CELL_MODES:
             self.cb_cell.addItem(name, key)
-        self.cb_cell.setToolTip("Qué punto de la grilla representa al clic")
+        self.cb_cell.setFixedWidth(edit_w)
+        self.cb_cell.setSizeAdjustPolicy(QComboBox.SizeAdjustPolicy.AdjustToMinimumContentsLengthWithIcon)
+        self.cb_cell.setToolTip("El dato es de un punto de la grilla del archivo: el nodo más "
+                                "cercano al clic, o la esquina suroeste de la celda que lo "
+                                "contiene (así lo hace el FDP)")
         self.cb_cell.currentIndexChanged.connect(lambda _i: self.refresh())
         grid.addWidget(self.cb_cell, 3, 1)
-        self.lbl_cell = QLabel("")
-        self.lbl_cell.setObjectName("Hint")
+        self.lbl_cell = info_label()
         grid.addWidget(self.lbl_cell, 3, 2)
         grid.setColumnStretch(2, 1)
+        grid.setColumnMinimumWidth(2, 210)
+        grid.setAlignment(Qt.AlignmentFlag.AlignTop)
         lay.addLayout(grid)
 
         self.table = QTableWidget(len(self.ROWS), len(self.COLS))
+        self.table.setObjectName("InfoTable")
         self.table.setHorizontalHeaderLabels(list(self.COLS))
         hh = self.table.horizontalHeader()
-        for i in range(len(self.COLS)):
+        for i in range(len(self.COLS) - 1):
             hh.setSectionResizeMode(i, QHeaderView.ResizeMode.ResizeToContents)
         hh.setStretchLastSection(True)
         self.table.verticalHeader().setVisible(False)
         self.table.setEditTriggers(QAbstractItemView.EditTrigger.NoEditTriggers)
         self.table.setSelectionMode(QAbstractItemView.SelectionMode.NoSelection)
         self.table.setFocusPolicy(Qt.FocusPolicy.NoFocus)
+        self.table.setHorizontalScrollBarPolicy(Qt.ScrollBarPolicy.ScrollBarAlwaysOff)
+        self.table.setVerticalScrollBarPolicy(Qt.ScrollBarPolicy.ScrollBarAlwaysOff)
         for r, name in enumerate(self.ROWS):
             self.table.setItem(r, 0, QTableWidgetItem(name))
             for c in range(1, len(self.COLS)):
@@ -117,7 +146,7 @@ class PointDialog(GlassDialog):
         self.table.setSizePolicy(QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Fixed)
         lay.addWidget(self.table)
         self.lbl_mode = QLabel("")
-        self.lbl_mode.setObjectName("Hint")
+        self.lbl_mode.setObjectName("InfoValue")
         self.lbl_mode.setWordWrap(True)
         lay.addWidget(self.lbl_mode)
 
@@ -133,12 +162,17 @@ class PointDialog(GlassDialog):
         lay.addLayout(row)
 
     def _fit_table(self):
-        """Alto justo para las tres filas (la tabla no tiene scroll)."""
+        """Alto justo para las tres filas y ancho mínimo para todas las
+        columnas: la tabla no tiene barras de scroll, el diálogo se ensancha."""
         t = self.table
         h = t.horizontalHeader().height() + 2 * t.frameWidth()
         for r in range(t.rowCount()):
             h += t.rowHeight(r)
         t.setFixedHeight(h)
+        w = 2 * t.frameWidth() + sum(t.columnWidth(c) for c in range(t.columnCount() - 1))
+        last = t.fontMetrics().horizontalAdvance(self.COLS[-1]) + 24
+        t.setMinimumWidth(w + last)
+        self.updateGeometry()
 
     def showEvent(self, event):
         super().showEvent(event)
@@ -174,10 +208,11 @@ class PointDialog(GlassDialog):
         self._fl_touched = True
         self.refresh()
 
-    def _geo_edited(self):
+    def _geo_edited(self, _text=None):
+        """El punto escrito a mano se consulta en cuanto está completo."""
         parsed = pq.parse_geodesic(self.ed_geo.text())
         if parsed is None:
-            self.lbl_geo.setText("formato: 3125S06411W")
+            self.lbl_geo.setText("formato: 3125S06411W (DDMM N/S, DDDMM E/W)")
             return
         self.lat, self.lon = parsed
         self.refresh()
@@ -219,9 +254,9 @@ class PointDialog(GlassDialog):
         self._step = (idx, step, inside)
         h = step.hours
         hs = f"+{h:g} h" if h is not None else step.step_range
-        txt = f"paso [{idx}] {hs} · validez {pq.fmt_dt(step.valid)} UTC"
+        txt = f"paso [{idx}] {hs}, {pq.fmt_dt(step.valid)} UTC"
         if not inside:
-            txt += " · fuera de las ventanas: el más cercano"
+            txt += " (fuera de las ventanas: el más cercano)"
         self.lbl_step.setText(txt)
         fl = self.fl()
         from ..grib_reader import fl_to_hpa
@@ -234,8 +269,8 @@ class PointDialog(GlassDialog):
         if self._res is None:
             self.lbl_cell.setText("fuera de la grilla del archivo")
         else:
-            self.lbl_cell.setText(f"{pq.geodesic_ddmm(self._res['lat'], self._res['lon'])}  "
-                                  f"(lat {self._res['lat']:.2f}, lon {self._res['lon']:.2f})")
+            self.lbl_cell.setText(f"{pq.geodesic_ddmm(self._res['lat'], self._res['lon'])} "
+                                  f"({self._res['lat']:.2f}, {self._res['lon']:.2f})")
         self._fill_table(self._res)
 
     def _fill_table(self, res):

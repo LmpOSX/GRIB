@@ -13,8 +13,8 @@ import re
 
 from .grib_reader import KELVIN, fmt_dt
 
-CELL_MODES = [("nearest", "punto de grilla más cercano"),
-              ("origin", "origen de la celda (esquina suroeste)")]
+CELL_MODES = [("nearest", "nodo más cercano"),
+              ("origin", "origen de celda (esquina SO)")]
 
 _GEO_RE = re.compile(r"^\s*(\d{2})(\d{2})([NS])\s*(\d{3})(\d{2})([EW])\s*$", re.I)
 

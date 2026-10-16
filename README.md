@@ -439,7 +439,7 @@ dirección (°) y temperatura (°C).
 **Consulta de punto (clic derecho).** Un clic con el botón derecho sobre
 el mapa (o Vista ▸ Consultar punto…, ⌘ I) abre una ventana no modal, al
 estilo de la consulta del FDP, con el punto en grados y minutos
-(`3125S06411W`, editable), la **hora de sobrevuelo** `YYMMDDHHMM` en UTC
+(`3125S06411W`, editable: se consulta en cuanto está completo), la **hora de sobrevuelo** `YYMMDDHHMM` en UTC
 (arranca con la validez del paso que muestra el panel; cualquier otra
 elige el paso cuya ventana de validez la contiene, o el de validez más
 cercana si cae fuera de todas, y lo dice) y el **nivel de sobrevuelo**
