@@ -376,43 +376,194 @@ class GribReader:
             return u, v, t, info
         return self.interp_to_pressure(step_idx, fl_to_hpa(fl))
 
+    def true_pressure(self, level_hpa):
+        """Presión real del dato de un nivel del archivo (hPa). En un archivo
+        etiquetado por FL el dato está en la ISA exacta del FL (la etiqueta
+        es nominal: 300 hPa para F300, cuyo dato está en 300.9); en un
+        archivo crudo la etiqueta es la presión."""
+        fl = self.fl_of_level(level_hpa)
+        if fl is not None and fl in flt.FL_TABLE:
+            return flt.isa_pa(fl) / 100.0
+        return float(level_hpa)
+
+    def fl_of_level(self, level_hpa):
+        """FL etiquetado en ese nivel del archivo, o None (archivo crudo)."""
+        for fl, lv in getattr(self, "fl_levels", {}).items():
+            if lv == level_hpa:
+                return int(fl)
+        return None
+
+    def profile(self, step_idx, var):
+        """[(presión real, etiqueta)] de los niveles de la variable en el
+        paso, de abajo hacia arriba (presión descendente)."""
+        return sorted(((self.true_pressure(lv), float(lv)) for lv in self.levels_for(step_idx, var)),
+                      reverse=True)
+
     def interp_to_pressure(self, step_idx, p_target):
-        """Interpola u, v, t linealmente en ln(p) al nivel p_target (hPa).
-        Si p_target cae fuera del rango de niveles disponibles se usa el
-        nivel más cercano y se marca 'extrapolated'."""
+        """Interpola u, v, t linealmente en ln(p) al nivel p_target (hPa),
+        usando la presión real de cada nivel (ISA del FL si el archivo está
+        etiquetado por FL). Si p_target cae fuera del rango de niveles
+        disponibles se usa el nivel más cercano y se marca 'extrapolated'."""
         info = {"p": float(p_target), "mode": "interp", "extrapolated": False,
                 "nearest": None, "bracket": None}
         out = {}
         lnp = math.log(p_target)
         for var in ("u", "v", "t"):
-            lv = self.levels_for(step_idx, var)
-            if not lv:
+            prof = self.profile(step_idx, var)
+            if not prof:
                 out[var] = None
                 continue
-            p_max, p_min = lv[0], lv[-1]
+            (p_max, l_max), (p_min, l_min) = prof[0], prof[-1]
             if p_target >= p_max:
-                out[var] = self.get_field(step_idx, var, p_max)
+                out[var] = self.get_field(step_idx, var, l_max)
                 info["extrapolated"] = True
                 info["nearest"] = p_max if info["nearest"] is None else info["nearest"]
             elif p_target <= p_min:
-                out[var] = self.get_field(step_idx, var, p_min)
+                out[var] = self.get_field(step_idx, var, l_min)
                 info["extrapolated"] = True
                 info["nearest"] = p_min if info["nearest"] is None else info["nearest"]
             else:
                 # Buscar niveles consecutivos p1 > p_target > p2
-                p1, p2 = None, None
-                for a, b in zip(lv[:-1], lv[1:]):
+                p1 = p2 = l1 = l2 = None
+                for (a, la), (b, lb) in zip(prof[:-1], prof[1:]):
                     if a >= p_target >= b:
-                        p1, p2 = a, b
+                        p1, p2, l1, l2 = a, b, la, lb
                         break
-                f1 = self.get_field(step_idx, var, p1)
-                f2 = self.get_field(step_idx, var, p2)
+                f1 = self.get_field(step_idx, var, l1)
+                f2 = self.get_field(step_idx, var, l2)
                 w = (lnp - math.log(p1)) / (math.log(p2) - math.log(p1))
                 out[var] = (1.0 - w) * f1 + w * f2
                 if info["bracket"] is None:
                     info["bracket"] = (p1, p2)
+                    info["bracket_labels"] = (l1, l2)
                     info["nearest"] = p1 if abs(lnp - math.log(p1)) <= abs(lnp - math.log(p2)) else p2
         return out["u"], out["v"], out["t"], info
+
+    # ------------------------------------------------------ consulta puntual
+    def step_for_time(self, when):
+        """(índice de paso, True si `when` cae dentro de su ventana de
+        validez). Fuera de todas las ventanas se toma el paso de validez
+        más cercana. (None, False) si no hay pasos o `when` es None."""
+        if when is None or not self.steps:
+            return None, False
+        if when.tzinfo is None:
+            when = when.replace(tzinfo=dt.timezone.utc)
+        for i, s in enumerate(self.steps):
+            if (s.window_start is not None and s.window_end is not None
+                    and s.window_start <= when < s.window_end):
+                return i, True
+        best, best_d = None, None
+        for i, s in enumerate(self.steps):
+            if s.valid is None:
+                continue
+            d = abs((s.valid - when).total_seconds())
+            if best_d is None or d < best_d:
+                best, best_d = i, d
+        return best, False
+
+    def grid_index(self, lat, lon, cell="nearest"):
+        """(j, i) del punto de grilla que representa a (lat, lon): el más
+        cercano ('nearest') o el origen de la celda que lo contiene
+        ('origin', esquina suroeste, como el FDP). None si queda fuera."""
+        lats, lons = self.lats, self.lons
+        if lats is None or lons is None or len(lats) == 0 or len(lons) == 0:
+            return None
+        dlat = float(abs(lats[1] - lats[0])) if len(lats) > 1 else 1.0
+        dlon = float(abs(lons[1] - lons[0])) if len(lons) > 1 else 1.0
+        if cell == "origin":
+            if lat < lats[0] - 1e-9 or lon < lons[0] - 1e-9:
+                return None
+            j = int(np.searchsorted(lats, lat + 1e-9, side="right") - 1)
+            i = int(np.searchsorted(lons, lon + 1e-9, side="right") - 1)
+            if lat > lats[-1] + dlat or lon > lons[-1] + dlon:
+                return None
+            return max(0, min(j, len(lats) - 1)), max(0, min(i, len(lons) - 1))
+        j = int(np.argmin(np.abs(lats - lat)))
+        i = int(np.argmin(np.abs(lons - lon)))
+        if abs(lats[j] - lat) > dlat / 2.0 + 1e-9 or abs(lons[i] - lon) > dlon / 2.0 + 1e-9:
+            return None
+        return j, i
+
+    def _layer_at(self, step_idx, p_true, label, j, i):
+        """Valores de un nivel del archivo en el punto (j, i)."""
+        d = {"p": float(p_true), "label": float(label), "fl": self.fl_of_level(label),
+             "u": None, "v": None, "t": None, "spd": None, "dir": None}
+        for var in ("u", "v", "t"):
+            f = self.get_field(step_idx, var, label)
+            if f is not None:
+                val = float(f[j, i])
+                d[var] = val if np.isfinite(val) else None
+        if d["u"] is not None and d["v"] is not None:
+            spd, direc = speed_dir_from_uv(d["u"], d["v"])
+            d["spd"], d["dir"] = float(spd), float(direc)
+        return d
+
+    def point_query(self, step_idx, fl, lat, lon, cell="nearest"):
+        """Viento y temperatura en un punto para un FL cualquiera: la capa
+        del archivo de abajo ('lower'), la de arriba ('upper') y el valor en
+        el FL ('value'), interpolado en ln(p) entre ambas con la presión real
+        de cada capa. Si el FL coincide con una capa ('exact') el valor es
+        el de esa capa; fuera del rango ('extrapolated') es el de la capa
+        más cercana y la otra queda en None. None si el punto está fuera
+        de la grilla."""
+        idx = self.grid_index(lat, lon, cell)
+        if idx is None:
+            return None
+        j, i = idx
+        p_t = fl_to_hpa(fl)
+        res = {"fl": int(fl), "p": float(p_t), "j": j, "i": i,
+               "lat": float(self.lats[j]), "lon": float(self.lons[i]),
+               "lower": None, "upper": None, "value": None,
+               "mode": "interp", "extrapolated": False, "w": None}
+        present = [v for v in ("u", "v", "t") if self.levels_for(step_idx, v)]
+        if not present:
+            return res
+        # Niveles con todas las variables presentes (si no, los de la primera)
+        common = None
+        for var in present:
+            lv = set(self.levels_for(step_idx, var))
+            common = lv if common is None else (common & lv)
+        if not common:
+            common = set(self.levels_for(step_idx, present[0]))
+        prof = sorted(((self.true_pressure(lv), lv) for lv in common), reverse=True)
+        exact = [(p, lv) for p, lv in prof if abs(p - p_t) < 0.05]
+        if exact:
+            p, lv = exact[0]
+            k = prof.index((p, lv))
+            res["mode"] = "exact"
+            res["value"] = self._layer_at(step_idx, p, lv, j, i)
+            # prof va de más presión a menos: la capa de abajo es la anterior
+            if k > 0:
+                res["lower"] = self._layer_at(step_idx, *prof[k - 1], j, i)
+            if k + 1 < len(prof):
+                res["upper"] = self._layer_at(step_idx, *prof[k + 1], j, i)
+            return res
+        if p_t > prof[0][0]:
+            res["mode"], res["extrapolated"] = "nearest", True
+            res["upper"] = self._layer_at(step_idx, *prof[0], j, i)
+            res["value"] = dict(res["upper"], p=float(p_t), label=None, fl=int(fl))
+            return res
+        if p_t < prof[-1][0]:
+            res["mode"], res["extrapolated"] = "nearest", True
+            res["lower"] = self._layer_at(step_idx, *prof[-1], j, i)
+            res["value"] = dict(res["lower"], p=float(p_t), label=None, fl=int(fl))
+            return res
+        for (a, la), (b, lb) in zip(prof[:-1], prof[1:]):
+            if a > p_t > b:
+                lower = self._layer_at(step_idx, a, la, j, i)
+                upper = self._layer_at(step_idx, b, lb, j, i)
+                w = (math.log(p_t) - math.log(a)) / (math.log(b) - math.log(a))
+                val = {"p": float(p_t), "label": None, "fl": int(fl),
+                       "u": None, "v": None, "t": None, "spd": None, "dir": None}
+                for var in ("u", "v", "t"):
+                    if lower[var] is not None and upper[var] is not None:
+                        val[var] = (1.0 - w) * lower[var] + w * upper[var]
+                if val["u"] is not None and val["v"] is not None:
+                    spd, direc = speed_dir_from_uv(val["u"], val["v"])
+                    val["spd"], val["dir"] = float(spd), float(direc)
+                res.update({"lower": lower, "upper": upper, "value": val, "w": float(w)})
+                break
+        return res
 
     # ---------------------------------------------------------- inventario
     def run_time(self):

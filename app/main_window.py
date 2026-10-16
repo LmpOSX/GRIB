@@ -277,6 +277,8 @@ class MainWindow(QMainWindow):
 
         # ── Capa de límites de FIR ──
         self.plot.on_click = self._on_map_click
+        self.plot.on_context = self._on_map_context
+        self._point_dialog = None          # Consulta de punto (clic derecho), única
         self._load_fir_layer(redraw=False)
         self._apply_area_layer(redraw=False)
 
@@ -456,6 +458,8 @@ class MainWindow(QMainWindow):
         self._act_zoom_in.setShortcuts([QKeySequence("Ctrl+Shift+="), QKeySequence("Ctrl+Shift++")])
         self._act_zoom_out = self._add_action(vista, "Alejar (fino)", self.zoom_out_fine, "Ctrl+Shift+-")
         self._act_update = self._add_action(vista, "Actualizar", self.redraw, "F5")
+        self._act_point = self._add_action(vista, "Consultar punto…", self.open_point_dialog,
+                                           "Ctrl+I")
         self._act_layer = self._add_action(vista, "Capa de datos activada",
                                            self.toggle_layer, "Ctrl+D")
         self._act_layer.setCheckable(True)
@@ -872,12 +876,16 @@ class MainWindow(QMainWindow):
         self._set_plot_projection(self.panel.projection(), reader.lons, reader.lats)
         self._apply_area_layer(redraw=False)     # el marco pasa a ser el de este archivo
         self.redraw(keep_extent=False)
+        if self._point_dialog is not None:
+            self._point_dialog.set_reader(reader)
 
     def _file_close(self):
         self._reader = None
         self._path = None
         self._provenance = None
         self._current = None
+        if self._point_dialog is not None:
+            self._point_dialog.set_reader(None)
         self.inventory.set_text("Sin archivo abierto.")
         self._apply_area_layer(redraw=False)     # vuelve el marco de la última selección
         self.plot.draw_empty()
@@ -1550,6 +1558,41 @@ class MainWindow(QMainWindow):
             return
         self.set_status(text.splitlines()[0])
         QToolTip.showText(QCursor.pos(), text.replace("\n", "<br>"), self.plot.canvas)
+
+    # ── Consulta de punto (clic derecho) ─────────────────────────────────────
+
+    def _magnetic_variation(self) -> float:
+        """Variación magnética de la tangencia vigente (0 sin norte magnético)."""
+        return float((self.plot.tangent or {}).get("variation_deg", 0.0))
+
+    def open_point_dialog(self, lat=None, lon=None):
+        """Abre (o trae al frente) la consulta de punto; con lat/lon fija el
+        punto. Arranca con la hora del paso y el FL que muestra el panel."""
+        if self._point_dialog is None:
+            from .dialogs.point_dialog import PointDialog
+            self._point_dialog = PointDialog(self, variation_fn=self._magnetic_variation)
+            self._point_dialog.set_reader(self._reader)
+        dlg = self._point_dialog
+        r = self._reader
+        if r is not None and r.steps:
+            step_idx = max(0, min(self.panel.step_index(), len(r.steps) - 1))
+            fl = self.panel.sel_fl if self.panel.level_mode == "fl" else None
+            dlg.set_defaults(when=r.steps[step_idx].valid, fl=fl)
+        if lat is not None and lon is not None:
+            dlg.set_point(lat, lon)
+        dlg.show()
+        dlg.raise_()
+        dlg.activateWindow()
+        return dlg
+
+    def _on_map_context(self, event):
+        """Clic derecho sobre el mapa: consulta de punto en ese lat/lon."""
+        if event.xdata is None or event.ydata is None:
+            return
+        lon, lat = self.plot.to_lonlat(float(event.xdata), float(event.ydata))
+        if lon is None:
+            return
+        self.open_point_dialog(lat, lon)
 
     # ── Área de descarga (rectángulos) ───────────────────────────────────────
 

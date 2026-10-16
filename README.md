@@ -31,9 +31,10 @@ app/
   working_area.py           Working Area de cada FIR: plano estereográfico tangente, cuadrado en NM, contorno lat/lon, radio conforme
   main_window.py            ventana principal: mapa, panel, menús, atajos
   areas.py                  áreas de descarga por FIR: tabla, coordenadas, envolvente + margen, redondeo hacia afuera, exportar/importar
+  point_query.py            consulta de punto (clic derecho): geodésico DDMM, hora YYMMDDHHMM, texto del informe
   config.py, theme.py, platform_blur.py, crash_guard.py, utils.py
   widgets/                  control_panel, inventory_panel, welcome_widget, areas_editor (tabla de áreas, CoordEdit)
-  dialogs/                  glass_dialog, settings_dialog, shortcuts_dialog, about_dialog, export_wafs_dialog, fir_dialog, aip_convert_dialog, areas_dialog
+  dialogs/                  glass_dialog, settings_dialog, shortcuts_dialog, about_dialog, export_wafs_dialog, fir_dialog, aip_convert_dialog, areas_dialog, fl_table_dialog, point_dialog
 resources/fir/              copia filtrada de Boundaries.geojson (VATSpy, CC BY-SA 4.0)
 docs/FUENTES_FIR.md         fuentes de los límites de FIR y sus licencias
 tests/                      unittest (lector, ventana y mapa en offscreen); tests/data: caso de referencia WAFS
@@ -325,12 +326,14 @@ la pantalla) y recuerda tamaño y posición.
   3.° paso del archivo, con su hora de validez al lado. Si hay más de tres
   pasos aparece un combo con todos.
 * **LEVEL**: una botonera fija de **17 botones, siempre los mismos**, en
-  tres filas de seis: los FL OACI17 del Anexo 3 (F050, F080, F100, F140,
-  F180, F210, F240, F270, F300, F320, F340, F360, F390, F410, F450, F480,
-  F530). Un botón queda deshabilitado si ese FL no está en el archivo
+  cuatro columnas: cuatro filas de cuatro y F530 solo en la quinta, con la
+  lista **Otros FL** en el hueco a su derecha. Son los FL OACI17 del Anexo
+  3 (F050, F080, F100, F140, F180, F210, F240, F270, F300, F320, F340,
+  F360, F390, F410, F450, F480, F530). Un botón queda deshabilitado si ese FL no está en el archivo
   (F080, F210 y F480 con un archivo INDRA) o, en un archivo crudo, si su
   presión ISA cae fuera de los niveles del archivo (no se extrapola). La
-  lista **Otros FL** trae los demás FL disponibles que no tienen botón (en
+  lista **Otros FL** (su rótulo «Otros FL del archivo» va en el tooltip)
+  trae los demás FL disponibles que no tienen botón (en
   OACI56 o WAFS, los otros 39: F060, F070, F090 … F600) y, en archivos
   crudos, al final los niveles de presión del archivo sin interpolar; si
   todos los FL del archivo tienen botón (INDRA u OACI) la lista queda
@@ -432,6 +435,31 @@ cuando ya no entran se ralean (al acercar la vista aparecen todos;
 de la grilla, que vuelven al soltar. Al mover el mouse sobre el mapa la barra inferior
 muestra lat/lon y, en el punto de grilla más cercano, velocidad (kt),
 dirección (°) y temperatura (°C).
+
+**Consulta de punto (clic derecho).** Un clic con el botón derecho sobre
+el mapa (o Vista ▸ Consultar punto…, ⌘ I) abre una ventana no modal, al
+estilo de la consulta del FDP, con el punto en grados y minutos
+(`3125S06411W`, editable), la **hora de sobrevuelo** `YYMMDDHHMM` en UTC
+(arranca con la validez del paso que muestra el panel; cualquier otra
+elige el paso cuya ventana de validez la contiene, o el de validez más
+cercana si cae fuera de todas, y lo dice) y el **nivel de sobrevuelo**
+(banda, sin F: cualquier FL, arranca con el del panel). La tabla muestra,
+para ese paso y en ese punto, la **capa superior** y la **capa inferior**
+del archivo que encierran al FL (etiqueta, FL y presión ISA real de cada
+una) y el **valor en el FL**: viento en kt y grados (y `°M` si el mapa
+tiene norte magnético), y temperatura en °C. El valor del FL es el de la
+capa cuando el FL es un nivel exacto del archivo; si no, la interpolación
+lineal en ln(p) entre ambas capas usando la presión real de cada una (en
+un archivo etiquetado por FL, la ISA del FL, no la etiqueta nominal: igual
+que el mapa); fuera del rango del archivo no se extrapola, se da el valor
+de la capa más cercana y se avisa. `Celda` elige qué punto de la grilla
+representa al clic: el nodo más cercano (como la barra de estado) o el
+origen de la celda que lo contiene (esquina suroeste, como el FDP); el
+punto elegido se muestra como «Origen de celda». `Copiar` deja en el
+portapapeles el bloque de texto completo (geodésico, hora, nivel, paso,
+celda y las tres capas). Otro clic derecho cambia el punto y conserva la
+hora, el FL y la celda cargados; al cerrar el archivo la ventana queda sin
+datos.
 
 En cualquier proyección las barbas y flechas se rotan a la orientación
 local del mapa (las curvas se calculan sobre una grilla regular de la
@@ -613,6 +641,7 @@ licencias en `docs/FUENTES_FIR.md`.
 | Actualizar | F5 | F5 |
 | Capa de datos activada / desactivada | ⌘ D | Ctrl D |
 | Límites de FIR de Argentina | ⌘ ⇧ F | Ctrl Shift F |
+| Consultar punto… | ⌘ I | Ctrl I |
 | Preferencias… | ⌘ , | Ctrl , |
 | Agrandar / achicar / restablecer fuente | ⌘ + / ⌘ − / ⌘ 0 | Ctrl + / Ctrl − / Ctrl 0 |
 | Desplazar el mapa | Arrastrar | Arrastrar |
@@ -620,6 +649,7 @@ licencias en `docs/FUENTES_FIR.md`.
 | Acercar / alejar alrededor del cursor | Rueda | Rueda |
 | Acercar / alejar fino alrededor del cursor | ⌘ o ⇧ + rueda | Ctrl o Shift + rueda |
 | Acercar / alejar un paso fino (botones + y −) | ⌘⇧+ / ⌘⇧− | Ctrl Shift + / Ctrl Shift − |
+| Consulta de punto (capas y valor en un FL) | Clic derecho en el mapa | Clic derecho en el mapa |
 | Atajos de teclado | ⌘ / | Ctrl / |
 
 **Pantalla completa.** Vista ▸ Pantalla completa (⌃⌘F en macOS, F11 en

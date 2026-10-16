@@ -6,7 +6,7 @@ No conoce el lector ni el mapa: expone señales y el estado seleccionado; la
 ventana principal decide qué dibujar. Cualquier cambio de radio, botón de
 nivel, combo o checkbox emite su señal para que la ventana redibuje sola.
 """
-from PyQt6.QtCore import Qt, pyqtSignal
+from PyQt6.QtCore import Qt, QEvent, pyqtSignal
 from PyQt6.QtGui import QDoubleValidator
 from PyQt6.QtWidgets import (
     QWidget, QFrame, QVBoxLayout, QHBoxLayout, QGridLayout, QLabel,
@@ -73,6 +73,24 @@ class ControlPanel(QWidget):
             self._sections = {}
         self._sections[title] = frame
         return lay
+
+    def _fit_combo_row(self):
+        """La fila de F530 lleva la lista: un widget que abarca varias
+        columnas no impone su alto a la fila y el combo quedaba recortado.
+        El combo toma el alto de los botones (el panel tiene que entrar en
+        una pantalla de 13"), así todas las filas son iguales."""
+        h = max(b.sizeHint().height() for b in self._fl_buttons.values())
+        self.cb_press.setFixedHeight(h)
+        self._fl_grid.setRowMinimumHeight(self._combo_row, h)
+
+    def changeEvent(self, event):
+        super().changeEvent(event)
+        if event.type() in (QEvent.Type.FontChange, QEvent.Type.StyleChange):
+            self._fit_combo_row()
+
+    def showEvent(self, event):
+        super().showEvent(event)
+        self._fit_combo_row()
 
     @staticmethod
     def _sep(lay):
@@ -175,10 +193,10 @@ class ControlPanel(QWidget):
         self._fl_group = QButtonGroup(self)
         self._fl_group.setExclusive(True)
         self._fl_buttons = {}
-        # 17 botones en 6 columnas y 3 filas (6, 6 y 5); el último ocupa lo
-        # que sobra de su fila para que la botonera quede rectangular
-        n_fl, cols = len(FLIGHT_LEVELS), 6
-        rem = n_fl % cols
+        # 17 botones en 4 columnas: cuatro filas de 4 y F530 solo en la
+        # quinta; el hueco que queda a su derecha lo ocupa la lista con los
+        # demás FL del archivo (los que no tienen botón)
+        n_fl, cols = len(FLIGHT_LEVELS), 4
         for k, fl in enumerate(FLIGHT_LEVELS):
             b = QPushButton(f"F{fl:03d}")
             b.setObjectName("FLBtn")
@@ -188,23 +206,31 @@ class ControlPanel(QWidget):
             b.setCursor(Qt.CursorShape.PointingHandCursor)
             self._fl_group.addButton(b, fl)
             row, col = divmod(k, cols)
-            span = cols - col if (k == n_fl - 1 and rem) else 1
-            grid.addWidget(b, row, col, 1, span)
+            grid.addWidget(b, row, col)
             self._fl_buttons[fl] = b
         for c in range(cols):
             grid.setColumnStretch(c, 1)
         self._fl_buttons[self.sel_fl].setChecked(True)
         self._fl_group.idClicked.connect(self._on_fl_clicked)
-        lay.addLayout(grid)
-        self._sep(lay)
-        row = QHBoxLayout()
-        self.lbl_press = QLabel(self.P_LABEL)
-        row.addWidget(self.lbl_press)
+        last_row, last_col = divmod(n_fl - 1, cols)
         self.cb_press = self._compact(QComboBox())
         self.cb_press.addItem(self.P_COMBO_NONE)
+        self.cb_press.setSizePolicy(QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Fixed)
+        # Que el texto más largo de la lista no ensanche la botonera
+        self.cb_press.setSizeAdjustPolicy(QComboBox.SizeAdjustPolicy.AdjustToMinimumContentsLengthWithIcon)
+        self.cb_press.setMinimumContentsLength(12)
         self.cb_press.currentIndexChanged.connect(self._on_press_combo)
-        row.addWidget(self.cb_press, 1)
-        lay.addLayout(row)
+        # El rótulo «Otros FL…» no entra al lado de la lista: queda oculto y
+        # su texto va al principio del tooltip
+        self.lbl_press = QLabel(self.P_LABEL, self)
+        self.lbl_press.setVisible(False)
+        if last_col + 1 < cols:
+            grid.addWidget(self.cb_press, last_row, last_col + 1, 1, cols - last_col - 1)
+        else:
+            grid.addWidget(self.cb_press, last_row + 1, 0, 1, cols)
+        self._fl_grid, self._combo_row = grid, (last_row if last_col + 1 < cols else last_row + 1)
+        self._fit_combo_row()
+        lay.addLayout(grid)
         self.lbl_fl_p = QLabel("")
         self.lbl_fl_p.setObjectName("SubHeading")
         self.lbl_fl_p.setWordWrap(True)
@@ -418,6 +444,7 @@ class ControlPanel(QWidget):
             if not self._combo_items:
                 self.cb_press.setItemText(0, self.P_COMBO_EMPTY)
             self.cb_press.setToolTip(
+                self.lbl_press.text() + " "
                 "Los botones son los 17 FL OACI; acá están los demás FL del archivo"
                 + ("" if self.wafs else " (interpolados a la ISA exacta) y, al final, los "
                                        "niveles de presión del archivo sin interpolar"))

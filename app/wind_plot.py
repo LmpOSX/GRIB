@@ -491,6 +491,7 @@ class WindPlot:
         self._wa_artists = []
         self._wa_key = None
         self.on_click = None            # callable(event): clic sin arrastre sobre el mapa
+        self.on_context = None          # callable(event): clic derecho sobre el mapa
         self._press_xy = None
         self._in_draw = False
         self._interacting = False
@@ -725,6 +726,13 @@ class WindPlot:
 
     # ----------------------------------------------------------- pan
     def _on_press(self, event):
+        if event.button == 3 and event.inaxes is self.ax and self.has_data:
+            if self.on_context is not None:
+                try:
+                    self.on_context(event)
+                except Exception:
+                    pass
+            return
         if (event.button != 1 or event.inaxes is not self.ax or not self.has_data
                 or event.dblclick):
             return

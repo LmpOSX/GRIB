@@ -1,5 +1,22 @@
 # Cambios
 
+## 0.3.2 — 2026-10-16
+
+- Consulta de punto con el clic derecho sobre el mapa (también Vista ▸
+  Consultar punto…, ⌘ I): ventana al estilo del FDP con el punto en grados
+  y minutos (`3125S06411W`), la hora de sobrevuelo `YYMMDDHHMM` (elige el
+  paso cuya ventana de validez la contiene) y cualquier nivel de
+  sobrevuelo; muestra viento y temperatura de la capa inferior, la
+  superior y el valor en el FL (nivel exacto, interpolado en ln(p) o, fuera
+  del rango, el de la capa más cercana), con el punto de grilla usado
+  (nodo más cercano u origen de la celda) y un botón para copiar el
+  informe.
+- La interpolación a un FL que no es nivel del archivo usa la presión real
+  de cada capa: en archivos etiquetados por FL, la ISA del FL en lugar de
+  la etiqueta nominal (300.9 hPa en vez de 300 para F300).
+- Botonera de niveles en cuatro columnas (cuatro filas de cuatro y F530);
+  la lista «Otros FL» ocupa el hueco al lado de F530.
+
 ## 0.3.1 — 2026-10-16
 
 - Niveles alineados con el generador WAFS del servidor (`gfs_wafs`): el modo
