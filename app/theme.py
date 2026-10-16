@@ -658,6 +658,11 @@ QPushButton#FLBtn:checked {{
     color: {txt};
     font-weight: 700;
 }}
+QPushButton#FLBtn:disabled {{
+    color: {txd};
+    background: transparent;
+    border-style: dashed;
+}}
 QCheckBox, QRadioButton {{
     color: {txt};
     background: transparent;
