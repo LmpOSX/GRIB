@@ -14,6 +14,7 @@ from PyQt6.QtWidgets import (
 
 from .glass_dialog import GlassDialog, add_shadow as _add_shadow
 from .. import wafs_format as wf
+from .. import fl_table as flt
 
 
 class _Worker(QThread):
@@ -114,6 +115,30 @@ class ExportWafsDialog(GlassDialog):
         scroll.setFrameShape(QFrame.Shape.NoFrame)
         row.addWidget(scroll, 1)
         lay.addLayout(row)
+
+        # Modo de etiquetado
+        self._sub(lay, "Modo de etiquetado de los niveles")
+        row = QHBoxLayout()
+        self.cb_mode = QComboBox()
+        for m in flt.MODES:
+            self.cb_mode.addItem(flt.MODE_LABELS[m], m)
+        self.cb_mode.setCurrentIndex(max(0, self.cb_mode.findData(
+            str(self._cfg.get("wafs_mode", flt.DEFAULT_MODE)).upper())))
+        self.cb_mode.setToolTip("INDRA: 14 FL del FDP; OACI: 16 FL del Anexo 3; OACI56: los 56 FL; "
+                                "los tres con etiqueta nominal en hPa. WAFS: 56 FL con la presión ISA "
+                                "en Pa, como NOAA. El dato se interpola siempre a la ISA exacta.")
+        row.addWidget(self.cb_mode, 1)
+        b = QPushButton("Ver tabla…")
+        b.clicked.connect(self._show_fl_table)
+        row.addWidget(b)
+        lay.addLayout(row)
+        mode_src = getattr(r, "fl_mode", None) if getattr(r, "fl_labeled", False) else None
+        self.lbl_mode = QLabel(f"El archivo abierto está etiquetado en modo {mode_src}; se reetiqueta "
+                               "si el modo elegido es otro." if mode_src else
+                               "El archivo abierto está en niveles de presión: se convierte al modo elegido.")
+        self.lbl_mode.setObjectName("Hint")
+        self.lbl_mode.setWordWrap(True)
+        lay.addWidget(self.lbl_mode)
 
         # Niveles
         self._sub(lay, "Niveles de vuelo")
@@ -239,6 +264,10 @@ class ExportWafsDialog(GlassDialog):
         grid.addWidget(sb, r, c + 1)
         return sb
 
+    def _show_fl_table(self):
+        from .fl_table_dialog import FlTableDialog
+        FlTableDialog(self, mode=self.cb_mode.currentData() or flt.DEFAULT_MODE).exec()
+
     def _default_model(self):
         key = (self._prov or {}).get("fuente", "")
         return {"gfs": "gfs", "wafs": "gfs", "ecmwf": "ecmwf", "icon": "icon",
@@ -278,6 +307,7 @@ class ExportWafsDialog(GlassDialog):
             idx=self.chk_idx.isChecked(),
             convert_opts=wf.options_from_config(self._cfg) or {},
             provenance=dict(self._prov) if self._prov else None,
+            mode=self.cb_mode.currentData() or flt.DEFAULT_MODE,
         )
 
     def _validate(self, opts):

@@ -324,16 +324,20 @@ la pantalla) y recuerda tamaño y posición.
 * **TIME**: `Current (+0)`, `Next (+1)`, `Advanced (+2)` eligen el 1.°, 2.° y
   3.° paso del archivo, con su hora de validez al lado. Si hay más de tres
   pasos aparece un combo con todos.
-* **LEVEL**: 16 botones F050…F530 (incluye F200 y F480). El FL se convierte a presión con la atmósfera
-  estándar ISA (`p = 1013.25·(1 − 6.8756e-6·h)^5.2559` hasta 36 089 ft,
-  isotérmica arriba) y U, V y T se interpolan linealmente en ln(p) entre los
-  niveles del archivo. Fuera del rango se usa el nivel más cercano y STATUS
-  lo marca como "extrapolado". El combo "Nivel de presión" elige un nivel
-  del archivo sin interpolar. Con un archivo **WAFS** (lo normal, porque
-  todo se convierte al abrir o descargar) nada de esto interpola: cada
-  botón de FL es un nivel exacto del archivo, y el combo pasa a llamarse
-  "Otro FL del archivo" para elegir los FL que no tienen botón (FL200,
-  FL250, …).
+* **LEVEL**: una botonera fija de **16 botones, siempre los mismos**: los
+  FL OACI16 del Anexo 3 (F050, F080, F100, F140, F180, F240, F270, F300,
+  F320, F340, F360, F390, F410, F450, F480, F530). Un botón queda
+  deshabilitado si ese FL no está en el archivo (F080 y F480 con un archivo
+  INDRA) o, en un archivo crudo, si su presión ISA cae fuera de los niveles
+  del archivo (no se extrapola). La lista **Otros FL** trae los demás FL
+  disponibles que no tienen botón (en OACI56 o WAFS, los otros 40: F060,
+  F070, F090 … F600) y, en archivos crudos, al final los niveles de presión
+  del archivo sin interpolar. Elegir en la lista deselecciona la botonera y
+  viceversa. El FL activo se muestra siempre en el mismo lugar con sus dos
+  presiones: `F050 · etiqueta 850 hPa · 843.1 hPa ISA (nivel exacto, modo
+  OACI56)` o `(interpolado en ln(p))` en un archivo crudo. Las presiones
+  salen de la tabla del generador WAFS (ver «Formato WAFS»): el dato de cada
+  FL corresponde siempre a su presión ISA exacta.
 * **VARIABLE**: Viento, Temperatura (contornos cada 2 °C) o ambas.
 * **VIENTO**: `Estilo` elige la representación: **Barbas** (convención
   meteorológica, en kt), **Flechas** (de largo fijo, apuntan hacia donde
@@ -648,15 +652,73 @@ tablas en `fix/wafs/`).
   más campos 2D opcionales (viento máximo y tropopausa). Unidades K, m/s,
   gpm y %. Viento referido al norte/este geográfico.
 * Niveles: **niveles de vuelo cada 1000 ft, FL050–FL600**, codificados como
-  superficie isobárica (tipo 100) a la **presión ISA del FL en Pa redondeada
-  a 0,1 hPa**. Por eso `wgrib2 -s` los lista como `843.1 mb`, `812 mb`,
-  `781.9 mb`…, y ecCodes muestra `level` truncado (843): el lector usa el
-  valor escalado exacto.
+  superficie isobárica (tipo 100). En el producto de NOAA el nivel lleva la
+  **presión ISA del FL en Pa** (`843.1 mb`, `812 mb`… en `wgrib2 -s`); en
+  los modos nominales (abajo) lleva la etiqueta en hPa (`850 mb`). El
+  lector usa el valor escalado exacto, no el `level` truncado de ecCodes.
 * Plazos operativos: +6…+24 cada 1 h, +27…+48 cada 3 h, +54…+120 cada 6 h;
   corridas 00/06/12/18. Nombre del producto: `gfs.tHHz.wafs_0p25.fFFF.grib2`.
 
-**Fórmula ISA** (la del conversor de referencia; reproduce exactamente los
-valores que figuran en las tablas de NCEP):
+**La tabla de FL** (`app/fl_table.py`) es la única fuente de verdad, copiada
+literal de la lista oficial de NOAA (repo NOAA-EMC/wafs) que usa el
+generador de archivos WAFS del servidor; no se recalcula con la fórmula.
+Para cada FL tiene dos columnas: `ISA_Pa`, la presión ISA exacta en Pa, y
+`OACI56_hPa`, la etiqueta nominal en hPa (56 etiquetas distintas y
+decrecientes; los 16 OACI conservan el nominal del Anexo 3). **El dato de
+viento y temperatura de cada nivel corresponde siempre a la presión
+exacta**; la etiqueta es lo que se graba en el GRIB y lo que reconoce cada
+consumidor. Subconjuntos: OACI16 (050 080 100 140 180 240 270 300 320 340
+360 390 410 450 480 530) e INDRA14 (OACI16 sin 080 ni 480).
+
+| FL | ISA_Pa | Nominal | FL | ISA_Pa | Nominal | FL | ISA_Pa | Nominal | FL | ISA_Pa | Nominal |
+|---|---|---|---|---|---|---|---|---|---|---|---|
+| 050 | 84310 | 850 | 190 | 48550 | 485 | 330 | 26200 | 260 | 470 | 13400 | 135 |
+| 060 | 81200 | 800 | 200 | 46560 | 465 | 340 | 25000 | 250 | 480 | 12770 | 125 |
+| 070 | 78190 | 775 | 210 | 44650 | 450 | 350 | 23840 | 240 | 490 | 12170 | 120 |
+| 080 | 75260 | 750 | 220 | 42790 | 425 | 360 | 22730 | 225 | 500 | 11600 | 115 |
+| 090 | 72430 | 725 | 230 | 41000 | 410 | 370 | 21660 | 215 | 510 | 11050 | 110 |
+| 100 | 69680 | 700 | 240 | 39270 | 400 | 380 | 20650 | 205 | 520 | 10530 | 105 |
+| 110 | 67020 | 675 | 250 | 37600 | 375 | 390 | 19680 | 200 | 530 | 10040 | 100 |
+| 120 | 64440 | 650 | 260 | 35990 | 360 | 400 | 18750 | 190 | 540 | 9570 | 95 |
+| 130 | 61940 | 625 | 270 | 34430 | 350 | 410 | 17870 | 175 | 550 | 9120 | 90 |
+| 140 | 59520 | 600 | 280 | 32930 | 330 | 420 | 17040 | 170 | 560 | 8700 | 85 |
+| 150 | 57180 | 575 | 290 | 31490 | 315 | 430 | 16240 | 160 | 570 | 8280 | 80 |
+| 160 | 54920 | 550 | 300 | 30090 | 300 | 440 | 15470 | 155 | 580 | 7900 | 70 |
+| 170 | 52720 | 525 | 310 | 28740 | 285 | 450 | 14750 | 150 | 590 | 7520 | 65 |
+| 180 | 50600 | 500 | 320 | 27450 | 275 | 460 | 14060 | 140 | 600 | 7170 | 60 |
+
+**Cuatro modos de etiquetado** (configuración y exportación; en los cuatro
+el dato se interpola a `ISA_Pa`):
+
+| Modo | Filas | Etiqueta grabada | Uso |
+|---|---|---|---|
+| INDRA | las 14 de INDRA14 | nominal hPa | el FDP |
+| OACI | las 16 de OACI16 | nominal hPa | Anexo 3 |
+| OACI56 | las 56 | nominal hPa | **por defecto** |
+| WAFS | las 56 | ISA_Pa | como codifica NOAA |
+
+El modo por defecto se elige en Preferencias ▸ WAFS (persistido,
+`wafs_mode`) y vale para la conversión automática al abrir o descargar; el
+diálogo Exportar a WAFS tiene su propio selector y, en los dos lugares, un
+botón **Ver tabla** muestra FL, `ISA_Pa` y la etiqueta del modo elegido.
+
+**Al leer un archivo** se mapea el nivel de cada mensaje (presión en Pa) a FL
+buscándolo primero en la columna `ISA_Pa` (modo WAFS, con tolerancia de 10
+Pa) y después en `OACI56_hPa`×100; lo que no está en ninguna columna queda
+«no reconocido» y se muestra con su presión cruda. El inventario dice qué
+modo explica todos los niveles (`FORMATO: etiquetado por FL, modo INDRA…`).
+Un archivo cuenta como etiquetado por FL sólo si un modo explica todos sus
+niveles y, en los modos nominales, están al menos los 14 FL de INDRA: un
+GFS crudo con 850/700/500/250/100 hPa coincide con etiquetas nominales pero
+no se toma por FL, se interpola. Lo que baja de una fuente en niveles de
+presión se convierte siempre, aunque sus niveles coincidan con etiquetas.
+Si el archivo viene en niveles de presión crudos, los FL se interpolan en
+ln(p) a `ISA_Pa`, como siempre, y sólo los FL cuya presión cae dentro de los
+niveles del archivo quedan disponibles (no se extrapola).
+
+**Fórmula ISA** (la del conversor de referencia, `docs/referencia/make_wafs_like.py`;
+reproduce los valores de NCEP salvo F290, que la tabla literal da 31490 Pa y
+la fórmula redondeada 31480; el visor usa la tabla):
 
 ```
 h = FL × 100 × 0,3048                              (m)
@@ -716,15 +778,16 @@ aritmética: con las opciones por defecto reproduce byte a byte su salida):
 ```bash
 python -m app.wafs_format entrada.grib2 salida.grib2 [--fl-min 50 --fl-max 530] \
     [--sin-extender] [--extrapolar] [--tabla 25] [--centro N] [--sin-idx]
+    [--modo INDRA|OACI|OACI56|WAFS] [--forzar]
 python -m app.wafs_format --validar archivo.grib2
 ```
 
-En el visor, con un WAFS abierto cada botón de FL cae en un **nivel exacto
-del archivo** (STATUS: `LEVEL: F300 = 30090 Pa (WAFS, nivel exacto)`), el
-combo «Otro FL del archivo» lista los 49 niveles como `FL300 · 300.9 hPa`
-(su primera opción es «el FL del botón elegido», sin interpolación), el
-inventario dice `FORMATO: WAFS …` y FUENTE agrega `WAFS FL050–FL530
-(convertido)`.
+En el visor, con un archivo etiquetado por FL cada FL cae en un **nivel
+exacto del archivo** (STATUS: `LEVEL: F300 = 30090 Pa ISA (nivel exacto,
+modo OACI56, etiqueta 300 hPa)`), la lista «Otros FL del archivo» trae los
+FL sin botón como `FL060 · 800 hPa (812 ISA)` (su primera opción es «el FL
+del botón elegido»), el inventario dice `FORMATO: etiquetado por FL, modo …`
+y FUENTE agrega `WAFS FL050–FL530 · modo OACI56 (convertido)`.
 
 **Exportar a WAFS…** (Archivo, ⌘⇧W) toma lo cargado y escribe GRIB2 WAFS:
 todos los plazos y niveles o una selección (plazos, rango de FL), sólo
@@ -888,10 +951,12 @@ existe, el workflow la crea con el nombre `Visor GRIB vX.Y.Z`.
 
 1. Abrir el archivo: `python main.py FDP_MULTI.grib2`.
 2. Elegir **Next (+1)** (segundo paso, por ejemplo +9 h) y el nivel **F100**.
-   STATUS mostrará `F100 = 696.8 hPa (ISA)` interpolado entre 700 y 600 hPa;
-   al estar a sólo 3 hPa de 700, los valores son prácticamente los del nivel
-   de 700 mb. Para comparar exactamente, elegir `700 hPa` en el combo
-   "Nivel de presión".
+   `FDP_MULTI.grib2` tiene exactamente los 14 niveles nominales de INDRA,
+   así que el visor lo lee etiquetado por FL (modo INDRA): STATUS muestra
+   `F100 = 69680 Pa ISA (nivel exacto, modo INDRA, etiqueta 700 hPa)` y el
+   dato es el del mensaje de 700 mb sin interpolar. Con un GFS crudo (con
+   1000 hPa, por ejemplo) F100 se interpola a 696,8 hPa entre 700 y 600 hPa,
+   y el nivel exacto se elige al final de la lista «Otros FL».
 3. Listar los mensajes de 700 mb del archivo con wgrib2:
 
    ```bash

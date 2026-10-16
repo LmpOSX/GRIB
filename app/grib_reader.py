@@ -24,7 +24,7 @@ from .grib_engines import (  # noqa: F401 - reexportados para quien importe de a
     ec, ECCODES_ERROR, ECCODES_HELP, WGRIB2_HELP, ENGINES, EngineUnavailable,
     GribMessage, make_backend, find_wgrib2, wgrib2_version, SURFACE_LEVEL,
 )
-from .wafs_format import fl_from_hpa
+from . import fl_table as flt
 
 # ---------------------------------------------------------------------------
 # Constantes de dominio
@@ -32,8 +32,8 @@ from .wafs_format import fl_from_hpa
 MS_TO_KT = 1.943844          # m/s -> nudos
 KELVIN = 273.15              # K -> °C
 
-# Niveles de vuelo del panel de referencia
-FLIGHT_LEVELS = [50, 100, 140, 180, 200, 240, 270, 300, 320, 340, 360, 390, 410, 450, 480, 530]
+# Niveles de vuelo de la botonera: los 16 OACI del Anexo 3 (fl_table.OACI16)
+FLIGHT_LEVELS = list(flt.OACI16)
 
 # Escala de colores fija de velocidad (kt)
 SPEED_BINS = [0, 10, 20, 30, 40, 50]
@@ -52,6 +52,11 @@ def fl_to_hpa(fl):
     Estratosfera baja (isotérmica, 216.65 K): decaimiento exponencial con una
     altura de escala R*T/g = 20805.8 ft.
     """
+    try:
+        if float(fl).is_integer() and int(fl) in flt.FL_TABLE:
+            return flt.isa_pa(int(fl)) / 100.0      # la tabla del servidor manda
+    except (TypeError, ValueError):
+        pass
     h_ft = float(fl) * 100.0
     h_trop = 36089.0
     if h_ft <= h_trop:
@@ -234,21 +239,35 @@ class GribReader:
         self.has_surface = SURFACE_LEVEL in levels
         # 'altura' si hay niveles de presión; 'superficie' si sólo hay viento 10 m / T 2 m
         self.kind = "altura" if self.levels else "superficie"
-        # Formato WAFS: niveles = presión ISA de FL enteros → el FL del panel
-        # cae en un nivel exacto del archivo, sin interpolar
-        self.fl_levels = {}
-        for lv in self.levels:
-            fl = fl_from_hpa(lv)
-            if fl is not None and fl not in self.fl_levels:
-                self.fl_levels[fl] = lv
-        self.is_wafs = bool(self.levels) and len(self.fl_levels) == len(self.levels) \
-            and set(self.fl_levels) != {340}
+        # Niveles etiquetados por FL (tabla fl_table): primero por la columna
+        # ISA (modo WAFS), después por la nominal ×100 (INDRA / OACI / OACI56).
+        # Si un modo explica todos los niveles (y, en los nominales, están al
+        # menos los 14 de INDRA) el archivo es «por FL»: cada FL cae en un
+        # nivel exacto, sin interpolar. Si no, es crudo y se interpola.
+        self._classify_fl_levels()
         self.variables = [v for v in ("u", "v", "t") if v in variables]
         if not self.index:
             raise ValueError(
                 "El archivo no contiene campos U/V/T en niveles de presión "
                 "(typeOfLevel isobaricInhPa) ni de superficie (10 m / 2 m) sobre la "
                 "grilla principal.")
+
+    def _classify_fl_levels(self):
+        """Clasifica `self.levels` con la tabla de FL (ver fl_table.classify)
+        y deja fl_mode, fl_labeled, fl_column, fl_levels ({FL: hPa}) y
+        unrecognized_levels. También lo usa el lector sintético de los tests."""
+        det = flt.classify([lv * 100.0 for lv in self.levels])
+        self.fl_mode = det["mode"]
+        self.fl_labeled = bool(det["labeled"])
+        self.fl_column = det["column"]
+        self.unrecognized_levels = [pa / 100.0 for pa in det["unrecognized"]]
+        self.fl_levels = {}
+        if self.fl_labeled:
+            for lv in self.levels:
+                fl = det["fls"].get(int(round(lv * 100.0)))
+                if fl is not None and fl not in self.fl_levels:
+                    self.fl_levels[fl] = lv
+        self.is_wafs = self.fl_labeled
 
     def _compute_windows(self):
         """Calcula la ventana de validez de cada paso. Si el stepRange es un
@@ -316,21 +335,44 @@ class GribReader:
         return u, v, t, info
 
     def level_label(self, level_hpa):
-        """Texto de un nivel para el panel: 'FL300 · 300,9 hPa' en archivos
-        WAFS, '300 hPa' en los demás."""
+        """Texto de un nivel para el panel: 'FL300 · 300 hPa (300.9 ISA)' en
+        archivos etiquetados por FL, '300 hPa' en los demás."""
         for fl, lv in getattr(self, "fl_levels", {}).items():
             if lv == level_hpa:
-                return f"FL{fl:03d} · {lv:g} hPa"
+                return self.fl_text(fl)
         return f"{level_hpa:g} hPa"
 
+    def fl_text(self, fl):
+        """'FL050 · 850 hPa (843.1 ISA)': etiqueta y presión exacta del FL."""
+        fl = int(fl)
+        isa = flt.isa_pa(fl) / 100.0 if fl in flt.FL_TABLE else fl_to_hpa(fl)
+        lv = getattr(self, "fl_levels", {}).get(fl)
+        if lv is not None and getattr(self, "fl_column", None) == "nominal":
+            return f"FL{fl:03d} · {lv:g} hPa ({isa:g} ISA)"
+        return f"FL{fl:03d} · {isa:g} hPa"
+
+    def available_fls(self):
+        """FL que el archivo puede mostrar: los etiquetados si es por FL; si
+        es crudo, los de la tabla cuya presión ISA cae dentro de los niveles
+        del archivo (no se extrapola)."""
+        if getattr(self, "fl_labeled", False):
+            return sorted(self.fl_levels)
+        if not self.levels:
+            return []
+        p_max, p_min = max(self.levels), min(self.levels)
+        return [fl for fl in flt.FLS if p_min <= flt.isa_pa(fl) / 100.0 <= p_max]
+
     def fields_for_fl(self, step_idx, fl):
-        """u, v, t para un nivel de vuelo: en un archivo WAFS el nivel exacto
-        del FL (modo 'wafs'); si no, interpolación en ln(p) a la presión ISA."""
+        """u, v, t para un nivel de vuelo: en un archivo etiquetado por FL el
+        nivel exacto del FL (modo 'wafs'); si no, interpolación en ln(p) a la
+        presión ISA exacta de la tabla."""
         lv = getattr(self, "fl_levels", {}).get(int(fl))
         if lv is not None and any((step_idx, var, lv) in self.index for var in ("u", "v", "t")):
             u, v, t, info = self.get_level_fields(step_idx, lv)
             info["mode"] = "wafs"
             info["fl"] = int(fl)
+            info["p"] = flt.isa_pa(int(fl)) / 100.0 if int(fl) in flt.FL_TABLE else lv
+            info["label_hpa"] = float(lv)
             return u, v, t, info
         return self.interp_to_pressure(step_idx, fl_to_hpa(fl))
 
@@ -401,10 +443,22 @@ class GribReader:
         lines.append("NIVELES (hPa): " + ", ".join(f"{lv:g}" for lv in self.levels)
                      + ("  + superficie (viento 10 m / T 2 m)"
                         if getattr(self, "has_surface", False) else ""))
-        if getattr(self, "is_wafs", False):
+        if getattr(self, "fl_labeled", False):
             fls = sorted(self.fl_levels)
-            lines.append(f"FORMATO: WAFS (niveles por FL, presión ISA en Pa): FL{fls[0]:03d}–FL{fls[-1]:03d}, "
-                         f"{len(fls)} niveles")
+            col = ("presión ISA en Pa" if getattr(self, "fl_column", "") == "isa"
+                   else "etiqueta nominal en hPa")
+            lines.append(f"FORMATO: etiquetado por FL, modo {self.fl_mode} ({col}): "
+                         f"FL{fls[0]:03d}–FL{fls[-1]:03d}, {len(fls)} niveles; el dato está en la "
+                         f"presión ISA exacta de cada FL")
+        elif self.levels:
+            mode = getattr(self, "fl_mode", None)
+            txt = "FORMATO: niveles de presión crudos (los FL se interpolan en ln(p) a la ISA exacta)"
+            if mode:
+                txt += f"; los niveles coinciden con etiquetas {mode} pero faltan FL de INDRA"
+            if getattr(self, "unrecognized_levels", None):
+                txt += ("; no reconocidos como FL: "
+                        + ", ".join(f"{lv:g} hPa" for lv in self.unrecognized_levels))
+            lines.append(txt)
         lines.append("")
         lines.append("GRILLA:")
         lines.append(f"  tipo: {g.get('grid_type')}   Ni={g.get('ni')}  Nj={g.get('nj')}")

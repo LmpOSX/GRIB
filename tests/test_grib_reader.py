@@ -115,6 +115,7 @@ def _reader_sintetico(levels, shape=(3, 4)):
     r.levels = sorted(levels, reverse=True)
     r.has_surface, r.kind = False, "altura"
     r.variables = ["u", "v", "t"]
+    r._classify_fl_levels()
     for lv in levels:
         r.index[(0, "u", float(lv))] = object()
         r.index[(0, "v", float(lv))] = object()

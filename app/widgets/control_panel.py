@@ -15,6 +15,7 @@ from PyQt6.QtWidgets import (
 )
 
 from ..grib_reader import FLIGHT_LEVELS, fl_to_hpa
+from .. import fl_table as flt
 from ..wind_plot import PROJECTIONS, HAVE_CARTOPY, WIND_STYLES, GRID_STEPS
 
 
@@ -35,10 +36,11 @@ class ControlPanel(QWidget):
     fir_config_clicked = pyqtSignal()       # botón «FIR…»
 
     TIME_LABELS = ["Current (+0)", "Next (+1)", "Advanced (+2)"]
-    P_COMBO_NONE = "(interpolar por FL)"            # archivo en niveles de presión
-    P_COMBO_NONE_WAFS = "(el FL del botón elegido)"  # archivo WAFS: no se interpola
-    P_LABEL = "Nivel de presión:"
-    P_LABEL_WAFS = "Otro FL del archivo:"
+    P_COMBO_NONE = "(el FL del botón elegido)"       # primera entrada de la lista
+    P_COMBO_NONE_WAFS = P_COMBO_NONE
+    P_LABEL = "Otros FL:"
+    P_LABEL_WAFS = "Otros FL del archivo:"
+    P_SEP = "— niveles del archivo sin interpolar —"
 
     def __init__(self, parent=None):
         super().__init__(parent)
@@ -48,6 +50,9 @@ class ControlPanel(QWidget):
         self.sel_fl = 300
         self.sel_p = None
         self._levels = []           # niveles de presión del archivo (hPa)
+        self._fl_available = list(FLIGHT_LEVELS)   # FL que el archivo puede mostrar
+        self._combo_items = []      # [('fl', fl) | ('p', hpa)] en el orden del combo (tras el 0)
+        self.fl_mode = None         # modo de etiquetado del archivo (None = crudo)
         self._updating = False      # evita señales mientras se llenan controles
         self._build()
 
@@ -372,24 +377,50 @@ class ControlPanel(QWidget):
 
             self._levels = list(reader.levels)
             self.wafs = bool(getattr(reader, "is_wafs", False))
-            # En WAFS cada botón de FL es un nivel exacto del archivo: el combo
-            # sólo sirve para elegir alguno de los FL que no tienen botón.
+            self.fl_mode = getattr(reader, "fl_mode", None) if self.wafs else None
+            self._reader_fl_text = getattr(reader, "fl_text", None)
+            # Botonera fija OACI16: un botón se deshabilita si ese FL no está
+            # en el archivo (etiquetado) o fuera de sus niveles (crudo)
+            avail_fn = getattr(reader, "available_fls", None)
+            self._fl_available = list(avail_fn()) if avail_fn else list(FLIGHT_LEVELS)
+            for fl, b in self._fl_buttons.items():
+                b.setEnabled(fl in self._fl_available)
+            # La lista lleva los demás FL disponibles que no tienen botón y,
+            # en archivos crudos, los niveles del archivo sin interpolar
             self.lbl_press.setText(self.P_LABEL_WAFS if self.wafs else self.P_LABEL)
             self.cb_press.clear()
-            self.cb_press.addItem(self.P_COMBO_NONE_WAFS if self.wafs else self.P_COMBO_NONE)
+            self.cb_press.addItem(self.P_COMBO_NONE)
+            self._combo_items = []
+            for fl in self._fl_available:
+                if fl not in self._fl_buttons:
+                    self.cb_press.addItem(self._fl_full_text(fl))
+                    self._combo_items.append(("fl", fl))
+            if not self.wafs and self._levels:
+                self.cb_press.addItem(self.P_SEP)
+                self._combo_items.append(("sep", None))
+                idx_sep = self.cb_press.count() - 1
+                try:
+                    self.cb_press.model().item(idx_sep).setEnabled(False)
+                except Exception:
+                    pass
+                for lv in self._levels:
+                    self.cb_press.addItem(f"{lv:g} hPa (nivel del archivo)")
+                    self._combo_items.append(("p", lv))
             self.cb_press.setToolTip(
-                "Los botones de FL caen en niveles exactos del archivo WAFS; acá se eligen "
-                "los demás FL del archivo" if self.wafs else
-                "Nivel del archivo sin interpolar; los botones de FL interpolan en ln(p)")
-            label = getattr(reader, "level_label", None) or (lambda lv: f"{lv:g} hPa")
-            self.cb_press.addItems([label(lv) for lv in self._levels])
+                "Los botones son los 16 FL OACI; acá están los demás FL del archivo"
+                + ("" if self.wafs else " (interpolados a la ISA exacta) y, al final, los "
+                                       "niveles de presión del archivo sin interpolar"))
             self.cb_press.setCurrentIndex(0)
             # Fuentes de superficie (viento 10 m / T 2 m): sin selector de nivel
             self.surface = getattr(reader, "kind", "altura") == "superficie"
             self._sections["LEVEL"].setVisible(not self.surface)
             self.level_mode = "sfc" if self.surface else "fl"
             self.sel_p = None
-            self._fl_buttons[self.sel_fl].setChecked(True)
+            if self.sel_fl not in self._fl_available and self._fl_available:
+                # El FL activo no está en este archivo: el primero disponible con botón
+                with_btn = [fl for fl in FLIGHT_LEVELS if fl in self._fl_available]
+                self.sel_fl = with_btn[0] if with_btn else self._fl_available[0]
+            self._check_fl_button(self.sel_fl)
             self.set_extent_entries([float(reader.lons.min()), float(reader.lons.max()),
                                      float(reader.lats.min()), float(reader.lats.max())])
         finally:
@@ -433,10 +464,28 @@ class ControlPanel(QWidget):
 
     # ── Niveles ──────────────────────────────────────────────────────────────
 
+    def available_fls(self):
+        return list(self._fl_available)
+
+    def _check_fl_button(self, fl):
+        """Tilda el botón del FL si lo tiene; si no (FL de la lista), ninguno."""
+        self._fl_group.setExclusive(False)
+        for k, b in self._fl_buttons.items():
+            b.setChecked(k == fl)
+        self._fl_group.setExclusive(True)
+
     def select_fl(self, fl: int):
-        """Selección programática de un FL (equivale al clic)."""
-        self._fl_buttons[fl].setChecked(True)
-        self._on_fl_clicked(fl)
+        """Selección programática de un FL (botón o lista): equivale al clic."""
+        fl = int(fl)
+        if fl in self._fl_buttons:
+            self._fl_buttons[fl].setChecked(True)
+            self._on_fl_clicked(fl)
+            return
+        for i, (kind, val) in enumerate(self._combo_items, 1):
+            if kind == "fl" and val == fl:
+                self.cb_press.setCurrentIndex(i)
+                return
+        raise ValueError(f"FL{fl:03d} no está disponible en este archivo")
 
     def _on_fl_clicked(self, fl: int):
         self.sel_fl = fl
@@ -444,50 +493,73 @@ class ControlPanel(QWidget):
         self.sel_p = None
         self._updating = True
         try:
-            self.cb_press.setCurrentIndex(0)
+            self.cb_press.setCurrentIndex(0)      # elegir un botón deselecciona la lista
         finally:
             self._updating = False
         self._update_level_hint()
         self.level_changed.emit()
 
     def select_pressure_index(self, idx: int):
-        """Selección programática del combo de niveles (0 = el FL del botón)."""
+        """Selección programática de la lista (0 = el FL del botón)."""
         self.cb_press.setCurrentIndex(idx)
 
     def _on_press_combo(self, idx: int):
         if self._updating:
             return
-        if idx <= 0 or idx - 1 >= len(self._levels):
+        item = self._combo_items[idx - 1] if 0 < idx <= len(self._combo_items) else None
+        if item is None or item[0] == "sep":
             self.level_mode = "fl"
             self.sel_p = None
-            self._fl_buttons[self.sel_fl].setChecked(True)
+            if self.sel_fl not in self._fl_buttons:
+                with_btn = [fl for fl in FLIGHT_LEVELS if fl in self._fl_available]
+                if with_btn:
+                    self.sel_fl = with_btn[0]
+            self._check_fl_button(self.sel_fl)
+        elif item[0] == "fl":
+            # Un FL de la lista: deselecciona la botonera
+            self.level_mode = "fl"
+            self.sel_fl = int(item[1])
+            self.sel_p = None
+            self._check_fl_button(None)
         else:
             self.level_mode = "p"
-            self.sel_p = self._levels[idx - 1]
-            # Sin FL seleccionado mientras se usa un nivel del archivo
-            self._fl_group.setExclusive(False)
-            for b in self._fl_buttons.values():
-                b.setChecked(False)
-            self._fl_group.setExclusive(True)
+            self.sel_p = item[1]
+            self._check_fl_button(None)
         self._update_level_hint()
         self.level_changed.emit()
 
+    def _fl_full_text(self, fl):
+        """'FL060 · 800 hPa (812 ISA)' según el lector, o la tabla."""
+        fn = getattr(self, "_reader_fl_text", None)
+        if fn is not None:
+            try:
+                return fn(fl)
+            except Exception:
+                pass
+        if fl in flt.FL_TABLE:
+            return f"FL{fl:03d} · {flt.nominal_hpa(fl)} hPa ({flt.isa_pa(fl) / 100.0:g} ISA)"
+        return f"FL{fl:03d} · {fl_to_hpa(fl):.1f} hPa"
+
     def _update_level_hint(self):
+        """El FL activo, siempre en el mismo lugar, con sus dos presiones."""
         if self.level_mode == "sfc":
             self.lbl_fl_p.setText("Superficie: viento 10 m, temperatura 2 m")
         elif self.level_mode == "fl":
+            fl = self.sel_fl
+            isa = flt.isa_pa(fl) / 100.0 if fl in flt.FL_TABLE else fl_to_hpa(fl)
+            lab = f"{flt.nominal_hpa(fl)} hPa" if fl in flt.FL_TABLE else "—"
             if getattr(self, "wafs", False):
-                self.lbl_fl_p.setText(f"F{self.sel_fl:03d} = {fl_to_hpa(self.sel_fl):.1f} hPa (nivel WAFS)")
+                self.lbl_fl_p.setText(f"F{fl:03d} · etiqueta {lab} · {isa:.1f} hPa ISA "
+                                      f"(nivel exacto, modo {self.fl_mode})")
             else:
-                self.lbl_fl_p.setText(f"F{self.sel_fl:03d} ≈ {fl_to_hpa(self.sel_fl):.1f} hPa (ISA)")
-        elif getattr(self, "wafs", False):
-            self.lbl_fl_p.setText(f"{self._fl_text(self.sel_p)} (nivel WAFS)")
+                self.lbl_fl_p.setText(f"F{fl:03d} · etiqueta {lab} · {isa:.1f} hPa ISA "
+                                      f"(interpolado en ln(p))")
         else:
             self.lbl_fl_p.setText(f"Nivel del archivo: {self.sel_p:g} hPa (sin interpolar)")
 
     @staticmethod
     def _fl_text(p_hpa):
-        """'F200 = 46.6 hPa' si la presión es la de un FL entero, si no '46.6 hPa'."""
+        """'F200 = 46.6 hPa' si la presión es la de un FL, si no '46.6 hPa'."""
         from ..wafs_format import fl_from_hpa
         fl = fl_from_hpa(p_hpa)
         return f"F{fl:03d} = {p_hpa:g} hPa" if fl is not None else f"{p_hpa:g} hPa"

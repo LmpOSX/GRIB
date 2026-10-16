@@ -89,17 +89,21 @@ class TestTablaISA(unittest.TestCase):
     def test_fl_desde_pa(self):
         self.assertEqual(wf.fl_from_pa(10040), 530)
         self.assertEqual(wf.fl_from_pa(10045), 530)        # dentro de la tolerancia (10 Pa)
-        self.assertIsNone(wf.fl_from_pa(10000))            # 100 hPa no es un FL
+        self.assertEqual(wf.fl_from_pa(10000), 530)        # 100 hPa: etiqueta nominal de FL530
+        self.assertEqual(wf.fl_from_pa_col(10000), (530, "nominal"))
+        self.assertEqual(wf.fl_from_pa_col(10040), (530, "isa"))
         self.assertEqual(wf.fl_from_pa(25000), 340)
-        self.assertIsNone(wf.fl_from_hpa(850))
+        self.assertEqual(wf.fl_from_hpa(850), 50)          # nominal de FL050
+        self.assertIsNone(wf.fl_from_hpa(1000))            # fuera de la tabla
+        self.assertEqual(wf.FL_TABLE[290], 31490)          # literal del servidor
 
     def test_rango_de_fl(self):
         self.assertEqual(wf.fl_range([850, 100]), (50, 530))
-        self.assertEqual(wf.fl_range([1000, 850, 100, 50]), (10, 600))
+        self.assertEqual(wf.fl_range([1000, 850, 100, 50]), (50, 600))     # la tabla empieza en F050
         self.assertEqual(wf.fl_range([1000, 850, 100, 50], extend=False), (50, 530))
         self.assertEqual(wf.fl_range([700, 300]), (50, 530))      # nunca se achica
         self.assertEqual(wf.fl_range([850, 100], 100, 300), (100, 300))   # rango explícito
-        self.assertEqual(wf.fl_range([1000, 100], 100, 300), (10, 300))
+        self.assertEqual(wf.fl_range([1000, 100], 100, 300), (100, 300))   # nada por debajo de F050 que ampliar
 
     def test_nombre_operativo(self):
         self.assertEqual(wf.wafs_filename(6, 9), "gfs.t06z.wafs_0p25.f009.grib2")
@@ -108,36 +112,59 @@ class TestTablaISA(unittest.TestCase):
 
 @needs_eccodes
 class TestConversionReferencia(unittest.TestCase):
-    """(1) convertir FDP_MULTI.grib2 reproduce WAFS_like_test.grib2."""
+    """(1) convertir FDP_MULTI.grib2 en modo WAFS reproduce WAFS_like_test.grib2.
 
-    def test_reproduce_byte_a_byte(self):
-        res = wf.convert_to_wafs(SRC)
-        with open(REF, "rb") as fh:
-            ref = fh.read()
+    Desde que la tabla de FL es la literal del servidor hay dos desvíos
+    conocidos respecto del conversor de referencia (fórmula ISA redondeada):
+    FL290 se etiqueta 31490 Pa (el conversor viejo daba 31480) y el dato se
+    interpola a la ISA entera de la tabla (84310 Pa) en vez de a la fórmula
+    (84306,1 Pa), lo que mueve los valores menos de 0,1 m/s y 0,05 K."""
+
+    def test_reproduce_la_referencia(self):
+        res = wf.convert_to_wafs(SRC, mode="WAFS")
         self.assertEqual(res.info["mensajes"], 441)
         self.assertEqual(res.info["fl_rango"], "FL050–FL530")
-        self.assertEqual(res.data, ref)
-
-    def test_mensaje_a_mensaje(self):
-        got = _messages(wf.convert_to_wafs(SRC).data)
+        self.assertEqual(res.info["modo"], "WAFS")
+        got = _messages(res.data)
         ref = _messages(REF)
         self.assertEqual(len(got), len(ref))
         for a, b in zip(got, ref):
-            self.assertEqual(a[:3], b[:3])
-            np.testing.assert_array_equal(a[3], b[3])
+            self.assertEqual(a[0], b[0])
+            self.assertEqual(a[2], b[2])
+            self.assertEqual(wf.fl_from_pa(a[1]), wf.fl_from_pa(b[1]))
+            if wf.fl_from_pa(a[1]) != 290:
+                self.assertEqual(a[1], b[1])
+            else:
+                self.assertEqual((a[1], b[1]), (31490.0, 31480.0))
+            np.testing.assert_allclose(a[3], b[3], rtol=0, atol=0.1)
         fls = sorted({wf.fl_from_pa(m[1]) for m in ref})
         self.assertEqual(fls, list(range(50, 531, 10)))
 
+    def test_modo_por_defecto_etiqueta_nominal(self):
+        res = wf.convert_to_wafs(SRC)                       # OACI56 por defecto
+        self.assertEqual(res.info["modo"], "OACI56")
+        pas = {m[1] for m in _messages(res.data)}
+        self.assertIn(85000.0, pas)                          # FL050 = 850 hPa nominal
+        self.assertNotIn(84310.0, pas)
+        self.assertEqual(len(pas), 49)
+
     def test_ya_en_wafs_pasa_sin_cambios(self):
-        """(4) un archivo WAFS no se reconvierte."""
+        """(4) un archivo etiquetado por FL no se reconvierte; FDP_MULTI tiene
+        exactamente los 14 niveles nominales de INDRA y cuenta como tal."""
         self.assertTrue(wf.is_wafs(REF))
-        self.assertFalse(wf.is_wafs(SRC))
+        self.assertTrue(wf.is_wafs(SRC))
+        self.assertEqual(wf.detect_mode(SRC)["mode"], "INDRA")
         with open(REF, "rb") as fh:
             ref = fh.read()
         data, info = wf.convert_if_needed(ref)
         self.assertIs(data, ref)
         self.assertFalse(info["convertido"])
+        self.assertEqual(info["modo"], "WAFS")
         self.assertEqual(info["fl_rango"], "FL050–FL530")
+        # un GFS crudo con niveles nominales se convierte sólo forzando
+        data2, info2 = wf.convert_if_needed(SRC, force=True, mode="WAFS")
+        self.assertTrue(info2["convertido"])
+        self.assertEqual(len(_messages(data2)), 441)
 
     def test_conversor_de_referencia_sigue_en_el_repo(self):
         p = os.path.join(HERE, "..", "docs", "referencia", "make_wafs_like.py")
@@ -149,9 +176,9 @@ class TestConversionSintetica(unittest.TestCase):
     def test_extiende_el_rango_con_niveles_bajos_y_altos(self):
         """(3) niveles por debajo de 850 o por encima de 100 hPa amplían el rango."""
         res = wf.convert_to_wafs(_grib([1000, 925, 850, 500, 300, 100, 70, 50]))
-        self.assertEqual((res.info["fl_min"], res.info["fl_max"]), (10, 600))
+        self.assertEqual((res.info["fl_min"], res.info["fl_max"]), (50, 600))    # la tabla empieza en F050
         fls = sorted({wf.fl_from_pa(m[1]) for m in _messages(res.data)})
-        self.assertEqual(fls, list(range(10, 601, 10)))
+        self.assertEqual(fls, list(range(50, 601, 10)))
         res2 = wf.convert_to_wafs(_grib([1000, 925, 850, 500, 300, 100, 70, 50]), extend=False)
         self.assertEqual((res2.info["fl_min"], res2.info["fl_max"]), (50, 530))
 
@@ -227,9 +254,14 @@ class TestValidadorIdx(unittest.TestCase):
         self.assertEqual(rep["grilla"]["tipo"], "regular_ll")
 
     def test_validador_avisa_sin_bloquear(self):
-        rep = wf.validate_wafs(SRC)              # niveles de presión del GFS
+        rep = wf.validate_wafs(_grib([1000, 850, 700]))    # 1000 hPa no es un FL
         self.assertFalse(rep["ok"])
         self.assertTrue(any("no es la presión ISA" in a for a in rep["avisos"]))
+        self.assertEqual(rep["etiquetado"], False)
+        rep = wf.validate_wafs(_grib([850, 700, 500, 250, 100]))   # nominales sueltos de un GFS
+        self.assertTrue(any("faltan FL de INDRA" in a for a in rep["avisos"]))
+        rep = wf.validate_wafs(SRC)                       # los 14 de INDRA: etiquetado
+        self.assertEqual((rep["modo"], rep["etiquetado"]), ("INDRA", True))
         rep = wf.validate_wafs(wf.convert_to_wafs(_grib([850, 100], variables=("t",))).data)
         self.assertTrue(any("UGRD" in a for a in rep["avisos"]))
 
@@ -258,7 +290,7 @@ class TestExportacion(unittest.TestCase):
 
     def test_ida_y_vuelta_sin_perdida(self):
         """(2) exportar → reabrir: mismos mensajes, niveles y valores."""
-        res = wf.export_wafs(REF, self.tmp, per_step=True, idx=True)
+        res = wf.export_wafs(REF, self.tmp, per_step=True, idx=True, mode="WAFS")
         self.assertEqual([os.path.basename(p) for p in res["archivos"]],
                          ["gfs.t18z.wafs_1p00.f006.grib2", "gfs.t18z.wafs_1p00.f009.grib2",
                           "gfs.t18z.wafs_1p00.f012.grib2"])
@@ -312,15 +344,25 @@ class TestExportacion(unittest.TestCase):
         self.assertTrue(res["verificacion"][0]["ok"])
 
     def test_exporta_desde_niveles_de_presion(self):
-        """Lo cargado que todavía no es WAFS se convierte al exportar."""
-        res = wf.export_wafs(SRC, self.tmp, steps=[6], per_step=True)
+        """Lo cargado que todavía no está etiquetado por FL se convierte al
+        exportar (con el modo pedido); lo etiquetado se reetiqueta."""
+        crudo = os.path.join(self.tmp, "crudo.grib2")
+        with open(crudo, "wb") as fh:
+            fh.write(_grib([1000, 850, 700, 500, 400, 300, 250, 200, 150, 100]))
+        res = wf.export_wafs(crudo, self.tmp, steps=[6], per_step=True, mode="OACI56")
         self.assertEqual(res["verificacion"][0]["niveles"], 49)
+        self.assertEqual(wf.detect_mode(res["archivos"][0])["mode"], "OACI56")
+        res = wf.export_wafs(SRC, self.tmp, steps=[6], per_step=True, mode="INDRA",
+                             basename="indra")
+        self.assertEqual(res["verificacion"][0]["niveles"], 14)
         self.assertTrue(wf.is_wafs(res["archivos"][0]))
 
     def test_convert_file_y_cli(self):
         dst = os.path.join(self.tmp, "salida.grib2")
-        _p, info = wf.convert_file(SRC, dst, provenance={"fuente": "gfs", "nombre": "NOAA GFS"})
+        _p, info = wf.convert_file(SRC, dst, provenance={"fuente": "gfs", "nombre": "NOAA GFS"},
+                                   force=True)
         self.assertTrue(info["convertido"])
+        self.assertEqual(info["modo"], "OACI56")
         with open(dst + ".json", encoding="utf-8") as fh:
             prov = json.load(fh)
         self.assertEqual(prov["wafs"]["fl_rango"], "FL050–FL530")
@@ -328,7 +370,8 @@ class TestExportacion(unittest.TestCase):
         self.assertEqual(prov["plazos_h"], [6.0, 9.0, 12.0])
         self.assertTrue(os.path.exists(dst + ".idx"))
         out = subprocess.run([sys.executable, "-m", "app.wafs_format", SRC,
-                              os.path.join(self.tmp, "cli.grib2"), "--fl-min", "100", "--fl-max", "300"],
+                              os.path.join(self.tmp, "cli.grib2"), "--fl-min", "100", "--fl-max", "300",
+                              "--forzar", "--modo", "WAFS"],
                              capture_output=True, text=True, cwd=os.path.join(HERE, ".."))
         self.assertEqual(out.returncode, 0, out.stderr)
         self.assertIn("FL100–FL300", out.stdout)
@@ -346,14 +389,18 @@ class TestLectorWAFS(unittest.TestCase):
         self.assertEqual(len(r.levels), 49)
         self.assertEqual(r.fl_levels[530], 100.4)
         self.assertEqual(r.level_label(300.9), "FL300 · 300.9 hPa")
+        self.assertEqual(r.fl_mode, "WAFS")
         u, v, t, info = r.fields_for_fl(0, 300)
         self.assertEqual(info["mode"], "wafs")
         self.assertEqual(info["p"], 300.9)
         self.assertFalse(info["extrapolated"])
-        self.assertIn("FORMATO: WAFS", r.inventory_text())
-        r2 = GribReader(SRC)
-        self.assertFalse(r2.is_wafs)
-        self.assertEqual(r2.fields_for_fl(0, 300)[3]["mode"], "interp")
+        self.assertIn("FORMATO: etiquetado por FL, modo WAFS", r.inventory_text())
+        r2 = GribReader(SRC)                      # 14 niveles nominales: INDRA
+        self.assertTrue(r2.is_wafs)
+        self.assertEqual(r2.fl_mode, "INDRA")
+        self.assertEqual(r2.fields_for_fl(0, 300)[3]["mode"], "wafs")
+        self.assertEqual(r2.fields_for_fl(0, 300)[3]["label_hpa"], 300.0)
+        self.assertEqual(r2.fl_text(300), "FL300 · 300 hPa (300.9 ISA)")
 
 
 @needs_eccodes
@@ -382,18 +429,25 @@ class TestDescargaConvierte(unittest.TestCase):
             prov = read_provenance(paths[0])
             self.assertTrue(prov["wafs"]["convertido"])
             self.assertEqual(prov["wafs"]["fl_rango"], "FL050–FL530")
-            # Sin opciones: no se convierte
+            # Sin opciones: no se convierte (queda tal cual bajó)
             job2 = DownloadJob(dt.date(2026, 10, 13), 18, [6], ["u"], [850, 100], dest_dir=tmp,
                                basename="crudo")
             paths = Fuente().download(job2, fetch_fn=fetch, retry_wait=0)
-            self.assertFalse(wf.is_wafs(paths[0]))
-            # Lo que ya es WAFS pasa igual
+            with open(paths[0], "rb") as fh:
+                self.assertEqual(fh.read(), src)
+            # Lo que ya es WAFS pasa igual si la fuente publica por FL; una fuente
+            # en niveles crudos se convierte siempre (sus niveles pueden coincidir
+            # con etiquetas nominales)
             with open(REF, "rb") as fh:
                 ref = fh.read()
+
+            class FuenteFL(Fuente):
+                flight_levels = True
+
             job3 = DownloadJob(dt.date(2026, 10, 13), 18, [6], ["u"], [850, 100], dest_dir=tmp,
                                basename="ya")
-            paths = Fuente().download(job3, fetch_fn=lambda *a, **k: ref, retry_wait=0,
-                                      wafs={"fl_min": 50, "fl_max": 530})
+            paths = FuenteFL().download(job3, fetch_fn=lambda *a, **k: ref, retry_wait=0,
+                                        wafs={"fl_min": 50, "fl_max": 530})
             with open(paths[0], "rb") as fh:
                 self.assertEqual(fh.read(), ref)
             self.assertFalse(read_provenance(paths[0])["wafs"]["convertido"])

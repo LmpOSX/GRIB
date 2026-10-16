@@ -108,6 +108,7 @@ DEFAULTS = {
     # Formato WAFS (formato interno único del visor)
     "wafs_convert": True,               # convertir a WAFS lo que se descarga (fuentes de altura)
     "wafs_convert_local": True,         # convertir también los archivos locales al abrirlos
+    "wafs_mode": "OACI56",              # modo de etiquetado de los FL (fl_table.MODES): INDRA | OACI | OACI56 | WAFS
     "wafs_fl_min": 50,                  # rango de FL por defecto (FL050–FL530 = GFS 850–100 hPa)
     "wafs_fl_max": 530,
     "wafs_fl_extend": True,             # ampliar el rango si el origen cubre más niveles (hasta FL600)

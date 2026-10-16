@@ -1,5 +1,17 @@
 # Cambios
 
+## Sin publicar
+
+- Tabla de niveles de vuelo única (`app/fl_table.py`), copiada literal del
+  generador WAFS del servidor: presión ISA exacta y etiqueta nominal OACI56
+  por FL. Cuatro modos de etiquetado (INDRA, OACI, OACI56 por defecto, WAFS)
+  para convertir y exportar, con selector y «Ver tabla» en Exportar a WAFS y
+  en Preferencias ▸ WAFS; al leer, cada nivel se mapea a FL por la columna
+  ISA o por la nominal y el inventario dice qué modo explica el archivo.
+- Selección de nivel: botonera fija de 16 botones (OACI16) con los FL que el
+  archivo no tiene en gris, y lista con los demás FL del archivo; el FL
+  activo muestra etiqueta y presión exacta.
+
 ## 0.2.2 — 2026-10-15
 
 - Pantalla completa nativa en macOS (botón verde o ⌃⌘F; F11 en Windows y

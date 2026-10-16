@@ -56,12 +56,12 @@ detalle.
 
 | # | Caso | Pasos | Resultado esperado |
 |---|---|---|---|
-| E1 | Botón FL | Clic en F100 | Botón resaltado con el color de acento; redibuja; STATUS `F100 = 696.8 hPa` interpolado 700/600 (o 700/500 según niveles). |
-| E2 | Extrapolación | Clic en F530 con nivel mínimo 100 hPa → interpola. Con un archivo cuyo nivel más alto sea 200 hPa | STATUS "extrapolado / nivel más cercano: 200 hPa" y el título del mapa lo indica. |
-| E3 | Nivel de presión directo | Combo "Nivel de presión" ▸ 700 hPa | Ningún FL queda marcado; STATUS "700 hPa (nivel del archivo)"; el mapa muestra el nivel exacto. |
-| E4 | Volver a FL | Clic en un FL con el combo en un nivel | El combo vuelve a "(interpolar por FL)". |
-| E6 | Combo con WAFS | Abrir un archivo WAFS (cualquier descarga o archivo convertido) | El rótulo dice "Otro FL del archivo" y la primera opción "(el FL del botón elegido)"; elegir FL200 en el combo muestra `F200 = 46.6 hPa (nivel WAFS)` y STATUS `LEVEL: F200 = 46.6 hPa (WAFS, nivel exacto)`; ningún texto dice "interpolar". |
+| E1 | Botonera fija | Abrir cualquier archivo | Siempre los mismos 16 botones: F050 F080 F100 F140 F180 F240 F270 F300 F320 F340 F360 F390 F410 F450 F480 F530; con `tests/data/FDP_MULTI.grib2` (INDRA) F080 y F480 quedan grises; con un crudo cuyo nivel más alto sea 200 hPa, F450, F480 y F530 quedan grises (no se extrapola). |
+| E2 | Botón FL | Clic en F100 | Botón resaltado; redibuja; el FL activo muestra `F100 · etiqueta 700 hPa · 696.8 hPa ISA` seguido de `(nivel exacto, modo …)` o `(interpolado en ln(p))`; STATUS lo repite. |
+| E3 | Lista de otros FL | Abrir `tests/data/WAFS_like_test.grib2`; desplegar «Otros FL del archivo» | 33 entradas `FL060 · 812 hPa … FL520`; elegir FL060 deselecciona la botonera y muestra `F060 · etiqueta 800 hPa · 812.0 hPa ISA (nivel exacto, modo WAFS)`; hacer clic en F300 vuelve la lista a «(el FL del botón elegido)». |
+| E4 | Nivel del archivo sin interpolar | Con un GFS crudo, al final de «Otros FL» elegir `700 hPa (nivel del archivo)` | Ningún FL queda marcado; STATUS «700 hPa (nivel del archivo, sin interpolar)»; el mapa muestra el nivel exacto. |
 | E5 | Verificación wgrib2 | README, sección "Verificación con wgrib2" | Valores de u, v, T en 700 mb coinciden con la barra de estado / CSV. |
+| E6 | Archivo INDRA | Abrir `tests/data/FDP_MULTI.grib2` | No se crea `_wafs.grib2`; inventario `FORMATO: etiquetado por FL, modo INDRA`; FUENTE `WAFS FL050–FL530 · modo INDRA`; STATUS `F300 = 30090 Pa ISA (nivel exacto, modo INDRA, etiqueta 300 hPa)`. |
 
 ## F. VARIABLE, VIENTO y MAPA
 
@@ -184,14 +184,16 @@ detalle.
 
 | # | Caso | Pasos | Resultado esperado |
 |---|---|---|---|
-| O1 | Descarga convertida | Obtener datos… con el GFS (Preferencias ▸ WAFS con «Convertir al descargar» marcado) | El archivo termina en `_wafs.grib2`; `wgrib2 -s` lista niveles `843.1 mb, 812 mb, … 100.4 mb` (49 por variable y plazo); el `.json` tiene `wafs.convertido: true` y `fl_rango FL050–FL530`. |
-| O2 | Visor con WAFS | Abrir el archivo de O1 | STATUS: `FUENTE … / WAFS FL050–FL530 (convertido)`; `LEVEL: F300 = 30090 Pa (WAFS, nivel exacto)`; el combo «Nivel de presión» lista `FL050 · 843.1 hPa …`; el inventario dice `FORMATO: WAFS`. Cambiar de FL redibuja sin «interpolado entre». |
-| O3 | Archivo local convertido | Abrir un GFS en niveles de presión (por ejemplo `tests/data/FDP_MULTI.grib2` copiado a otra carpeta) | Barra de estado «Convertido a WAFS: …_wafs.grib2»; junto al original aparecen `<nombre>_wafs.grib2`, `.json` e `.idx`; el visor muestra el convertido. Con «Convertir también los archivos locales» desmarcado, se abre el original e interpola como antes. |
-| O4 | Rango ampliado | Bajar ECMWF o ICON con niveles 1000 y 50 hPa, convertir | El rango llega a FL010–FL600 (con «ampliar» marcado); sin marcarlo, FL050–FL530. |
+| O1 | Descarga convertida | Obtener datos… con el GFS (Preferencias ▸ WAFS con «Convertir al descargar» marcado, modo OACI56) | El archivo termina en `_wafs.grib2`; `wgrib2 -s` lista niveles nominales `850 mb, 800 mb, … 100 mb` (49 por variable y plazo); el `.json` tiene `wafs.convertido: true`, `modo: OACI56` y `fl_rango FL050–FL530`. Con modo WAFS, `843.1 mb, 812 mb, …`. |
+| O2 | Visor con WAFS | Abrir el archivo de O1 | STATUS: `FUENTE … / WAFS FL050–FL530 · modo OACI56 (convertido)`; `LEVEL: F300 = 30090 Pa ISA (nivel exacto, modo OACI56, etiqueta 300 hPa)`; la lista «Otros FL del archivo» trae `FL060 · 800 hPa (812 ISA) …`; el inventario dice `FORMATO: etiquetado por FL, modo OACI56`. Cambiar de FL redibuja sin «interpolado entre». |
+| O3 | Archivo local crudo convertido | Abrir un GFS con 1000 hPa en niveles de presión | Barra de estado «Convertido a WAFS: …_wafs.grib2»; junto al original aparecen `<nombre>_wafs.grib2`, `.json` e `.idx`; el visor muestra el convertido. Con «Convertir también los archivos locales» desmarcado, se abre el original e interpola. |
+| O4 | Rango ampliado | Bajar ECMWF o ICON con niveles 1000 y 50 hPa, convertir | El rango llega a FL050–FL600 (con «ampliar» marcado; la tabla empieza en F050); sin marcarlo, FL050–FL530. |
 | O5 | Extrapolar | Bajar sólo 700–300 hPa con «extrapolar» marcado | Hay 49 niveles; el `.json` lista `extrapolados`; sin marcar, sólo FL100–FL300 y `fl_omitidos`. |
-| O6 | Ya en WAFS | Abrir `tests/data/WAFS_like_test.grib2` | No se crea ningún `_wafs.grib2`; se abre tal cual con FUENTE «archivo local» y `WAFS FL050–FL530`. |
-| O7 | Línea de comandos | `python -m app.wafs_format tests/data/FDP_MULTI.grib2 /tmp/w.grib2` y `--validar` | «441 mensajes escritos …; FL050–FL530», `/tmp/w.grib2.idx` creado, `cmp /tmp/w.grib2 tests/data/WAFS_like_test.grib2` sin diferencias; `--validar` responde OK. |
-| O8 | Validador avisa | `python -m app.wafs_format --validar tests/data/FDP_MULTI.grib2` | Avisos «nivel 10000 Pa no es la presión ISA de un FL…» y no bloquea. |
+| O6 | Ya etiquetado | Abrir `tests/data/WAFS_like_test.grib2` y `tests/data/FDP_MULTI.grib2` | No se crea ningún `_wafs.grib2`; se abren tal cual con FUENTE «archivo local» y `WAFS FL050–FL530 · modo WAFS` / `· modo INDRA`. |
+| O7 | Línea de comandos | `python -m app.wafs_format tests/data/FDP_MULTI.grib2 /tmp/w.grib2 --forzar --modo WAFS` y `--validar` | «441 mensajes escritos …; FL050–FL530», `/tmp/w.grib2.idx` creado; `wgrib2 -s` igual que `tests/data/WAFS_like_test.grib2` salvo F290 (`314.9 mb` contra `314.8 mb`); sin `--forzar` dice «ya está etiquetado por FL (modo INDRA)»; `--validar` responde OK. |
+| O8 | Validador avisa | `python -m app.wafs_format --validar` con un GRIB que tenga 1000 hPa | Aviso «nivel 100000 Pa no es la presión ISA ni la etiqueta nominal de un FL» y no bloquea. |
+| O9 | Modos al exportar | Archivo ▸ Exportar a WAFS… ▸ modo INDRA, OACI, OACI56 y WAFS, «Ver tabla» en cada uno | «Ver tabla» muestra 14 / 16 / 56 / 56 filas con FL, ISA_Pa y etiqueta (`850 hPa` o `84310 Pa`); cada exportación se reabre con el mismo FL activo, el modo detectado y el mismo dato (STATUS igual salvo la etiqueta). |
+| O10 | Modo por defecto | Preferencias ▸ WAFS ▸ modo WAFS ▸ Aplicar; abrir un GFS crudo | El convertido lleva presiones ISA (`843.1 mb`); `config.json` tiene `wafs_mode: WAFS`. |
 
 ## I. Tema y preferencias
 

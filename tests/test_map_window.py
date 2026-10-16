@@ -74,37 +74,53 @@ class TestCargaYRedibujo(_MapBase):
         self.assertIn("F100 = 696.8 hPa", self.w.panel.lbl_level.text())
         self.assertIn("F100 (697 hPa) interp. 700/500 hPa", self.draws[-1]["title"])
 
-    def test_extrapolado_en_status(self):
-        # F530 = 100.4 hPa queda por encima del nivel más alto (200 hPa)
-        self.w.panel._fl_buttons[530].click()
-        self.assertIn("extrapolado / nivel más cercano: 200 hPa",
-                      self.w.panel.lbl_level.text())
-        self.assertIn("nivel más cercano 200 hPa", self.draws[-1]["title"])
-        # F050 = 843 hPa está dentro de 850–200: se interpola, no se extrapola
-        self.w.panel._fl_buttons[50].click()
+    def test_fuera_de_rango_sin_extrapolar(self):
+        # F530 = 100.4 hPa queda por encima del nivel más alto (200 hPa): el
+        # botón se deshabilita en vez de extrapolar; también F390 (196.8),
+        # F410, F450 y F480
+        btns = self.w.panel._fl_buttons
+        self.assertEqual([fl for fl, b in btns.items() if not b.isEnabled()], [390, 410, 450, 480, 530])
+        self.assertEqual(self.w.panel.available_fls()[-1], 380)       # 206.5 hPa, el último dentro de 200
+        # F050 = 843 hPa está dentro de 850–200: se interpola
+        btns[50].click()
         self.assertIn("interpolado en ln(p) entre 850 y 700 hPa",
                       self.w.panel.lbl_level.text())
-        # Con un archivo cuyo nivel más bajo es 700 hPa, F050 sí extrapola
+        # Con un archivo cuyo nivel más bajo es 700 hPa, F050 y F080 quedan grises
+        # y el FL activo pasa al primero disponible con botón
         r = _reader_sintetico([700, 500, 300])
         r.path = self.reader.path
         self.w.load_reader(r, r.path)
-        self.assertIn("extrapolado / nivel más cercano: 700 hPa",
-                      self.w.panel.lbl_level.text())
+        self.assertFalse(btns[50].isEnabled())
+        self.assertFalse(btns[80].isEnabled())
+        self.assertEqual(self.w.panel.sel_fl, 100)
+        self.assertIn("F100 = 696.8 hPa (ISA)", self.w.panel.lbl_level.text())
+        # La interpolación directa sigue extrapolando si se la llama (no desde la interfaz)
+        self.assertTrue(r.fields_for_fl(0, 50)[3]["extrapolated"])
 
     def test_combo_de_presion_sin_interpolar(self):
-        self.w.panel.cb_press.setCurrentIndex(2)      # 700 hPa
+        # La lista lleva primero los FL sin botón (interpolados) y, tras un
+        # separador, los niveles del archivo sin interpolar
+        items = self.w.panel._combo_items
+        idx_700 = 1 + items.index(("p", 700.0))
+        self.assertEqual(items[0], ("fl", 60))
+        self.w.panel.cb_press.setCurrentIndex(idx_700)      # 700 hPa
         self.assertEqual(len(self.draws), 2)
         self.assertEqual(self.w.panel.level_mode, "p")
         self.assertEqual(self.w.panel.sel_p, 700.0)
-        self.assertIn("LEVEL: 700 hPa (nivel del archivo)", self.w.panel.lbl_level.text())
+        self.assertIn("LEVEL: 700 hPa (nivel del archivo", self.w.panel.lbl_level.text())
         self.assertFalse(any(b.isChecked() for b in self.w.panel._fl_buttons.values()))
-        # Volver a FL: el combo vuelve a "(interpolar por FL)" (archivo en presión)
+        # Un FL de la lista: modo fl sin botón tildado
+        self.w.panel.cb_press.setCurrentIndex(1)
+        self.assertEqual((self.w.panel.level_mode, self.w.panel.sel_fl), ("fl", 60))
+        self.assertFalse(any(b.isChecked() for b in self.w.panel._fl_buttons.values()))
+        self.assertIn("F060 = 812.0 hPa (ISA)", self.w.panel.lbl_level.text())
+        # Volver a FL con botón: el combo vuelve a la primera entrada
         self.w.panel._fl_buttons[300].click()
         self.assertEqual(self.w.panel.level_mode, "fl")
         self.assertEqual(self.w.panel.cb_press.currentIndex(), 0)
         self.assertEqual(self.w.panel.cb_press.itemText(0), self.w.panel.P_COMBO_NONE)
         self.assertEqual(self.w.panel.lbl_press.text(), self.w.panel.P_LABEL)
-        self.assertEqual(len(self.draws), 3)
+        self.assertEqual(len(self.draws), 4)
 
     def test_paso_redibuja(self):
         import datetime as dt
@@ -499,7 +515,7 @@ class TestRecuadroYCursor(_MapBase):
 class TestExportar(_MapBase):
     def test_nombre_por_defecto(self):
         self.assertEqual(self.w._default_name("png"), "sintetico_paso0_F300.png")
-        self.w.panel.cb_press.setCurrentIndex(1)
+        self.w.panel.cb_press.setCurrentIndex(1 + self.w.panel._combo_items.index(("p", 850.0)))
         self.assertEqual(self.w._default_name("csv"), "sintetico_paso0_850hPa.csv")
 
     def test_csv(self):

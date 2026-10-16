@@ -526,12 +526,16 @@ class Source:
         from .. import wafs_format
         notes = []
         try:
-            out, info = wafs_format.convert_if_needed(data, log=notes.append, **dict(opts))
+            # Una fuente en niveles de presión crudos se convierte siempre: sus
+            # niveles (850/700/500/250/100 hPa) coinciden con etiquetas
+            # nominales y la detección los tomaría por un archivo por FL
+            out, info = wafs_format.convert_if_needed(data, log=notes.append,
+                                                      force=not self.flight_levels, **dict(opts))
         except Exception as exc:
             raise DownloadError(f"{self.name}: no se pudo convertir a WAFS el plazo +{step} h: "
                                 f"{type(exc).__name__}: {exc}") from exc
         summary = {"formato": info.get("formato", "WAFS"), "convertido": bool(info.get("convertido")),
-                   "fl_rango": info.get("fl_rango", "")}
+                   "fl_rango": info.get("fl_rango", ""), "modo": info.get("modo")}
         if info.get("convertido"):
             summary["niveles_origen_hpa"] = info.get("niveles_origen_hpa")
             if info.get("extrapolados"):

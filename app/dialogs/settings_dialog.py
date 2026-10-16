@@ -31,6 +31,7 @@ from .. import gfs_download as gfs
 from ..grib_engines import ENGINES, ec, find_wgrib2, wgrib2_version
 from ..wind_plot import PROJECTIONS, WA_PROJECTIONS, HAVE_CARTOPY, WIND_STYLES, GRID_STEPS
 from ..working_area import MAGVAR_CONVENTIONS
+from ..fl_table import MODES, MODE_LABELS, DEFAULT_MODE
 from ..sources import all_sources, source_config, set_source_config, source_label
 from ..sources.cache import DownloadCache
 from ..widgets.areas_editor import AreasEditor
@@ -460,9 +461,24 @@ class SettingsDialog(GlassDialog):
         self._sub(lay, "Formato interno único: WAFS (viento y temperatura OACI por nivel de vuelo)")
         self._hint(lay, "Lo que se descarga de una fuente de altura (GFS, ECMWF, ICON, genérica) y "
                         "los archivos locales en niveles de presión se convierten al formato WAFS "
-                        "antes de mostrarse: cada FL cada 1000 ft codificado como la presión ISA en "
-                        "Pa (FL530 = 10040 Pa), interpolando linealmente en ln(p). Lo que ya viene "
-                        "en WAFS no se toca.")
+                        "antes de mostrarse: cada FL cada 1000 ft interpolado en ln(p) a su presión "
+                        "ISA exacta y grabado con la etiqueta del modo elegido. Lo que ya viene "
+                        "etiquetado por FL no se toca.")
+        row = QHBoxLayout()
+        row.addWidget(QLabel("Modo de etiquetado por defecto"))
+        self.cb_wafs_mode = QComboBox()
+        for m in MODES:
+            self.cb_wafs_mode.addItem(MODE_LABELS[m], m)
+        self.cb_wafs_mode.setCurrentIndex(max(0, self.cb_wafs_mode.findData(
+            str(self._cfg.get("wafs_mode", DEFAULT_MODE)).upper())))
+        self.cb_wafs_mode.setToolTip("Con qué etiqueta de nivel se graba cada FL al convertir o exportar: "
+                                     "nominal en hPa (INDRA / OACI / OACI56) o la presión ISA en Pa (WAFS). "
+                                     "El dato va siempre a la ISA exacta.")
+        row.addWidget(self.cb_wafs_mode, 1)
+        b = QPushButton("Ver tabla…")
+        b.clicked.connect(self._show_fl_table)
+        row.addWidget(b)
+        lay.addLayout(row)
         self.chk_wafs = QCheckBox("Convertir a WAFS al descargar")
         self.chk_wafs.setChecked(bool(self._cfg.get("wafs_convert", True)))
         lay.addWidget(self.chk_wafs)
@@ -496,6 +512,10 @@ class SettingsDialog(GlassDialog):
                         "opciones cuando lo cargado todavía no está en WAFS.")
         lay.addStretch()
         return w
+
+    def _show_fl_table(self):
+        from .fl_table_dialog import FlTableDialog
+        FlTableDialog(self, mode=self.cb_wafs_mode.currentData() or DEFAULT_MODE).exec()
 
     # ── Motor ──
     def _tab_motor(self):
@@ -630,6 +650,7 @@ class SettingsDialog(GlassDialog):
             **self.areas_editor.values(),
             "wafs_convert": self.chk_wafs.isChecked(),
             "wafs_convert_local": self.chk_wafs_local.isChecked(),
+            "wafs_mode": self.cb_wafs_mode.currentData() or DEFAULT_MODE,
             "wafs_fl_min": int(self.wafs_fl_min.value()),
             "wafs_fl_max": int(self.wafs_fl_max.value()),
             "wafs_fl_extend": self.chk_wafs_extend.isChecked(),

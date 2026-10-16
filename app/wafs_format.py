@@ -36,43 +36,42 @@ import numpy as np
 
 from .grib_engines import ec
 
-# ── Tabla FL ↔ presión ISA ───────────────────────────────────────────────────
+# ── Tabla FL ↔ presión ───────────────────────────────────────────────────────
+# La tabla vive en fl_table.py (copiada literal del generador del servidor):
+# ISA_Pa exacta (donde se interpola el dato) y etiqueta nominal OACI56.
 
-FL_STEP = 10                 # 1000 ft
-FL_LOWEST, FL_HIGHEST = 0, 600
+from . import fl_table as flt                      # noqa: E402
+from .fl_table import (                            # noqa: E402,F401
+    FL_STEP, FL_LOWEST, FL_HIGHEST, MODES, MODE_LABELS, DEFAULT_MODE, OACI16, INDRA14,
+    mode_fls, normalize_mode, label_pa, label_text, table_rows,
+)
+
 DEFAULT_FL_MIN, DEFAULT_FL_MAX = 50, 530      # lo que cubre el GFS 850–100 hPa
-LEVEL_TOL_PA = 10            # tolerancia para reconocer un nivel WAFS
+LEVEL_TOL_PA = flt.ISA_TOL_PA  # tolerancia para reconocer un nivel por la columna ISA
 RH_FL_MAX = 180              # la humedad relativa sólo va en niveles bajos
+
+FL_TABLE = {fl: pa for fl, (pa, _h) in flt.FL_TABLE.items()}   # FL → ISA_Pa
 
 
 def isa_pa(fl):
-    """Presión (Pa) de la atmósfera estándar OACI a un nivel de vuelo.
-    Troposfera hasta 11 km; por encima, estratosfera isotérmica."""
-    h = fl * 100 * 0.3048      # m
-    if h <= 11000:
-        return 101325 * (1 - 2.25577e-5 * h) ** 5.25588
-    return 22632.06 * math.exp(-(h - 11000) / 6341.62)
+    """Presión ISA exacta (Pa) del FL según la tabla del servidor."""
+    return flt.isa_pa(fl)
 
 
 def wafs_pa(fl):
-    """Presión ISA del FL en Pa redondeada a 0,1 hPa, como NCEP (FL530 → 10040)."""
-    return int(round(isa_pa(fl) / 10) * 10)
-
-
-FL_TABLE = {fl: wafs_pa(fl) for fl in range(FL_LOWEST, FL_HIGHEST + 1, FL_STEP)}
-_PA_TO_FL = {pa: fl for fl, pa in FL_TABLE.items()}
+    """Alias histórico: la presión que NOAA codifica en el WAFS (= ISA_Pa)."""
+    return flt.isa_pa(fl)
 
 
 def fl_from_pa(pa, tol=LEVEL_TOL_PA):
-    """FL entero (múltiplo de 10) cuya presión WAFS está a ≤ tol Pa, o None."""
-    if pa is None:
-        return None
-    best, best_d = None, tol + 1
-    for cand, ref in FL_TABLE.items():
-        d = abs(ref - pa)
-        if d < best_d:
-            best, best_d = cand, d
-    return best if best_d <= tol else None
+    """FL cuya presión está a ≤ tol Pa de la columna ISA o coincide con la
+    etiqueta nominal ×100, o None."""
+    return flt.fl_from_pa(pa, tol)[0]
+
+
+def fl_from_pa_col(pa, tol=LEVEL_TOL_PA):
+    """(FL, 'isa' | 'nominal') o (None, None)."""
+    return flt.fl_from_pa(pa, tol)
 
 
 def fl_from_hpa(hpa, tol=LEVEL_TOL_PA):
@@ -161,9 +160,8 @@ def _step_hours(gid):
 
 # ── Detección ────────────────────────────────────────────────────────────────
 
-def is_wafs(src, tol=LEVEL_TOL_PA):
-    """True si todos los niveles isobáricos del archivo son presiones ISA de
-    FL enteros (y no es sólo el 250 hPa, que coincide con FL340)."""
+def level_pas(src):
+    """Presiones de nivel (Pa, enteros) distintas que trae el archivo."""
     if ec is None:
         raise RuntimeError("se requiere eccodes")
     data = _load(src)
@@ -173,14 +171,22 @@ def is_wafs(src, tol=LEVEL_TOL_PA):
             pa = level_pa(gid)
         finally:
             ec.codes_release(gid)
-        if pa is None:
-            continue
-        pas.add(int(round(pa)))
-    if not pas:
-        return False
-    if all(fl_from_pa(pa, tol) is not None for pa in pas):
-        return pas != {FL_TABLE[340]}
-    return False
+        if pa is not None:
+            pas.add(int(round(pa)))
+    return sorted(pas, reverse=True)
+
+
+def detect_mode(src):
+    """Clasificación de los niveles del archivo (ver fl_table.classify):
+    modo que los explica, si cuenta como etiquetado por FL, {Pa: FL} y los
+    no reconocidos."""
+    return flt.classify(level_pas(src))
+
+
+def is_wafs(src, tol=LEVEL_TOL_PA):
+    """True si el archivo ya está etiquetado por FL en alguno de los cuatro
+    modos (no hay que convertirlo)."""
+    return bool(detect_mode(src)["labeled"])
 
 
 # ── Conversión ───────────────────────────────────────────────────────────────
@@ -204,7 +210,7 @@ def fl_range(source_levels_hpa, fl_min=DEFAULT_FL_MIN, fl_max=DEFAULT_FL_MAX, ex
     if extend and source_levels_hpa:
         p_max = max(source_levels_hpa) * 100.0
         p_min = min(source_levels_hpa) * 100.0
-        covered = [fl for fl, pa in FL_TABLE.items() if p_min <= isa_pa(fl) <= p_max]
+        covered = [fl for fl, pa in FL_TABLE.items() if p_min <= pa <= p_max]
         # Sólo se amplía más allá de la banda 850–100 hPa del GFS (FL050–FL530)
         if covered and min(covered) < DEFAULT_FL_MIN:
             lo = min(lo, min(covered))
@@ -217,11 +223,14 @@ def fl_range(source_levels_hpa, fl_min=DEFAULT_FL_MIN, fl_max=DEFAULT_FL_MAX, ex
 
 def convert_to_wafs(src, fl_min=DEFAULT_FL_MIN, fl_max=DEFAULT_FL_MAX, extend=True,
                     extrapolate=False, tables_version=None, centre=None, sub_centre=None,
-                    log=None):
-    """GRIB2 en niveles de presión → GRIB2 WAFS (bytes).
+                    log=None, mode=DEFAULT_MODE):
+    """GRIB2 en niveles de presión → GRIB2 etiquetado por FL (bytes).
 
     Para cada (plazo, variable) se apilan los niveles de presión del origen y
-    se interpola linealmente en ln(p) a la presión ISA de cada FL del rango.
+    se interpola linealmente en ln(p) a la presión ISA exacta de cada FL del
+    rango que abarca el `mode` (INDRA, OACI, OACI56 o WAFS); el nivel del
+    mensaje se graba con la etiqueta del modo (nominal hPa×100, o la ISA en
+    Pa en el modo WAFS), igual que el generador del servidor.
     Los FL fuera del rango de niveles del origen se omiten, salvo
     `extrapolate`, que usa el nivel más cercano y lo anota en `info`.
     Los mensajes que no están en niveles de presión se descartan, excepto
@@ -260,9 +269,10 @@ def convert_to_wafs(src, fl_min=DEFAULT_FL_MIN, fl_max=DEFAULT_FL_MAX, extend=Tr
         finally:
             ec.codes_release(gid)
 
+    mode = normalize_mode(mode)
     all_levels = sorted({lv for levs in fields.values() for lv in levs})
     lo, hi = fl_range(all_levels, fl_min, fl_max, extend)
-    fls = list(range(lo, hi + 1, FL_STEP))
+    fls = [fl for fl in mode_fls(mode) if lo <= fl <= hi]
     extrapolated = []
     omitted = {}
     out = bytearray()
@@ -276,7 +286,7 @@ def convert_to_wafs(src, fl_min=DEFAULT_FL_MIN, fl_max=DEFAULT_FL_MAX, extend=Tr
             stack = np.stack([levs[x] for x in p])   # (nlev, npts)
             var_fls = [fl for fl in fls if fl <= RH_FL_MAX] if var == "r" else fls
             for fl in var_fls:
-                pa = isa_pa(fl)
+                pa = isa_pa(fl)                      # el dato va siempre a la ISA exacta
                 lp = math.log(pa / 100.0)
                 if lp < lnp[0] or lp > lnp[-1]:
                     if not extrapolate or len(p) == 0:
@@ -297,8 +307,8 @@ def convert_to_wafs(src, fl_min=DEFAULT_FL_MIN, fl_max=DEFAULT_FL_MAX, extend=Tr
                 try:
                     ec.codes_set(g, "typeOfFirstFixedSurface", 100)
                     ec.codes_set(g, "scaleFactorOfFirstFixedSurface", 0)
-                    # Pa redondeado a 0,1 hPa, como NCEP (ej. 10040 = FL530)
-                    ec.codes_set(g, "scaledValueOfFirstFixedSurface", int(round(pa / 10) * 10))
+                    # Etiqueta del modo: nominal hPa×100 (85000 = FL050) o ISA Pa (84310)
+                    ec.codes_set(g, "scaledValueOfFirstFixedSurface", int(label_pa(fl, mode)))
                     _set_identity(g, tables_version, centre, sub_centre)
                     ec.codes_set_values(g, vals)
                     out += ec.codes_get_message(g)
@@ -311,6 +321,7 @@ def convert_to_wafs(src, fl_min=DEFAULT_FL_MIN, fl_max=DEFAULT_FL_MAX, extend=Tr
     out += passthrough
     info = {
         "formato": "WAFS",
+        "modo": mode,
         "mensajes": n + n_pass,
         "fl_min": fls[0] if n else None,
         "fl_max": fls[-1] if n else None,
@@ -345,13 +356,18 @@ def _set_identity(gid, tables_version=None, centre=None, sub_centre=None):
             pass
 
 
-def convert_if_needed(src, **opts):
-    """Convierte salvo que el archivo ya esté en WAFS (se devuelve igual) o no
-    tenga niveles de presión. Devuelve (bytes, info); info['convertido']
-    dice si se tocó."""
+def convert_if_needed(src, force=False, **opts):
+    """Convierte salvo que el archivo ya esté etiquetado por FL (se devuelve
+    igual, con su modo) o no tenga niveles de presión. `force` convierte
+    aunque los niveles parezcan etiquetados: se usa con lo que baja de una
+    fuente en niveles de presión crudos (un GFS con 850/700/500/250/100 hPa
+    coincide con etiquetas nominales y no es un archivo por FL). Devuelve
+    (bytes, info); info['convertido'] dice si se tocó."""
     data = _load(src)
-    if is_wafs(data):
-        return data, {"formato": "WAFS", "convertido": False, "fl_rango": describe_levels(data)}
+    det = detect_mode(data)
+    if det["labeled"] and not force:
+        return data, {"formato": "WAFS", "modo": det["mode"], "convertido": False,
+                      "fl_rango": describe_levels(data)}
     log = opts.pop("log", None)
     res = convert_to_wafs(data, log=log, **opts)
     if res.info["mensajes"] == 0:
@@ -364,8 +380,35 @@ def convert_if_needed(src, **opts):
 
 def describe_levels(src):
     """'FL050–FL530' según los niveles isobáricos presentes."""
-    fls = sorted({fl_from_pa(level_pa_or_none(g)) for g in _gids(_load(src))} - {None})
+    fls = sorted(set(detect_mode(src)["fls"].values()))
     return f"FL{fls[0]:03d}–FL{fls[-1]:03d}" if fls else ""
+
+
+def relabel(src, mode):
+    """Reetiqueta un archivo ya etiquetado por FL a otro modo: el dato no se
+    toca (ya está en la ISA exacta); se cambia la presión grabada en cada
+    mensaje y se descartan los FL que el modo no abarca. Devuelve bytes."""
+    if ec is None:
+        raise RuntimeError("se requiere eccodes")
+    mode = normalize_mode(mode)
+    keep = set(mode_fls(mode))
+    data = _load(src)
+    out = bytearray()
+    for gid, pos, size in iter_messages(data):
+        try:
+            pa = level_pa(gid)
+            if pa is None:
+                out += data[pos:pos + size]
+                continue
+            fl = fl_from_pa(pa)
+            if fl is None or fl not in keep:
+                continue
+            ec.codes_set(gid, "scaleFactorOfFirstFixedSurface", 0)
+            ec.codes_set(gid, "scaledValueOfFirstFixedSurface", int(label_pa(fl, mode)))
+            out += ec.codes_get_message(gid)
+        finally:
+            ec.codes_release(gid)
+    return bytes(out)
 
 
 def level_pa_or_none(gid):
@@ -388,14 +431,16 @@ def options_from_config(cfg):
     return {"fl_min": int(cfg.get("wafs_fl_min", DEFAULT_FL_MIN)),
             "fl_max": int(cfg.get("wafs_fl_max", DEFAULT_FL_MAX)),
             "extend": bool(cfg.get("wafs_fl_extend", True)),
-            "extrapolate": bool(cfg.get("wafs_extrapolate", False))}
+            "extrapolate": bool(cfg.get("wafs_extrapolate", False)),
+            "mode": normalize_mode(cfg.get("wafs_mode", DEFAULT_MODE))}
 
 
-def convert_file(src_path, dst_path, provenance=None, idx=True, **opts):
+def convert_file(src_path, dst_path, provenance=None, idx=True, force=False, **opts):
     """Convierte un archivo a WAFS, escribe el .idx y un JSON de procedencia
     junto a la salida (de qué fuente, modelo y archivo original salió).
+    `force` convierte aunque los niveles parezcan etiquetados por FL.
     Devuelve (dst_path, info)."""
-    data, info = convert_if_needed(src_path, **opts)
+    data, info = convert_if_needed(src_path, force=force, **opts)
     with open(dst_path, "wb") as fh:
         fh.write(data)
     prov = dict(provenance or {})
@@ -450,6 +495,7 @@ def validate_wafs(src, tol=LEVEL_TOL_PA):
     if ec is None:
         raise RuntimeError("se requiere eccodes")
     data = _load(src)
+    det = detect_mode(data)
     avisos = []
     levels = {}
     variables = {}
@@ -472,10 +518,10 @@ def validate_wafs(src, tol=LEVEL_TOL_PA):
                 avisos.append(f"mensaje {n}: grilla {_get(gid, 'gridType')} (se espera regular lat/lon)")
             pa = level_pa(gid)
             if pa is not None:
-                fl = fl_from_pa(pa, tol)
+                fl = det["fls"].get(int(round(pa)))
                 if fl is None:
-                    avisos.append(f"mensaje {n}: nivel {pa:.0f} Pa no es la presión ISA de un FL "
-                                  f"(tolerancia {tol} Pa)")
+                    avisos.append(f"mensaje {n}: nivel {pa:.0f} Pa no es la presión ISA ni la "
+                                  f"etiqueta nominal de un FL")
                 else:
                     levels[fl] = int(round(pa))
                     if short == "r" and fl > RH_FL_MAX:
@@ -521,10 +567,14 @@ def validate_wafs(src, tol=LEVEL_TOL_PA):
     uniq = [a + (f" (×{seen[a.split(': ', 1)[1] if a.startswith('mensaje ') else a]})"
                  if seen[a.split(": ", 1)[1] if a.startswith("mensaje ") else a] > 1 else "")
             for a in uniq]
+    if n and levels and not det["labeled"] and not det["unrecognized"]:
+        uniq.append(f"los niveles coinciden con etiquetas del modo {det['mode']} pero no "
+                    "alcanzan para tomarlo por un archivo etiquetado por FL (faltan FL de INDRA)")
     g = sorted(grids)[0] if grids else None
     return {"ok": not uniq, "avisos": uniq, "mensajes": n, "niveles": dict(sorted(levels.items())),
             "variables": variables, "plazos": sorted(steps, key=_step_key),
-            "grilla": {"tipo": g[0], "ni": g[1], "nj": g[2]} if g else None}
+            "grilla": {"tipo": g[0], "ni": g[1], "nj": g[2]} if g else None,
+            "modo": det["mode"], "etiquetado": det["labeled"]}
 
 
 def _step_key(s):
@@ -594,7 +644,7 @@ EXPORT_REGRID = [("ninguno", "Sin regrillar (grilla del archivo)"),
 def export_wafs(src, dest_dir, steps=None, fls=None, variables="basicas", region=None,
                 regrid="ninguno", per_step=True, model="gfs", basename=None,
                 tables_version=25, centre=None, sub_centre=None, idx=True, convert_opts=None,
-                progress_cb=None, provenance=None):
+                progress_cb=None, provenance=None, mode=None):
     """Escribe lo cargado como WAFS.
 
     src        ruta (o bytes) del archivo abierto en el visor; si no está en
@@ -617,9 +667,17 @@ def export_wafs(src, dest_dir, steps=None, fls=None, variables="basicas", region
         raise RuntimeError("la exportación requiere eccodes")
     progress_cb = progress_cb or (lambda frac, msg: None)
     data = _load(src)
-    if not is_wafs(data):
-        progress_cb(0.05, "Convirtiendo a WAFS…")
-        data = convert_to_wafs(data, **(convert_opts or {})).data
+    convert_opts = dict(convert_opts or {})
+    mode = normalize_mode(mode or convert_opts.get("mode") or DEFAULT_MODE)
+    convert_opts["mode"] = mode
+    det = detect_mode(data)
+    if not det["labeled"]:
+        progress_cb(0.05, f"Convirtiendo a WAFS (modo {mode})…")
+        data = convert_to_wafs(data, **convert_opts).data
+    elif det["mode"] != mode or (mode in ("INDRA", "OACI") and
+                                 set(det["fls"].values()) - set(mode_fls(mode))):
+        progress_cb(0.05, f"Reetiquetando al modo {mode}…")
+        data = relabel(data, mode)
     keep_vars = set(BASIC_VARS) if variables == "basicas" else None
     want_steps = {float(s) for s in steps} if steps is not None else None
     want_fls = {int(f) for f in fls} if fls is not None else None
@@ -698,7 +756,7 @@ def export_wafs(src, dest_dir, steps=None, fls=None, variables="basicas", region
         verification.append(verify_written(path, blob))
     val = validate_wafs(written[0]) if written else {"avisos": []}
     return {"archivos": written, "verificacion": verification, "avisos": val["avisos"],
-            "plazos": hours, "resolucion": res_label, "ciclo": cycle}
+            "plazos": hours, "resolucion": res_label, "ciclo": cycle, "modo": mode}
 
 
 def _cycle_of(data):
@@ -808,6 +866,11 @@ def main(argv=None):
     ap.add_argument("--tabla", type=int, default=None, help="tablesVersion (p. ej. 25)")
     ap.add_argument("--centro", type=int, default=None)
     ap.add_argument("--sin-idx", action="store_true")
+    ap.add_argument("--modo", default=DEFAULT_MODE, choices=MODES,
+                    help="etiquetado de los niveles: INDRA, OACI, OACI56 (por defecto) o WAFS")
+    ap.add_argument("--forzar", action="store_true",
+                    help="convertir aunque los niveles parezcan etiquetados por FL (p. ej. un GFS "
+                         "crudo con 850/700/500/250/100 hPa)")
     ap.add_argument("--validar", action="store_true", help="sólo validar la entrada")
     args = ap.parse_args(argv)
     if args.validar:
@@ -819,14 +882,15 @@ def main(argv=None):
         print("OK" if rep["ok"] else f"{len(rep['avisos'])} aviso(s)")
         return 0
     dst = args.salida or converted_path_for(args.entrada)
-    _dst, info = convert_file(args.entrada, dst, idx=not args.sin_idx, fl_min=args.fl_min,
-                              fl_max=args.fl_max, extend=not args.sin_extender,
+    _dst, info = convert_file(args.entrada, dst, idx=not args.sin_idx, force=args.forzar,
+                              fl_min=args.fl_min, fl_max=args.fl_max, extend=not args.sin_extender,
                               extrapolate=args.extrapolar, tables_version=args.tabla,
-                              centre=args.centro, log=lambda m: print("  " + m))
+                              centre=args.centro, mode=args.modo, log=lambda m: print("  " + m))
     if info.get("convertido"):
         print(f"{info['mensajes']} mensajes escritos en {dst}; {info['fl_rango']}")
     else:
-        print(f"{args.entrada} ya está en WAFS ({info.get('fl_rango', '')}); copiado a {dst}")
+        print(f"{args.entrada} ya está etiquetado por FL (modo {info.get('modo')}, "
+              f"{info.get('fl_rango', '')}); copiado a {dst}")
     rep = validate_wafs(dst)
     for a in rep["avisos"]:
         print("  aviso:", a)

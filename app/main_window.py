@@ -768,7 +768,8 @@ class MainWindow(QMainWindow):
         from . import wafs_format as wf
         from .grib_reader import GribReader, ec
         if (not self._cfg.get("wafs_convert_local", True) or ec is None
-                or getattr(reader, "kind", "altura") != "altura" or getattr(reader, "is_wafs", False)):
+                or getattr(reader, "kind", "altura") != "altura"
+                or getattr(reader, "fl_labeled", getattr(reader, "is_wafs", False))):
             return reader, path, False
         self.set_status(f"Convirtiendo {os.path.basename(path)} al formato WAFS…")
         QApplication.processEvents()
@@ -926,10 +927,12 @@ class MainWindow(QMainWindow):
         if panel.level_mode == "sfc":
             lvl_txt = "Superficie (viento 10 m, T 2 m)"
         elif panel.level_mode == "p":
-            lvl_txt = (f"{panel._fl_text(info['p'])} (nivel WAFS)" if panel.wafs
-                       else f"{info['p']:g} hPa")
+            lvl_txt = f"{info['p']:g} hPa"
         elif info.get("mode") == "wafs":
-            lvl_txt = f"F{panel.sel_fl:03d} ({info['p']:g} hPa, nivel WAFS)"
+            lab = info.get("label_hpa")
+            lvl_txt = (f"F{panel.sel_fl:03d} ({lab:g} hPa, {info['p']:g} ISA, modo {r.fl_mode})"
+                       if lab is not None and abs(lab - info["p"]) > 0.05
+                       else f"F{panel.sel_fl:03d} ({info['p']:g} hPa, modo {r.fl_mode})")
         else:
             lvl_txt = f"F{panel.sel_fl:03d} ({info['p']:.0f} hPa)"
             if info["extrapolated"]:
@@ -977,13 +980,17 @@ class MainWindow(QMainWindow):
             loc_txt = "LOCAL    [--:-- – --:--]"
 
         panel = self.panel
+        r = self._reader
         if panel.level_mode == "sfc":
             lvl = "LEVEL: superficie (viento 10 m / T 2 m)"
         elif panel.level_mode == "p":
-            lvl = (f"LEVEL: {panel._fl_text(info['p'])} (WAFS, nivel exacto)" if panel.wafs
-                   else f"LEVEL: {info['p']:g} hPa (nivel del archivo)")
+            lvl = f"LEVEL: {info['p']:g} hPa (nivel del archivo, sin interpolar)"
         elif info.get("mode") == "wafs":
-            lvl = f"LEVEL: F{panel.sel_fl:03d} = {info['p'] * 100:.0f} Pa (WAFS, nivel exacto)"
+            lab = info.get("label_hpa")
+            lvl = f"LEVEL: F{panel.sel_fl:03d} = {info['p'] * 100:.0f} Pa ISA (nivel exacto, modo {r.fl_mode}"
+            if lab is not None and abs(lab - info["p"]) > 0.05:
+                lvl += f", etiqueta {lab:g} hPa"
+            lvl += ")"
         else:
             lvl = f"LEVEL: F{panel.sel_fl:03d} = {info['p']:.1f} hPa (ISA)"
             if info["extrapolated"]:
@@ -1057,7 +1064,8 @@ class MainWindow(QMainWindow):
         if r is None or not getattr(r, "is_wafs", False):
             return ""
         fls = sorted(r.fl_levels)
-        txt = f"  WAFS FL{fls[0]:03d}–FL{fls[-1]:03d}"
+        mode = getattr(r, "fl_mode", None)
+        txt = f"  WAFS FL{fls[0]:03d}–FL{fls[-1]:03d}" + (f" · modo {mode}" if mode else "")
         w = (self._provenance or {}).get("wafs") or {}
         if w.get("convertido"):
             txt += " (convertido)"
