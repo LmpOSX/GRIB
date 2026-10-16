@@ -19,7 +19,9 @@
 - La casilla «Convertir a WAFS» está en el diálogo de descarga (bloque
   Destino); la opción de Preferencias ▸ WAFS pasa a llamarse «Convertir a
   WAFS por defecto» y sólo fija cómo arranca esa casilla. Sin marcar, el
-  GFS queda en niveles de presión y sin sufijo `_wafs`.
+  GFS queda en niveles de presión y sin sufijo `_wafs`, y «Abrir en el
+  visor al terminar» lo abre tal cual, sin la conversión de archivos
+  locales de Preferencias.
 
 ## 0.3.1 — 2026-10-16
 

@@ -149,8 +149,11 @@ vuelo) y `Obtener datos…` (⌘⇧D) abre el diálogo de descarga de esa fuente
   abrir al terminar; **Convertir a WAFS** (FL cada 1000 ft, con el rango y
   el modo de Preferencias ▸ WAFS). La casilla arranca como «Convertir a
   WAFS por defecto» de Preferencias; sin marcar, el archivo queda en los
-  niveles de presión de la fuente y sin el sufijo `_wafs`. Queda inactiva
-  en fuentes de superficie y en las que ya publican por FL.
+  niveles de presión de la fuente y sin el sufijo `_wafs`, y al abrirlo al
+  terminar se muestra tal cual, en modo presión, aunque Preferencias
+  convierta los archivos locales (si después lo abrís con Archivo ▸ Abrir,
+  ahí sí rige esa preferencia). Queda inactiva en fuentes de superficie y
+  en las que ya publican por FL.
 
 La descarga corre en un hilo con progreso y cancelación, no deja archivos a
 medias, reintenta tres veces ante cortes de red o errores 5xx, y comprueba

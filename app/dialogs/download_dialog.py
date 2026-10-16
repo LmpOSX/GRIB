@@ -65,6 +65,7 @@ class DownloadDialog(GlassDialog):
         self._cfg = cfg if cfg is not None else {}
         self.downloaded_paths = []
         self.open_after = True
+        self.wafs_requested = True    # False: se bajó sin «Convertir a WAFS»
         self.last_provenance = None
         self._worker = None
         self._dest_dir = dest_dir
@@ -744,6 +745,7 @@ class DownloadDialog(GlassDialog):
             return
         self.downloaded_paths = paths
         self.open_after = self.chk_open.isChecked()
+        self.wafs_requested = self.wafs_enabled()
         self.lbl_status.setText("Descarga completa: " + ", ".join(os.path.basename(p) for p in paths))
         from ..sources import read_provenance
         self.last_provenance = read_provenance(paths[0]) if paths else None

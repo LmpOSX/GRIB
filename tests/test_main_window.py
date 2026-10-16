@@ -521,6 +521,11 @@ class TestVentanaWAFS(_Base):
         self.assertFalse(os.path.exists(os.path.join(self._tmp.name, "FDP_MULTI_wafs.grib2")))
         self.assertEqual([fl for fl, b in self.w.panel._fl_buttons.items() if not b.isEnabled()],
                          [80, 210, 480])
+        # Bajado sin «Convertir a WAFS» (convert=False): se abre el crudo
+        # aunque Preferencias convierta los archivos locales
+        self.w.open_file(local, convert=False)
+        self.assertEqual(self.w._path, local)
+        self.assertEqual(self.w._current["info"]["mode"], "interp")
         # Sin conversión de archivos locales se abre el crudo e interpola
         self.w._cfg["wafs_convert_local"] = False
         self.w.open_file(local)

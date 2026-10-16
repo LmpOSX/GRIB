@@ -726,9 +726,11 @@ class MainWindow(QMainWindow):
         if path:
             self.open_file(path)
 
-    def open_file(self, path: str):
+    def open_file(self, path: str, convert=None):
         """Abre un GRIB2 (también desde el Finder o la línea de comandos). Si
-        no está en formato WAFS se convierte antes de mostrarlo."""
+        no está en formato WAFS se convierte antes de mostrarlo, según
+        Preferencias ▸ WAFS; `convert=False` lo abre tal cual (lo que se
+        bajó sin convertir se abre sin convertir)."""
         from .grib_reader import GribReader, EngineUnavailable, ec
         engine = self._cfg.get("engine", "eccodes")
         self.set_status(f"Leyendo {os.path.basename(path)} ({engine}) …")
@@ -755,7 +757,7 @@ class MainWindow(QMainWindow):
             return
         if not self._accept_reader(reader):
             return
-        reader, path, converted = self._ensure_wafs(reader, path)
+        reader, path, converted = self._ensure_wafs(reader, path, convert)
         self.load_reader(reader, path, read_provenance(path))
         if converted:
             self.set_status(f"Convertido a WAFS: {path}")
@@ -764,14 +766,17 @@ class MainWindow(QMainWindow):
         self._refresh_recent_menu()
         self.set_status(f"Archivo cargado: {path}")
 
-    def _ensure_wafs(self, reader, path: str):
+    def _ensure_wafs(self, reader, path: str, convert=None):
         """El visor lee sólo WAFS: un archivo local en niveles de presión se
         convierte (junto al original, o en la caché si la carpeta no se
-        puede escribir) y se abre el convertido. Devuelve (reader, path,
+        puede escribir) y se abre el convertido. `convert` None sigue a
+        Preferencias ▸ WAFS; False no convierte. Devuelve (reader, path,
         convertido)."""
         from . import wafs_format as wf
         from .grib_reader import GribReader, ec
-        if (not self._cfg.get("wafs_convert_local", True) or ec is None
+        if convert is None:
+            convert = bool(self._cfg.get("wafs_convert_local", True))
+        if (not convert or ec is None
                 or getattr(reader, "kind", "altura") != "altura"
                 or getattr(reader, "fl_labeled", getattr(reader, "is_wafs", False))):
             return reader, path, False
@@ -834,7 +839,9 @@ class MainWindow(QMainWindow):
                 self._refresh_sources_combo()
             save_config(self._cfg)
             if dlg.open_after:
-                self.open_file(first)
+                # Bajado sin «Convertir a WAFS»: se abre tal cual, en niveles
+                # de presión, aunque Preferencias convierta los archivos locales
+                self.open_file(first, convert=None if dlg.wafs_requested else False)
             else:
                 self.set_status("Descargado: " + ", ".join(dlg.downloaded_paths))
 
