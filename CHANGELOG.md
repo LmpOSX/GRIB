@@ -16,10 +16,12 @@
 - La franja STATUS y la barra de estado inferior siguen el tamaño de
   fuente de la aplicación (antes tenían un tamaño fijo).
 - El clic (sin arrastrar) sobre el mapa abre una ficha con el tema, en
-  vez del tooltip amarillo: PUNTO (grados y minutos, origen de celda,
-  viento y temperatura en el nivel y paso actuales), ARCHIVO (lo de
-  STATUS) y FIR (extremos y cobertura), con el botón «Consultar punto…»
-  que lleva a la consulta por nivel y hora.
+  vez del tooltip amarillo: PUNTO (la consulta de punto editable ahí
+  mismo: geodésico, hora UTC, FL y las tres capas alineadas), ARCHIVO (lo
+  de STATUS) y FIR (extremos y cobertura), con «Copiar».
+- La ventana «Consulta de punto» (clic derecho, ⌘ I) usa el mismo bloque y
+  formato que la ficha (campos en una fila y capas en texto monoespaciado
+  alineado, en lugar de la tabla).
 
 ## 0.3.2 — 2026-10-16
 

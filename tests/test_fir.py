@@ -515,27 +515,30 @@ class TestVentana(unittest.TestCase):
         msg = w._statusbar.currentMessage()
         self.assertTrue(msg.startswith("FIR Córdoba (SACF): N -21.72°"), msg)
         self.assertIn("la grilla cubre la FIR completa", msg)
-        # Ficha junto al mouse: PUNTO, ARCHIVO y FIR, con botón a la consulta
+        # Ficha junto al mouse: PUNTO editable (el bloque de la consulta), ARCHIVO y FIR
         pop = w._info_popup
         self.assertIsNotNone(pop)
         self.assertTrue(pop.isVisible())
+        self.assertTrue(pop.query.isVisible())
+        self.assertEqual(pop.query.ed_geo.text(), "3124S06412W")
+        self.assertEqual(pop.query.fl(), w.panel.sel_fl)
+        self.assertIn("origen de celda 3200S06500W", pop.query.lbl_cell.text())
+        self.assertEqual(pop.query.rows()[1][0], f"Nivel F{w.panel.sel_fl:03d}")
+        self.assertNotEqual(pop.query.rows()[1][2], "—")
         txt = pop.text()
-        self.assertIn("PUNTO\n3124S06412W  (-31.40, -64.20)", txt)
-        self.assertIn("origen de celda", txt)
         self.assertIn("ARCHIVO\nFUENTE:", txt)
         self.assertIn("FIR\nFIR Córdoba (SACF)", txt)
         self.assertIn("la grilla cubre la FIR completa", txt)
-        self.assertIn("Clic derecho", pop.lbl_hint.text())
-        pop.btn_consult.click()
-        self.assertFalse(pop.isVisible())
-        self.assertIsNotNone(w._point_dialog)
-        self.assertTrue(w._point_dialog.isVisible())
-        self.assertEqual(w._point_dialog.ed_geo.text(), "3124S06412W")
-        w._point_dialog.close()
-        # Fuera de toda FIR la ficha igual muestra el punto y el archivo
+        self.assertIn("⌘I", pop.lbl_hint.text())
+        # Se edita ahí mismo: otro FL recalcula
+        pop.query.sp_fl.setValue(310)
+        self.assertEqual(pop.query.rows()[1][1], "287.4 hPa ISA")
+        # Otro clic vuelve al FL del panel y al punto nuevo; fuera de toda FIR
+        # la ficha igual muestra el punto y el archivo
         w._on_map_click(self._event(-85.0, 0.0))
         self.assertTrue(pop.isVisible())
-        self.assertIn("PUNTO", pop.text())
+        self.assertEqual(pop.query.fl(), w.panel.sel_fl)
+        self.assertEqual(pop.query.ed_geo.text(), "0000N08500W")
         self.assertNotIn("FIR\n", pop.text())
         pop.hide()
         w._on_map_click(self._event(-40.0, -50.0))           # Comodoro: hasta el polo

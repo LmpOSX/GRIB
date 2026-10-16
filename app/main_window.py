@@ -33,7 +33,7 @@ from .widgets.control_panel import ControlPanel
 from .wind_plot import PROJECTIONS, WA_PROJECTIONS, WIND_STYLES, GRID_STEPS
 from .widgets.inventory_panel import InventoryPanel
 from .widgets.map_info_popup import MapInfoPopup
-from .point_query import geodesic_ddmm, wind_text, temp_text, layer_name
+from .point_query import geodesic_ddmm
 from .sources import enabled_sources, all_sources, get_source, source_label, read_provenance
 from . import fir as firmod
 from . import working_area as wamod
@@ -889,6 +889,9 @@ class MainWindow(QMainWindow):
         self.redraw(keep_extent=False)
         if self._point_dialog is not None:
             self._point_dialog.set_reader(reader)
+        if self._info_popup is not None:
+            self._info_popup.hide()
+            self._info_popup.query.set_reader(reader)
 
     def _file_close(self):
         self._reader = None
@@ -897,6 +900,9 @@ class MainWindow(QMainWindow):
         self._current = None
         if self._point_dialog is not None:
             self._point_dialog.set_reader(None)
+        if self._info_popup is not None:
+            self._info_popup.hide()
+            self._info_popup.query.set_reader(None)
         self.inventory.set_text("Sin archivo abierto.")
         self._apply_area_layer(redraw=False)     # vuelve el marco de la última selección
         self.plot.draw_empty()
@@ -1574,47 +1580,34 @@ class MainWindow(QMainWindow):
             lat = lon = None
         if fir_txt:
             self.set_status(fir_txt.splitlines()[0])
-        point_txt = self.point_info_text(lat, lon) if lat is not None else ""
         file_txt = self.file_info_text() if self._reader is not None else ""
-        if not (point_txt or file_txt or fir_txt):
+        if lat is None and not (file_txt or fir_txt):
             return
         if self._info_popup is None:
-            self._info_popup = MapInfoPopup(self.plot.canvas)   # hija del canvas del mapa
-            self._info_popup.consult_requested.connect(self.open_point_dialog)
+            self._info_popup = MapInfoPopup(self.plot.canvas, variation_fn=self._magnetic_variation)
+            self._info_popup.query.set_reader(self._reader)
         pop = self._info_popup
+        r = self._reader
+        if lat is not None and r is not None and r.steps and self.panel.level_mode == "fl":
+            # Consulta editable con el paso y el FL que muestra el panel
+            step_idx = max(0, min(self.panel.step_index(), len(r.steps) - 1))
+            pop.set_point_static(None)
+            pop.query.set_defaults(when=r.steps[step_idx].valid, fl=self.panel.sel_fl, force=True)
+            pop.query.set_point(lat, lon)
+        else:
+            pop.set_point_static(self.point_info_text(lat, lon) if lat is not None else "—")
         # En la ficha, cada FIR en tres renglones (extremos / cobertura / fuente)
-        pop.set_sections([("PUNTO", point_txt), ("ARCHIVO", file_txt),
-                          ("FIR", fir_txt.replace("  ·  ", "\n  "))])
-        pop.show_at(self.plot.canvas.mapFromGlobal(QCursor.pos()), lat, lon)
+        pop.set_sections([("ARCHIVO", file_txt), ("FIR", fir_txt.replace("  ·  ", "\n  "))])
+        pop.show_at(self.plot.canvas.mapFromGlobal(QCursor.pos()))
 
     def point_info_text(self, lat, lon) -> str:
-        """Sección PUNTO de la ficha: coordenadas en grados y minutos y
-        decimales; con archivo, el origen de celda (convención del FDP) y el
-        viento y la temperatura en el nivel y el paso que muestra el panel."""
+        """Sección PUNTO de la ficha cuando no hay consulta por FL (archivo
+        de superficie o en niveles de presión): coordenadas y, con archivo,
+        el nodo más cercano con su viento y temperatura, como la barra de
+        estado."""
         lines = [f"{geodesic_ddmm(lat, lon)}  ({lat:.2f}, {lon:.2f})"]
-        r = self._reader
-        if r is None or not r.steps:
-            return "\n".join(lines)
-        panel = self.panel
-        step_idx = max(0, min(panel.step_index(), len(r.steps) - 1))
-        var = self._magnetic_variation()
-        if panel.level_mode == "fl":
-            res = r.point_query(step_idx, panel.sel_fl, lat, lon, cell="origin")
-            if res is None:
-                lines.append("origen de celda: fuera de la grilla del archivo")
-                return "\n".join(lines)
-            lines.append(f"origen de celda {geodesic_ddmm(res['lat'], res['lon'])}  "
-                         f"({res['lat']:.2f}, {res['lon']:.2f})")
-            val = res.get("value")
-            lines.append(f"F{int(panel.sel_fl):03d}  viento {wind_text(val, var)}  ·  T {temp_text(val)}")
-            if val is not None and val.get("label") is None:
-                near = res.get("lower") or res.get("upper")
-                if near is not None:
-                    lines.append(f"(capa más cercana: {layer_name(near)})")
-        else:
-            # Superficie o nivel de presión del archivo: el nodo más cercano, como la barra de estado
-            parts = [x.strip() for x in self.cursor_text(lon, lat).split("|")[1:]]
-            lines.extend(parts)
+        if self._reader is not None:
+            lines.extend(x.strip() for x in self.cursor_text(lon, lat).split("|")[1:])
         return "\n".join(lines)
 
     def file_info_text(self) -> str:

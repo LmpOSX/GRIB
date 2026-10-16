@@ -214,9 +214,10 @@ class TestDialogo(unittest.TestCase):
         self.assertIn("0000N04200W", dlg.lbl_cell.text())        # sobre el nodo: la celda es él
         self.assertEqual(dlg.ed_time.text(), "2610131800")       # validez del paso del panel
         self.assertEqual(dlg.fl(), 300)                          # FL del panel
-        self.assertEqual(dlg.table.item(1, 0).text(), "Nivel F300")
-        self.assertEqual(dlg.table.item(0, 1).text(), "300 hPa")       # F300 = 300.9 hPa: entre 500 y 300
-        self.assertEqual(dlg.table.item(2, 1).text(), "500 hPa")
+        rows = dlg.rows()
+        self.assertEqual(rows[1][0], "Nivel F300")
+        self.assertEqual(rows[0][1], "300 hPa")       # F300 = 300.9 hPa: entre 500 y 300
+        self.assertEqual(rows[2][1], "500 hPa")
         self.assertIn("interpolado en ln(p)", dlg.lbl_mode.text())
         # Cualquier FL y cualquier hora
         dlg.sp_fl.setValue(310)
@@ -224,15 +225,16 @@ class TestDialogo(unittest.TestCase):
         self.app.processEvents()
         self.assertIn("paso [0] +6 h", dlg.lbl_step.text())
         self.assertIn("fuera de las ventanas", dlg.lbl_step.text())
-        self.assertEqual(dlg.table.item(1, 1).text(), "287.4 hPa ISA")
-        self.assertEqual(dlg.table.item(0, 1).text(), "200 hPa")
-        self.assertEqual(dlg.table.item(2, 1).text(), "300 hPa")
-        self.assertNotEqual(dlg.table.item(1, 2).text(), "—")
-        self.assertRegex(dlg.table.item(1, 3).text(), r"^-?\d+\.\d °C$")
+        rows = dlg.rows()
+        self.assertEqual(rows[1][1], "287.4 hPa ISA")
+        self.assertEqual(rows[0][1], "200 hPa")
+        self.assertEqual(rows[2][1], "300 hPa")
+        self.assertNotEqual(rows[1][2], "—")
+        self.assertRegex(rows[1][3], r"^-?\d+\.\d °C$")
         dlg.ed_time.setText("261013")
         self.app.processEvents()
         self.assertIn("hora inválida", dlg.lbl_step.text())
-        self.assertEqual(dlg.table.item(1, 2).text(), "—")
+        self.assertEqual(dlg.rows()[1][2], "—")
         dlg.ed_time.setText("2610131900")
         self.app.processEvents()
         # Origen de celda (convención del FDP): esquina suroeste de la celda
@@ -247,7 +249,6 @@ class TestDialogo(unittest.TestCase):
         self.assertEqual((dlg.fl(), dlg.ed_time.text()), (310, "2610131900"))
         # Se puede escribir el punto a mano
         dlg.ed_geo.setText("0500N05200W")
-        dlg._geo_edited()
         self.assertIn("0500N05400W", dlg.lbl_cell.text())             # origen: -54 ≤ -52 < -48
         # Copiar
         dlg.copy_text()
@@ -259,7 +260,7 @@ class TestDialogo(unittest.TestCase):
         # Cerrar el archivo deja la consulta sin datos; Vista ▸ Consultar punto la reabre
         w._file_close()
         self.assertEqual(dlg.lbl_step.text(), "Sin archivo abierto")
-        self.assertEqual(dlg.table.item(1, 2).text(), "—")
+        self.assertEqual(dlg.rows()[1][2], "—")
         dlg.close()
         w._act_point.trigger()
         self.assertTrue(dlg.isVisible())

@@ -447,13 +447,16 @@ dirección (°) y temperatura (°C).
 
 **Consulta de punto (clic derecho).** Un clic con el botón derecho sobre
 el mapa (o Vista ▸ Consultar punto…, ⌘ I) abre una ventana no modal, al
-estilo de la consulta del FDP, con el punto en grados y minutos
-(`3125S06411W`, editable: se consulta en cuanto está completo), la **hora de sobrevuelo** `YYMMDDHHMM` en UTC
+estilo de la consulta del FDP y con el mismo formato que la ficha del clic
+izquierdo (en la ficha la consulta se edita ahí mismo), con el punto en
+grados y minutos (`3125S06411W`, editable: se consulta en cuanto está
+completo), la **hora de sobrevuelo** `YYMMDDHHMM` en UTC
 (arranca con la validez del paso que muestra el panel; cualquier otra
 elige el paso cuya ventana de validez la contiene, o el de validez más
 cercana si cae fuera de todas, y lo dice) y el **nivel de sobrevuelo**
-(banda, sin F: cualquier FL, arranca con el del panel). La tabla muestra,
-para ese paso y en ese punto, la **capa superior** y la **capa inferior**
+(banda, sin F: cualquier FL, arranca con el del panel). Debajo, en letra
+monoespaciada alineada, van para ese paso y en ese punto la **capa
+superior** y la **capa inferior**
 del archivo que encierran al FL (etiqueta, FL y presión ISA real de cada
 una) y el **valor en el FL**: viento en kt y grados (y `°M` si el mapa
 tiene norte magnético), y temperatura en °C. El valor del FL es el de la
@@ -581,12 +584,14 @@ variación (`working_area.tangent_projection_params`).
 * **Mouse**: con la capa activa la barra de estado agrega `FIR Ezeiza
   (SAEF)` cuando el cursor está dentro de una FIR y `límite SAEF · SAVF`
   cuando pasa sobre un contorno (5 px). Un clic sin arrastrar abre junto
-  al mouse una **ficha** con tres secciones: *PUNTO* (grados y minutos y
-  decimales, origen de celda, viento y temperatura en el nivel y paso
-  actuales), *ARCHIVO* (lo que muestra STATUS) y *FIR* (extremos y
-  cobertura, también en la barra de estado), con el botón `Consultar
-  punto…` que abre la consulta por nivel y hora en ese punto (la del clic
-  derecho). Se cierra con un clic afuera o Escape.
+  al mouse una **ficha** con tres secciones: *PUNTO* (la consulta de punto
+  editable ahí mismo: geodésico, hora UTC y FL, que arrancan con el punto
+  del clic, el paso y el FL del panel, y las tres capas alineadas; en
+  archivos de superficie o en niveles de presión, el nodo más cercano con
+  su viento y temperatura), *ARCHIVO* (lo que muestra STATUS) y *FIR*
+  (extremos y cobertura, también en la barra de estado), con `Copiar`. Se
+  cierra con un clic afuera o Escape; ⌘ I abre la misma consulta en
+  ventana.
 * **Dibujo**: los lados se densifican antes de proyectar, así los sectores
   oceánicos hasta 10° W y el de Comodoro Rivadavia hasta el Polo Sur se
   curvan bien en las proyecciones conformes y se recortan a la vista; los
