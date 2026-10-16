@@ -8,8 +8,8 @@
   paso cuya ventana de validez la contiene) y cualquier nivel de
   sobrevuelo; muestra viento y temperatura de la capa inferior, la
   superior y el valor en el FL (nivel exacto, interpolado en ln(p) o, fuera
-  del rango, el de la capa más cercana), con el punto de grilla usado
-  (nodo más cercano u origen de la celda) y un botón para copiar el
+  del rango, el de la capa más cercana), con el origen de la celda usada
+  (esquina suroeste, la convención del FDP) y un botón para copiar el
   informe.
 - La interpolación a un FL que no es nivel del archivo usa la presión real
   de cada capa: en archivos etiquetados por FL, la ISA del FL en lugar de
