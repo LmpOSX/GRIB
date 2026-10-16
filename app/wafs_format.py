@@ -16,9 +16,9 @@ Este módulo (sin Qt) reúne:
 
 * ``isa_pa`` / ``wafs_pa`` / ``FL_TABLE``: la fórmula ISA y la tabla FL↔Pa;
 * ``convert_to_wafs``: interpolación lineal en ln(p) desde los niveles de
-  presión de origen a la presión ISA de cada FL (misma aritmética que el
-  conversor de referencia ``docs/referencia/make_wafs_like.py``, que
-  reproduce byte a byte);
+  presión de origen a la presión ISA de cada FL, etiquetada según el modo
+  (misma tabla y aritmética que el generador del servidor,
+  ``docs/referencia/gfs_to_wafs.py``);
 * ``is_wafs``: detección de archivos que ya vienen en WAFS (no se reconvierten);
 * ``validate_wafs``: validador (avisa, no bloquea);
 * ``write_idx``: inventario ``.idx`` tipo ``wgrib2 -s``;
@@ -38,11 +38,12 @@ from .grib_engines import ec
 
 # ── Tabla FL ↔ presión ───────────────────────────────────────────────────────
 # La tabla vive en fl_table.py (copiada literal del generador del servidor):
-# ISA_Pa exacta (donde se interpola el dato) y etiqueta nominal OACI56.
+# ISA_Pa exacta (donde se interpola el dato) y etiqueta nominal OACI56;
+# OACI17 e INDRA14 son los subconjuntos nominales.
 
 from . import fl_table as flt                      # noqa: E402
 from .fl_table import (                            # noqa: E402,F401
-    FL_STEP, FL_LOWEST, FL_HIGHEST, MODES, MODE_LABELS, DEFAULT_MODE, OACI16, INDRA14,
+    FL_STEP, FL_LOWEST, FL_HIGHEST, MODES, MODE_LABELS, DEFAULT_MODE, OACI17, INDRA14,
     mode_fls, normalize_mode, label_pa, label_text, table_rows,
 )
 
@@ -867,7 +868,7 @@ def main(argv=None):
     ap.add_argument("--centro", type=int, default=None)
     ap.add_argument("--sin-idx", action="store_true")
     ap.add_argument("--modo", default=DEFAULT_MODE, choices=MODES,
-                    help="etiquetado de los niveles: INDRA, OACI, OACI56 (por defecto) o WAFS")
+                    help="etiquetado de los niveles: INDRA, OACI (17 FL, por defecto), OACI56 o WAFS")
     ap.add_argument("--forzar", action="store_true",
                     help="convertir aunque los niveles parezcan etiquetados por FL (p. ej. un GFS "
                          "crudo con 850/700/500/250/100 hPa)")

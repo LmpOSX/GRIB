@@ -141,12 +141,15 @@ class TestConversionReferencia(unittest.TestCase):
         self.assertEqual(fls, list(range(50, 531, 10)))
 
     def test_modo_por_defecto_etiqueta_nominal(self):
-        res = wf.convert_to_wafs(SRC)                       # OACI56 por defecto
-        self.assertEqual(res.info["modo"], "OACI56")
+        res = wf.convert_to_wafs(SRC)                       # OACI (17 FL) por defecto
+        self.assertEqual(res.info["modo"], "OACI")
         pas = {m[1] for m in _messages(res.data)}
         self.assertIn(85000.0, pas)                          # FL050 = 850 hPa nominal
+        self.assertIn(45000.0, pas)                          # FL210 = 450 hPa nominal
         self.assertNotIn(84310.0, pas)
-        self.assertEqual(len(pas), 49)
+        self.assertEqual(len(pas), 17)
+        res = wf.convert_to_wafs(SRC, mode="OACI56")
+        self.assertEqual(len({m[1] for m in _messages(res.data)}), 49)
 
     def test_ya_en_wafs_pasa_sin_cambios(self):
         """(4) un archivo etiquetado por FL no se reconvierte; FDP_MULTI tiene
@@ -169,28 +172,43 @@ class TestConversionReferencia(unittest.TestCase):
     def test_conversor_de_referencia_sigue_en_el_repo(self):
         p = os.path.join(HERE, "..", "docs", "referencia", "make_wafs_like.py")
         self.assertTrue(os.path.isfile(p))
+        # el generador del servidor, con la tabla de la que se copia fl_table
+        p = os.path.join(HERE, "..", "docs", "referencia", "gfs_to_wafs.py")
+        self.assertTrue(os.path.isfile(p))
+        ns = {}
+        src = open(p, encoding="utf-8").read()
+        tabla = src[src.index("TABLA = {"):src.index("# Fin de la cabecera de tablas")]
+        exec(tabla, ns)                                      # sólo las tablas, sin eccodes
+        from app import fl_table as flt
+        self.assertEqual({fl: tuple(v) for fl, v in ns["TABLA"].items()}, flt.FL_TABLE)
+        self.assertEqual(list(ns["OACI17_FL"]), flt.OACI17)
+        self.assertEqual(list(ns["INDRA14_FL"]), flt.INDRA14)
 
 
 @needs_eccodes
 class TestConversionSintetica(unittest.TestCase):
     def test_extiende_el_rango_con_niveles_bajos_y_altos(self):
         """(3) niveles por debajo de 850 o por encima de 100 hPa amplían el rango."""
-        res = wf.convert_to_wafs(_grib([1000, 925, 850, 500, 300, 100, 70, 50]))
+        res = wf.convert_to_wafs(_grib([1000, 925, 850, 500, 300, 100, 70, 50]), mode="OACI56")
         self.assertEqual((res.info["fl_min"], res.info["fl_max"]), (50, 600))    # la tabla empieza en F050
         fls = sorted({wf.fl_from_pa(m[1]) for m in _messages(res.data)})
         self.assertEqual(fls, list(range(50, 601, 10)))
-        res2 = wf.convert_to_wafs(_grib([1000, 925, 850, 500, 300, 100, 70, 50]), extend=False)
+        res2 = wf.convert_to_wafs(_grib([1000, 925, 850, 500, 300, 100, 70, 50]), extend=False,
+                                  mode="OACI56")
         self.assertEqual((res2.info["fl_min"], res2.info["fl_max"]), (50, 530))
+        # en los modos nominales de 14 / 17 FL el rango termina solo en F530
+        res3 = wf.convert_to_wafs(_grib([1000, 925, 850, 500, 300, 100, 70, 50]))
+        self.assertEqual((res3.info["modo"], res3.info["fl_max"]), ("OACI", 530))
 
     def test_omite_fuera_de_rango_salvo_extrapolar(self):
         data = _grib([700, 500, 300])           # cubre ~FL100…FL300
-        res = wf.convert_to_wafs(data)
+        res = wf.convert_to_wafs(data, mode="OACI56")
         fls = sorted({wf.fl_from_pa(m[1]) for m in _messages(res.data)})
         self.assertEqual(fls[0], 100)
         self.assertEqual(fls[-1], 300)
         self.assertIn(50, res.info["fl_omitidos"])
         self.assertIn(530, res.info["fl_omitidos"])
-        res = wf.convert_to_wafs(data, extrapolate=True)
+        res = wf.convert_to_wafs(data, extrapolate=True, mode="OACI56")
         fls = sorted({wf.fl_from_pa(m[1]) for m in _messages(res.data)})
         self.assertEqual(fls, list(range(50, 531, 10)))
         self.assertTrue(res.info["extrapolados"])
@@ -362,7 +380,7 @@ class TestExportacion(unittest.TestCase):
         _p, info = wf.convert_file(SRC, dst, provenance={"fuente": "gfs", "nombre": "NOAA GFS"},
                                    force=True)
         self.assertTrue(info["convertido"])
-        self.assertEqual(info["modo"], "OACI56")
+        self.assertEqual(info["modo"], "OACI")
         with open(dst + ".json", encoding="utf-8") as fh:
             prov = json.load(fh)
         self.assertEqual(prov["wafs"]["fl_rango"], "FL050–FL530")

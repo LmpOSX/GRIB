@@ -9,14 +9,19 @@ Para cada FL (F050…F600 cada 1000 ft) hay dos columnas:
   **siempre** a esta presión: ahí se interpola.
 * ``OACI56_hPa``: la etiqueta nominal en hPa. Es lo que se graba en el GRIB
   en los modos nominales y lo que reconoce cada consumidor (el FDP, etc.).
+  Regla del generador: los 17 FL OACI conservan su nominal del Anexo 3; los
+  demás van al múltiplo de 25 hPa más cercano si está libre y, si colisiona,
+  al múltiplo de 5 (no de 25) más cercano y libre. Quedan 56 etiquetas
+  distintas y decrecientes.
 
 La tabla está copiada literal; no se recalcula con la fórmula ISA.
 
 Cuatro modos de etiquetado (``MODES``):
 
 * ``INDRA``  : las 14 filas de ``INDRA14``, etiqueta nominal. El FDP.
-* ``OACI``   : las 16 filas de ``OACI16`` (Anexo 3), etiqueta nominal.
-* ``OACI56`` : las 56 filas, etiqueta nominal. Por defecto.
+* ``OACI``   : las 17 filas de ``OACI17`` (Anexo 3, Ap. 2, 1.2.2: INDRA +
+               F080, F210 y F480), etiqueta nominal. Por defecto.
+* ``OACI56`` : las 56 filas, etiqueta nominal única.
 * ``WAFS``   : las 56 filas, etiqueta = ISA_Pa (como codifica NOAA).
 
 Sin Qt: lo usan el formato WAFS, el lector, el panel y los tests.
@@ -43,17 +48,17 @@ FLS = sorted(FL_TABLE)
 FL_STEP = 10
 FL_LOWEST, FL_HIGHEST = FLS[0], FLS[-1]
 
-OACI16 = [50, 80, 100, 140, 180, 240, 270, 300, 320, 340, 360, 390, 410, 450, 480, 530]
-INDRA14 = [fl for fl in OACI16 if fl not in (80, 480)]
+OACI17 = [50, 80, 100, 140, 180, 210, 240, 270, 300, 320, 340, 360, 390, 410, 450, 480, 530]
+INDRA14 = [fl for fl in OACI17 if fl not in (80, 210, 480)]
 
 MODES = ["INDRA", "OACI", "OACI56", "WAFS"]
 MODE_LABELS = {
     "INDRA": "INDRA (14 FL del FDP, etiqueta nominal hPa)",
-    "OACI": "OACI (16 FL del Anexo 3, etiqueta nominal hPa)",
-    "OACI56": "OACI56 (56 FL, etiqueta nominal hPa)",
+    "OACI": "OACI (17 FL del Anexo 3, etiqueta nominal hPa)",
+    "OACI56": "OACI56 (56 FL cada 1000 ft, etiqueta nominal única hPa)",
     "WAFS": "WAFS (56 FL, etiqueta = presión ISA en Pa, como NOAA)",
 }
-DEFAULT_MODE = "OACI56"
+DEFAULT_MODE = "OACI"
 ISA_TOL_PA = 10         # tolerancia al reconocer la columna ISA (Pa): NOAA redondea a 0,1 hPa
 
 _ISA_TO_FL = {pa: fl for fl, (pa, _h) in FL_TABLE.items()}
@@ -66,7 +71,7 @@ def mode_fls(mode):
     if mode == "INDRA":
         return list(INDRA14)
     if mode == "OACI":
-        return list(OACI16)
+        return list(OACI17)
     return list(FLS)
 
 
@@ -163,7 +168,7 @@ def classify(pas):
     s = set(fls.values())
     if s <= set(INDRA14):
         mode = "INDRA"
-    elif s <= set(OACI16):
+    elif s <= set(OACI17):
         mode = "OACI"
     else:
         mode = "OACI56"
@@ -176,6 +181,16 @@ def table_rows(mode=DEFAULT_MODE):
     """[(fl, ISA_Pa, etiqueta_Pa, texto)] del modo, para «Ver tabla»."""
     mode = normalize_mode(mode)
     return [(fl, isa_pa(fl), label_pa(fl, mode), label_text(fl, mode)) for fl in mode_fls(mode)]
+
+
+def nominal_rule(fl):
+    """De dónde sale la etiqueta OACI56 del FL: 'OACI' (nominal del Anexo
+    3), 'x25' (múltiplo de 25 hPa libre) o 'x5' (múltiplo de 5, porque el
+    de 25 colisionaba o está prohibido)."""
+    fl = int(fl)
+    if fl in OACI17:
+        return "OACI"
+    return "x25" if nominal_hpa(fl) % 25 == 0 else "x5"
 
 
 def fl_label(fl):

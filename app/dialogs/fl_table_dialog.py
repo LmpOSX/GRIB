@@ -13,12 +13,14 @@ from .. import fl_table as flt
 
 
 class FlTableDialog(GlassDialog):
-    COLS = ("FL", "ISA_Pa (dato)", "Etiqueta en el GRIB", "Nominal hPa", "OACI16", "INDRA14")
+    COLS = ("FL", "ISA_Pa (dato)", "Etiqueta en el GRIB", "Nominal hPa", "Regla", "OACI17", "INDRA14")
+
+    RULES = {"OACI": "nominal OACI", "x25": "múltiplo de 25", "x5": "múltiplo de 5"}
 
     def __init__(self, parent=None, mode=flt.DEFAULT_MODE):
         super().__init__(parent)
         self.setWindowTitle("Tabla de niveles de vuelo")
-        self.setMinimumSize(640, 560)
+        self.setMinimumSize(720, 560)
         outer = QVBoxLayout(self)
         outer.setContentsMargins(20, 20, 20, 20)
         panel = QFrame()
@@ -71,15 +73,18 @@ class FlTableDialog(GlassDialog):
         self.table.setRowCount(len(rows))
         for r, (fl, isa, lab, txt) in enumerate(rows):
             vals = [f"F{fl:03d}", f"{isa} Pa ({isa / 100.0:g} hPa)", txt, f"{flt.nominal_hpa(fl)}",
-                    "✓" if fl in flt.OACI16 else "", "✓" if fl in flt.INDRA14 else ""]
+                    self.RULES[flt.nominal_rule(fl)],
+                    "✓" if fl in flt.OACI17 else "", "✓" if fl in flt.INDRA14 else ""]
             for c, v in enumerate(vals):
                 it = QTableWidgetItem(v)
                 if c in (1, 2, 3):
                     it.setTextAlignment(Qt.AlignmentFlag.AlignRight | Qt.AlignmentFlag.AlignVCenter)
-                elif c >= 4:
+                elif c >= 5:
                     it.setTextAlignment(Qt.AlignmentFlag.AlignCenter)
                 self.table.setItem(r, c, it)
         self.lbl.setText(f"{len(rows)} niveles. El dato de cada FL se interpola siempre a ISA_Pa; "
                          "la etiqueta es la presión que se graba en el mensaje GRIB y la que "
-                         "reconoce cada consumidor. Tabla copiada literal del generador del "
-                         "servidor (NOAA-EMC/wafs), no recalculada.")
+                         "reconoce cada consumidor. Regla de la nominal: los 17 OACI conservan "
+                         "la del Anexo 3; los demás van al múltiplo de 25 hPa más cercano si está "
+                         "libre y, si no, al múltiplo de 5 libre más cercano. Tabla copiada "
+                         "literal del generador del servidor (NOAA-EMC/wafs), no recalculada.")

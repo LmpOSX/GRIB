@@ -1,8 +1,9 @@
 # -*- coding: utf-8 -*-
 """Tabla de niveles de vuelo del generador WAFS: unicidad y monotonía de las
-etiquetas OACI56, nominales OACI16 intactos, clasificación de archivos por
-modo, conversión y exportación en los cuatro modos con ida y vuelta, y la
-selección de nivel (botonera de 16 + lista) en el panel."""
+etiquetas OACI56, nominales OACI17 intactos, clasificación de archivos por
+modo, conversión y exportación en los cuatro modos con ida y vuelta, la
+muestra OACI del servidor y la selección de nivel (botonera de 17 + lista)
+en el panel."""
 import os
 import shutil
 import tempfile
@@ -13,6 +14,7 @@ from app import fl_table as flt
 HERE = os.path.dirname(os.path.abspath(__file__))
 REF = os.path.join(HERE, "data", "WAFS_like_test.grib2")      # modo WAFS (ISA en Pa)
 FDP = os.path.join(HERE, "data", "FDP_MULTI.grib2")            # 14 niveles nominales INDRA
+OACI = os.path.join(HERE, "data", "WAFS_oaci_test.grib2")      # 17 niveles OACI, del generador del servidor
 
 try:
     import eccodes  # noqa: F401
@@ -21,9 +23,10 @@ except Exception:
     HAVE_EC = False
 needs_eccodes = unittest.skipUnless(HAVE_EC, "requiere eccodes")
 
-# Nominales del Anexo 3 de OACI para los 16 FL de referencia
-ANEXO3 = {50: 850, 80: 750, 100: 700, 140: 600, 180: 500, 240: 400, 270: 350, 300: 300,
-          320: 275, 340: 250, 360: 225, 390: 200, 410: 175, 450: 150, 480: 125, 530: 100}
+# Nominales del Anexo 3 de OACI (Ap. 2, 1.2.2) para los 17 FL de referencia
+ANEXO3 = {50: 850, 80: 750, 100: 700, 140: 600, 180: 500, 210: 450, 240: 400, 270: 350,
+          300: 300, 320: 275, 340: 250, 360: 225, 390: 200, 410: 175, 450: 150, 480: 125,
+          530: 100}
 
 
 class TestTabla(unittest.TestCase):
@@ -43,18 +46,39 @@ class TestTabla(unittest.TestCase):
         self.assertEqual(isas, sorted(isas, reverse=True))
         self.assertEqual(len(set(isas)), 56)
 
-    def test_oaci16_conservan_el_nominal_del_anexo_3(self):
-        self.assertEqual(flt.OACI16, sorted(ANEXO3))
+    def test_oaci17_conservan_el_nominal_del_anexo_3(self):
+        self.assertEqual(flt.OACI17, sorted(ANEXO3))
+        self.assertEqual(len(flt.OACI17), 17)
         for fl, hpa in ANEXO3.items():
             self.assertEqual(flt.nominal_hpa(fl), hpa, f"FL{fl:03d}")
-        self.assertEqual(flt.INDRA14, [fl for fl in flt.OACI16 if fl not in (80, 480)])
+            self.assertEqual(flt.nominal_rule(fl), "OACI")
+        self.assertEqual(flt.INDRA14, [fl for fl in flt.OACI17 if fl not in (80, 210, 480)])
         self.assertEqual(len(flt.INDRA14), 14)
+        self.assertEqual(flt.INDRA14, [50, 100, 140, 180, 240, 270, 300, 320, 340, 360, 390,
+                                       410, 450, 530])
+
+    def test_regla_de_la_etiqueta_oaci56(self):
+        """Los que no son OACI van al múltiplo de 25 libre o, si no, al de 5."""
+        self.assertEqual(flt.nominal_rule(60), "x25")        # 800
+        self.assertEqual(flt.nominal_rule(190), "x5")        # 485 (475 colisionaba)
+        self.assertEqual(flt.nominal_rule(230), "x5")        # 410 (400 es F240)
+        self.assertEqual(flt.nominal_rule(580), "x5")        # 70 (75 prohibido)
+        for fl in flt.FLS:
+            h = flt.nominal_hpa(fl)
+            rule = flt.nominal_rule(fl)
+            if rule == "x25":
+                self.assertEqual(h % 25, 0, fl)
+            elif rule == "x5":
+                self.assertEqual(h % 5, 0, fl)
+                self.assertNotEqual(h % 25, 0, fl)           # un múltiplo de 25 libre habría ganado
 
     def test_modos(self):
         self.assertEqual(flt.MODES, ["INDRA", "OACI", "OACI56", "WAFS"])
-        self.assertEqual(flt.DEFAULT_MODE, "OACI56")
+        self.assertEqual(flt.DEFAULT_MODE, "OACI")
         self.assertEqual(flt.mode_fls("INDRA"), flt.INDRA14)
-        self.assertEqual(flt.mode_fls("oaci"), flt.OACI16)
+        self.assertEqual(flt.mode_fls("oaci"), flt.OACI17)
+        self.assertEqual(len(flt.table_rows("OACI")), 17)
+        self.assertEqual(flt.table_rows("OACI")[5], (210, 44650, 45000, "450 hPa"))
         self.assertEqual(flt.mode_fls("OACI56"), flt.FLS)
         self.assertEqual(flt.mode_fls("WAFS"), flt.FLS)
         with self.assertRaises(ValueError):
@@ -86,8 +110,12 @@ class TestTabla(unittest.TestCase):
         indra = [flt.nominal_hpa(fl) * 100 for fl in flt.INDRA14]
         c = flt.classify(indra)
         self.assertEqual((c["mode"], c["labeled"], c["column"]), ("INDRA", True, "nominal"))
-        oaci = [flt.nominal_hpa(fl) * 100 for fl in flt.OACI16]
-        self.assertEqual(flt.classify(oaci)["mode"], "OACI")
+        oaci = [flt.nominal_hpa(fl) * 100 for fl in flt.OACI17]
+        c = flt.classify(oaci)
+        self.assertEqual((c["mode"], c["labeled"]), ("OACI", True))
+        self.assertEqual(c["fls"][45000], 210)
+        # los 14 de INDRA más F210 ya no son INDRA sino OACI
+        self.assertEqual(flt.classify(indra + [45000])["mode"], "OACI")
         o56 = [flt.nominal_hpa(fl) * 100 for fl in flt.FLS]
         self.assertEqual(flt.classify(o56)["mode"], "OACI56")
         self.assertTrue(flt.classify(o56)["labeled"])
@@ -122,6 +150,38 @@ class TestConversionYExportacion(unittest.TestCase):
         self.assertEqual((d["mode"], d["labeled"], d["column"]), ("INDRA", True, "nominal"))
         self.assertEqual(sorted(d["fls"].values()), flt.INDRA14)
         self.assertTrue(wf.is_wafs(FDP))
+        d = wf.detect_mode(OACI)
+        self.assertEqual((d["mode"], d["labeled"], d["column"]), ("OACI", True, "nominal"))
+        self.assertEqual(sorted(d["fls"].values()), flt.OACI17)
+
+    def test_muestra_oaci_del_servidor(self):
+        """La muestra generada por gfs_to_wafs.py (modo oaci, 1°, tres
+        plazos) se lee como OACI con sus 17 niveles exactos, sin convertir,
+        y el .idx del visor coincide byte a byte con el del servidor."""
+        from app import wafs_format as wf
+        from app.grib_reader import GribReader
+        r = GribReader(OACI)
+        self.assertTrue(r.fl_labeled)
+        self.assertEqual((r.fl_mode, r.fl_column), ("OACI", "nominal"))
+        self.assertEqual(sorted(r.fl_levels), flt.OACI17)
+        self.assertEqual(r.fl_levels[210], 450)
+        self.assertEqual(r.available_fls(), flt.OACI17)
+        self.assertEqual(len(r.steps), 3)
+        self.assertEqual([s.step_range for s in r.steps], ["6", "9", "12"])
+        self.assertEqual((r.grid["ni"], r.grid["nj"]), (69, 69))
+        self.assertIn("FORMATO: etiquetado por FL, modo OACI (etiqueta nominal en hPa): "
+                      "FL050–FL530, 17 niveles", r.inventory_text())
+        self.assertEqual(r.fl_text(210), "FL210 · 450 hPa (446.5 ISA)")
+        _u, _v, _t, info = r.fields_for_fl(0, 210)
+        self.assertEqual((info["mode"], info["p"], info["label_hpa"]), ("wafs", 446.5, 450.0))
+        data, info = wf.convert_if_needed(OACI)
+        self.assertFalse(info["convertido"])
+        self.assertEqual(info["modo"], "OACI")
+        rep = wf.validate_wafs(OACI)
+        self.assertTrue(rep["ok"], rep["avisos"])
+        self.assertEqual(rep["mensajes"], 153)
+        with open(OACI + ".idx", encoding="ascii") as fh:
+            self.assertEqual(wf.inventory_lines(OACI), fh.read().splitlines())
 
     def test_conversion_por_modo(self):
         """Convertir un archivo crudo en cada modo: las etiquetas grabadas
@@ -242,9 +302,12 @@ class TestSeleccionDeNivel(_QtBase):
 
     def test_botonera_fija_y_deshabilitados(self):
         p = self._open("FDP_MULTI.grib2")
-        self.assertEqual(list(p._fl_buttons), flt.OACI16)
-        self.assertEqual([fl for fl, b in p._fl_buttons.items() if not b.isEnabled()], [80, 480])
+        self.assertEqual(list(p._fl_buttons), flt.OACI17)
+        self.assertEqual(len(p._fl_buttons), 17)
+        self.assertEqual([fl for fl, b in p._fl_buttons.items() if not b.isEnabled()], [80, 210, 480])
         self.assertEqual(p.cb_press.count(), 1)                    # nada fuera de la botonera
+        self.assertFalse(p.cb_press.isEnabled())
+        self.assertEqual(p.cb_press.itemText(0), p.P_COMBO_EMPTY)
         self.assertEqual(p.sel_fl, 300)
         self.assertIn("F300 · etiqueta 300 hPa · 300.9 hPa ISA", p.lbl_fl_p.text())
         self.assertIn("modo INDRA", p.lbl_fl_p.text())
@@ -253,8 +316,23 @@ class TestSeleccionDeNivel(_QtBase):
         self.assertEqual(self.w._path.endswith("FDP_MULTI.grib2"), True)   # no se convierte
         p = self._open("WAFS_like_test.grib2")
         self.assertEqual([fl for fl, b in p._fl_buttons.items() if not b.isEnabled()], [])
-        self.assertEqual(p.cb_press.count(), 1 + 49 - 16)            # los otros 33 FL
+        self.assertEqual(p.cb_press.count(), 1 + 49 - 17)            # los otros 32 FL
+        self.assertTrue(p.cb_press.isEnabled())
+        self.assertEqual(p.cb_press.itemText(0), p.P_COMBO_NONE)
         self.assertEqual(p.cb_press.itemText(1), "FL060 · 812 hPa")
+        # La muestra OACI del servidor: los 17 botones activos y nada en la lista
+        p = self._open("WAFS_oaci_test.grib2")
+        self.assertEqual([fl for fl, b in p._fl_buttons.items() if not b.isEnabled()], [])
+        self.assertEqual(p.cb_press.count(), 1)
+        self.assertFalse(p.cb_press.isEnabled())
+        self.assertIn("WAFS FL050–FL530 · modo OACI", p.lbl_source.text())
+        self.assertNotIn("(convertido)", p.lbl_source.text())
+        p._fl_buttons[210].click()
+        self.assertEqual(p.sel_fl, 210)
+        self.assertIn("F210 · etiqueta 450 hPa · 446.5 hPa ISA (nivel exacto, modo OACI)",
+                      p.lbl_fl_p.text())
+        self.assertIn("LEVEL: F210 = 44650 Pa ISA (nivel exacto, modo OACI, etiqueta 450 hPa)",
+                      p.lbl_level.text())
 
     def test_lista_y_botonera_se_excluyen(self):
         p = self._open("WAFS_like_test.grib2")
@@ -273,7 +351,7 @@ class TestSeleccionDeNivel(_QtBase):
         with self.assertRaises(ValueError):
             p.select_fl(610)
         p.cb_press.setCurrentIndex(0)                                 # vuelve al botón
-        self.assertIn(p.sel_fl, flt.OACI16)
+        self.assertIn(p.sel_fl, flt.OACI17)
         self.assertTrue(p._fl_buttons[p.sel_fl].isChecked())
 
     def test_archivo_crudo_lista_fl_y_niveles(self):
@@ -284,7 +362,7 @@ class TestSeleccionDeNivel(_QtBase):
         p = self.w.panel
         self.assertEqual([fl for fl, b in p._fl_buttons.items() if not b.isEnabled()], [])
         kinds = [k for k, _v in p._combo_items]
-        self.assertEqual(kinds.count("fl"), 56 - 16 - 7)              # F540–F600 fuera del rango
+        self.assertEqual(kinds.count("fl"), 56 - 17 - 7)              # F540–F600 fuera del rango
         self.assertIn("sep", kinds)
         self.assertEqual(kinds.count("p"), 7)
         self.assertIn("interpolado", p.lbl_fl_p.text())
@@ -301,7 +379,7 @@ class TestSeleccionDeNivel(_QtBase):
         from app.dialogs.fl_table_dialog import FlTableDialog
         self._open("WAFS_like_test.grib2")
         d = ExportWafsDialog(self.w, reader=self.w._reader, cfg=self.w._cfg, dest_dir=self.tmp)
-        self.assertEqual(d.cb_mode.currentData(), "OACI56")
+        self.assertEqual(d.cb_mode.currentData(), "OACI")
         self.assertIn("modo WAFS", d.lbl_mode.text())
         d.cb_mode.setCurrentIndex(d.cb_mode.findData("INDRA"))
         self.assertEqual(d.options()["mode"], "INDRA")
@@ -309,11 +387,20 @@ class TestSeleccionDeNivel(_QtBase):
         self.assertEqual(t.table.rowCount(), 14)
         self.assertEqual(t.table.item(0, 0).text(), "F050")
         self.assertEqual(t.table.item(0, 2).text(), "850 hPa")
+        t.cb_mode.setCurrentIndex(t.cb_mode.findData("OACI"))
+        self.assertEqual(t.table.rowCount(), 17)
+        self.assertEqual(t.table.item(5, 0).text(), "F210")
+        self.assertEqual(t.table.item(5, 2).text(), "450 hPa")
+        self.assertEqual(t.table.item(5, 4).text(), "nominal OACI")
+        self.assertEqual((t.table.item(5, 5).text(), t.table.item(5, 6).text()), ("✓", ""))
         t.cb_mode.setCurrentIndex(t.cb_mode.findData("WAFS"))
         self.assertEqual(t.table.rowCount(), 56)
         self.assertEqual(t.table.item(0, 2).text(), "84310 Pa")
+        self.assertEqual(t.table.item(1, 4).text(), "múltiplo de 25")      # F060 → 800
+        self.assertEqual(t.table.item(14, 4).text(), "múltiplo de 5")      # F190 → 485
+        self.assertEqual(FlTableDialog(d).mode(), "OACI")
         s = SettingsDialog(self.w, cfg=self.w._cfg)
-        self.assertEqual(s.cb_wafs_mode.currentData(), "OACI56")
+        self.assertEqual(s.cb_wafs_mode.currentData(), "OACI")
         s.cb_wafs_mode.setCurrentIndex(s.cb_wafs_mode.findData("WAFS"))
         v = s.values()
         self.assertEqual(v["wafs_mode"], "WAFS")

@@ -1,5 +1,21 @@
 # Cambios
 
+## 0.3.1 — 2026-10-16
+
+- Niveles alineados con el generador WAFS del servidor (`gfs_wafs`): el modo
+  OACI pasa a 17 FL (se suma F210 = 450 hPa, Anexo 3 Ap. 2 1.2.2) y es el
+  modo por defecto para convertir y exportar; INDRA sigue siendo OACI sin
+  F080, F210 y F480. Un archivo con los 17 niveles nominales se lee como
+  OACI (antes caía en OACI56).
+- Botonera de 17 botones en tres filas de seis; la lista «Otros FL» queda
+  inactiva cuando todos los FL del archivo tienen botón (INDRA u OACI).
+- «Ver tabla» muestra de dónde sale cada etiqueta nominal (OACI, múltiplo
+  de 25 o de 5) y las columnas OACI17 / INDRA14.
+- Referencia y pruebas: `docs/referencia/gfs_to_wafs.py` (el generador del
+  servidor, cuya tabla se compara con la del visor) y
+  `tests/data/WAFS_oaci_test.grib2` (muestra OACI con su `.idx`, que el
+  visor reproduce byte a byte).
+
 ## 0.3.0 — 2026-10-16
 
 - Tabla de niveles de vuelo única (`app/fl_table.py`), copiada literal del

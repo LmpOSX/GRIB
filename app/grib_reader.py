@@ -32,8 +32,8 @@ from . import fl_table as flt
 MS_TO_KT = 1.943844          # m/s -> nudos
 KELVIN = 273.15              # K -> °C
 
-# Niveles de vuelo de la botonera: los 16 OACI del Anexo 3 (fl_table.OACI16)
-FLIGHT_LEVELS = list(flt.OACI16)
+# Niveles de vuelo de la botonera: los 17 OACI del Anexo 3 (fl_table.OACI17)
+FLIGHT_LEVELS = list(flt.OACI17)
 
 # Escala de colores fija de velocidad (kt)
 SPEED_BINS = [0, 10, 20, 30, 40, 50]

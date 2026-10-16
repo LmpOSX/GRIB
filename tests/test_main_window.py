@@ -455,8 +455,9 @@ class TestVentanaWAFS(_Base):
 
     def test_abre_archivo_local_convertido(self):
         """Un archivo local en niveles de presión crudos se convierte al
-        abrirlo (modo por defecto OACI56); uno ya etiquetado por FL (como
-        FDP_MULTI, 14 niveles nominales de INDRA) se abre tal cual."""
+        abrirlo (modo por defecto OACI, 17 FL; con OACI56 en la configuración,
+        los 56); uno ya etiquetado por FL (como FDP_MULTI, 14 niveles
+        nominales de INDRA) se abre tal cual."""
         import shutil
         from app.main_window import MainWindow
         from app import wafs_format as wf
@@ -478,14 +479,28 @@ class TestVentanaWAFS(_Base):
         self.assertTrue(os.path.exists(self.w._path + ".json"))
         self.assertTrue(os.path.exists(self.w._path + ".idx"))
         self.assertTrue(self.w._reader.is_wafs)
+        self.assertEqual(self.w._reader.fl_mode, "OACI")
+        self.assertEqual(len(self.w._reader.levels), 17)
+        self.assertEqual(self.w._reader.fl_levels[210], 450)
+        self.assertIn("WAFS FL050–FL530 · modo OACI (convertido)", self.w.panel.lbl_source.text())
+        self.assertIn("corrida 14/10 06Z", self.w.panel.lbl_source.text())
+        self.assertIn("(nivel exacto, modo OACI, etiqueta 300 hPa)", self.w.panel.lbl_level.text())
+        self.assertEqual(self.w._current["info"]["mode"], "wafs")
+        self.assertTrue(self.w._act_export_wafs.isEnabled())
+        self.assertTrue(all(b.isEnabled() for b in self.w.panel._fl_buttons.values()))
+        self.assertFalse(self.w.panel.cb_press.isEnabled())       # los 17 tienen botón
+        # Con OACI56 en la configuración, la lista lleva los FL sin botón,
+        # con etiqueta y presión exacta
+        self.w._cfg["wafs_mode"] = "OACI56"
+        local56 = os.path.join(self._tmp.name, "crudo56.grib2")
+        shutil.copy(local, local56)
+        self.w.open_file(local56)
+        _app.processEvents()
+        self.assertTrue(self.w._path.endswith("crudo56_wafs.grib2"))
         self.assertEqual(self.w._reader.fl_mode, "OACI56")
         self.assertEqual(len(self.w._reader.levels), 49)
         self.assertIn("WAFS FL050–FL530 · modo OACI56 (convertido)", self.w.panel.lbl_source.text())
-        self.assertIn("corrida 14/10 06Z", self.w.panel.lbl_source.text())
-        self.assertIn("(nivel exacto, modo OACI56, etiqueta 300 hPa)", self.w.panel.lbl_level.text())
-        self.assertEqual(self.w._current["info"]["mode"], "wafs")
-        self.assertTrue(self.w._act_export_wafs.isEnabled())
-        # La lista lleva los FL sin botón, con etiqueta y presión exacta
+        self.assertTrue(self.w.panel.cb_press.isEnabled())
         self.assertEqual(self.w.panel.cb_press.itemText(0), self.w.panel.P_COMBO_NONE)
         self.assertEqual(self.w.panel.lbl_press.text(), self.w.panel.P_LABEL_WAFS)
         self.assertEqual(self.w.panel.cb_press.itemText(1), "FL060 · 800 hPa (812 ISA)")
@@ -496,15 +511,16 @@ class TestVentanaWAFS(_Base):
                       self.w.panel.lbl_level.text())
         # Un archivo ya etiquetado se abre tal cual (no se vuelve a convertir)
         self.w.open_file(self.w._path)
-        self.assertTrue(self.w._path.endswith("crudo_wafs.grib2"))
-        self.assertFalse(os.path.exists(os.path.join(self._tmp.name, "crudo_wafs_wafs.grib2")))
+        self.assertTrue(self.w._path.endswith("crudo56_wafs.grib2"))
+        self.assertFalse(os.path.exists(os.path.join(self._tmp.name, "crudo56_wafs_wafs.grib2")))
         fdp = os.path.join(self._tmp.name, "FDP_MULTI.grib2")
         shutil.copy(src, fdp)
         self.w.open_file(fdp)
         self.assertEqual(self.w._path, fdp)
         self.assertEqual(self.w._reader.fl_mode, "INDRA")
         self.assertFalse(os.path.exists(os.path.join(self._tmp.name, "FDP_MULTI_wafs.grib2")))
-        self.assertEqual([fl for fl, b in self.w.panel._fl_buttons.items() if not b.isEnabled()], [80, 480])
+        self.assertEqual([fl for fl, b in self.w.panel._fl_buttons.items() if not b.isEnabled()],
+                         [80, 210, 480])
         # Sin conversión de archivos locales se abre el crudo e interpola
         self.w._cfg["wafs_convert_local"] = False
         self.w.open_file(local)
@@ -537,10 +553,13 @@ class TestVentanaWAFS(_Base):
         dlg.rb_range_fl.setChecked(True)
         dlg.fl_min.setValue(300)
         dlg.fl_max.setValue(340)
+        self.assertEqual(dlg.cb_mode.currentData(), "OACI")      # el de la configuración
+        dlg.cb_mode.setCurrentIndex(dlg.cb_mode.findData("OACI56"))   # con OACI quedarían 300/320/340
         opts = dlg.options()
         self.assertEqual(opts["steps"], [6.0])
         self.assertEqual(opts["fls"], [300, 310, 320, 330, 340])
         self.assertEqual(opts["model"], "gfs")
+        self.assertEqual(opts["mode"], "OACI56")
         dlg._start()
         for _ in range(400):
             _app.processEvents()

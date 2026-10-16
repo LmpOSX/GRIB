@@ -37,6 +37,7 @@ class ControlPanel(QWidget):
 
     TIME_LABELS = ["Current (+0)", "Next (+1)", "Advanced (+2)"]
     P_COMBO_NONE = "(el FL del botón elegido)"       # primera entrada de la lista
+    P_COMBO_EMPTY = "(ninguno: todos tienen botón)"
     P_COMBO_NONE_WAFS = P_COMBO_NONE
     P_LABEL = "Otros FL:"
     P_LABEL_WAFS = "Otros FL del archivo:"
@@ -174,6 +175,10 @@ class ControlPanel(QWidget):
         self._fl_group = QButtonGroup(self)
         self._fl_group.setExclusive(True)
         self._fl_buttons = {}
+        # 17 botones en 6 columnas y 3 filas (6, 6 y 5); el último ocupa lo
+        # que sobra de su fila para que la botonera quede rectangular
+        n_fl, cols = len(FLIGHT_LEVELS), 6
+        rem = n_fl % cols
         for k, fl in enumerate(FLIGHT_LEVELS):
             b = QPushButton(f"F{fl:03d}")
             b.setObjectName("FLBtn")
@@ -182,9 +187,11 @@ class ControlPanel(QWidget):
             b.setSizePolicy(QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Fixed)
             b.setCursor(Qt.CursorShape.PointingHandCursor)
             self._fl_group.addButton(b, fl)
-            grid.addWidget(b, k // 4, k % 4)
+            row, col = divmod(k, cols)
+            span = cols - col if (k == n_fl - 1 and rem) else 1
+            grid.addWidget(b, row, col, 1, span)
             self._fl_buttons[fl] = b
-        for c in range(4):
+        for c in range(cols):
             grid.setColumnStretch(c, 1)
         self._fl_buttons[self.sel_fl].setChecked(True)
         self._fl_group.idClicked.connect(self._on_fl_clicked)
@@ -379,7 +386,7 @@ class ControlPanel(QWidget):
             self.wafs = bool(getattr(reader, "is_wafs", False))
             self.fl_mode = getattr(reader, "fl_mode", None) if self.wafs else None
             self._reader_fl_text = getattr(reader, "fl_text", None)
-            # Botonera fija OACI16: un botón se deshabilita si ese FL no está
+            # Botonera fija OACI17: un botón se deshabilita si ese FL no está
             # en el archivo (etiquetado) o fuera de sus niveles (crudo)
             avail_fn = getattr(reader, "available_fls", None)
             self._fl_available = list(avail_fn()) if avail_fn else list(FLIGHT_LEVELS)
@@ -406,8 +413,12 @@ class ControlPanel(QWidget):
                 for lv in self._levels:
                     self.cb_press.addItem(f"{lv:g} hPa (nivel del archivo)")
                     self._combo_items.append(("p", lv))
+            # Sin nada que listar (archivo INDRA u OACI) la lista queda inactiva
+            self.cb_press.setEnabled(bool(self._combo_items))
+            if not self._combo_items:
+                self.cb_press.setItemText(0, self.P_COMBO_EMPTY)
             self.cb_press.setToolTip(
-                "Los botones son los 16 FL OACI; acá están los demás FL del archivo"
+                "Los botones son los 17 FL OACI; acá están los demás FL del archivo"
                 + ("" if self.wafs else " (interpolados a la ISA exacta) y, al final, los "
                                        "niveles de presión del archivo sin interpolar"))
             self.cb_press.setCurrentIndex(0)

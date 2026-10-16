@@ -1,4 +1,4 @@
-# Plan de pruebas manual – Visor GRIB 0.3.0 (PyQt6)
+# Plan de pruebas manual – Visor GRIB 0.3.1 (PyQt6)
 
 Entorno: pyenv `Grib` (Python 3.14.3), macOS. Antes de empezar:
 
@@ -56,12 +56,13 @@ detalle.
 
 | # | Caso | Pasos | Resultado esperado |
 |---|---|---|---|
-| E1 | Botonera fija | Abrir cualquier archivo | Siempre los mismos 16 botones: F050 F080 F100 F140 F180 F240 F270 F300 F320 F340 F360 F390 F410 F450 F480 F530; con `tests/data/FDP_MULTI.grib2` (INDRA) F080 y F480 quedan grises; con un crudo cuyo nivel más alto sea 200 hPa, F450, F480 y F530 quedan grises (no se extrapola). |
+| E1 | Botonera fija | Abrir cualquier archivo | Siempre los mismos 17 botones en tres filas de seis: F050 F080 F100 F140 F180 F210 / F240 F270 F300 F320 F340 F360 / F390 F410 F450 F480 F530; con `tests/data/FDP_MULTI.grib2` (INDRA) F080, F210 y F480 quedan grises y la lista «Otros FL del archivo» dice «(ninguno: todos tienen botón)» inactiva; con un crudo cuyo nivel más alto sea 200 hPa, F450, F480 y F530 quedan grises (no se extrapola). |
 | E2 | Botón FL | Clic en F100 | Botón resaltado; redibuja; el FL activo muestra `F100 · etiqueta 700 hPa · 696.8 hPa ISA` seguido de `(nivel exacto, modo …)` o `(interpolado en ln(p))`; STATUS lo repite. |
-| E3 | Lista de otros FL | Abrir `tests/data/WAFS_like_test.grib2`; desplegar «Otros FL del archivo» | 33 entradas `FL060 · 812 hPa … FL520`; elegir FL060 deselecciona la botonera y muestra `F060 · etiqueta 800 hPa · 812.0 hPa ISA (nivel exacto, modo WAFS)`; hacer clic en F300 vuelve la lista a «(el FL del botón elegido)». |
+| E3 | Lista de otros FL | Abrir `tests/data/WAFS_like_test.grib2`; desplegar «Otros FL del archivo» | 32 entradas `FL060 · 812 hPa … FL520`; elegir FL060 deselecciona la botonera y muestra `F060 · etiqueta 800 hPa · 812.0 hPa ISA (nivel exacto, modo WAFS)`; hacer clic en F300 vuelve la lista a «(el FL del botón elegido)». |
 | E4 | Nivel del archivo sin interpolar | Con un GFS crudo, al final de «Otros FL» elegir `700 hPa (nivel del archivo)` | Ningún FL queda marcado; STATUS «700 hPa (nivel del archivo, sin interpolar)»; el mapa muestra el nivel exacto. |
 | E5 | Verificación wgrib2 | README, sección "Verificación con wgrib2" | Valores de u, v, T en 700 mb coinciden con la barra de estado / CSV. |
 | E6 | Archivo INDRA | Abrir `tests/data/FDP_MULTI.grib2` | No se crea `_wafs.grib2`; inventario `FORMATO: etiquetado por FL, modo INDRA`; FUENTE `WAFS FL050–FL530 · modo INDRA`; STATUS `F300 = 30090 Pa ISA (nivel exacto, modo INDRA, etiqueta 300 hPa)`. |
+| E7 | Muestra OACI del servidor | Abrir `tests/data/WAFS_oaci_test.grib2` (generada por `gfs_wafs/gfs_to_wafs.py --niveles oaci`) | No se convierte; los 17 botones activos y la lista inactiva; inventario `FORMATO: etiquetado por FL, modo OACI (etiqueta nominal en hPa): FL050–FL530, 17 niveles`; clic en F210 → `F210 · etiqueta 450 hPa · 446.5 hPa ISA (nivel exacto, modo OACI)`; `wgrib2 -s` coincide línea a línea con `tests/data/WAFS_oaci_test.grib2.idx`. |
 
 ## F. VARIABLE, VIENTO y MAPA
 
@@ -85,7 +86,7 @@ detalle.
 | F9 | Ocultar / Mostrar capa | `Capas` ▸ destildar «GRIB (viento / temperatura)» (o ⌘D) | Sólo mapa base, "Capa de datos deshabilitada" en el mapa y en STATUS; Vista ▸ "Capa de datos desactivada"; ⌘D alterna y el menú Capas lo refleja. |
 | F10 | Menú Capas | `Capas` ▸ apagar y prender una por una: Marco del GRIB, Fondo de velocidad, Extra Info, Costas y fronteras, Grilla de grados, Grilla del archivo, Límites de FIR, Working Areas | Cada capa desaparece y vuelve sin afectar a las demás; las casillas del panel (Fondo, Extra Info, + la del archivo, FIR, WA) y Vista ▸ FIR se actualizan; sin costas ni grilla de grados queda el fondo liso con el viento; persiste tras reiniciar (`map_coast`, `map_graticule`). |
 | F14 | Menú Vista sincronizado | Vista ▸ Extra Info; luego destildar Extra Info en el panel; Vista ▸ Proyección ▸ Mercator | La casilla del panel sigue al menú y viceversa; el combo Proyección del panel pasa a Mercator y el mapa cambia. |
-| F16 | Panel sin scroll | Ventana por defecto (1600×1000) y también con ⌘+ hasta fuente 18 | El panel no tiene barra de scroll propia; sólo el INVENTARIO (alto restante) se desplaza por dentro, vertical y horizontal; LEVEL tiene 16 botones (con F200 y F480) en cuatro filas completas. |
+| F16 | Panel sin scroll | Ventana por defecto (1600×1000) y también con ⌘+ hasta fuente 18 | El panel no tiene barra de scroll propia; sólo el INVENTARIO (alto restante) se desplaza por dentro, vertical y horizontal; LEVEL tiene 17 botones (F050…F530, con F210) en tres filas de seis, la última con F530 más ancho. |
 | F19 | Barra de acciones | Mirar la barra | Botones del mismo alto en tres grupos (datos / mapa / salida) separados con aire, sin líneas; «Fuente» y su selector forman un solo control con borde. |
 | F20 | STATUS fijo | ⌘+ varias veces | La franja STATUS y la barra inferior conservan su tamaño de letra; el panel y los menús sí crecen. |
 | F21 | Márgenes del mapa | Abrir un archivo; Guardar PNG | En pantalla el mapa llega casi al borde de su tarjeta (sin título ni franjas vacías arriba, a la izquierda ni abajo); el PNG exportado sí lleva el título arriba. |
@@ -184,15 +185,15 @@ detalle.
 
 | # | Caso | Pasos | Resultado esperado |
 |---|---|---|---|
-| O1 | Descarga convertida | Obtener datos… con el GFS (Preferencias ▸ WAFS con «Convertir al descargar» marcado, modo OACI56) | El archivo termina en `_wafs.grib2`; `wgrib2 -s` lista niveles nominales `850 mb, 800 mb, … 100 mb` (49 por variable y plazo); el `.json` tiene `wafs.convertido: true`, `modo: OACI56` y `fl_rango FL050–FL530`. Con modo WAFS, `843.1 mb, 812 mb, …`. |
-| O2 | Visor con WAFS | Abrir el archivo de O1 | STATUS: `FUENTE … / WAFS FL050–FL530 · modo OACI56 (convertido)`; `LEVEL: F300 = 30090 Pa ISA (nivel exacto, modo OACI56, etiqueta 300 hPa)`; la lista «Otros FL del archivo» trae `FL060 · 800 hPa (812 ISA) …`; el inventario dice `FORMATO: etiquetado por FL, modo OACI56`. Cambiar de FL redibuja sin «interpolado entre». |
+| O1 | Descarga convertida | Obtener datos… con el GFS (Preferencias ▸ WAFS con «Convertir al descargar» marcado, modo OACI, el de fábrica) | El archivo termina en `_wafs.grib2`; `wgrib2 -s` lista los 17 niveles nominales `850 mb, 750 mb, 700 mb, 600 mb, 500 mb, 450 mb, … 100 mb` por variable y plazo; el `.json` tiene `wafs.convertido: true`, `modo: OACI` y `fl_rango FL050–FL530`. Con modo OACI56, 49 niveles `850 mb, 800 mb, …`; con modo WAFS, `843.1 mb, 812 mb, …`. |
+| O2 | Visor con WAFS | Abrir el archivo de O1 (y el de OACI56) | STATUS: `FUENTE … / WAFS FL050–FL530 · modo OACI (convertido)`; `LEVEL: F300 = 30090 Pa ISA (nivel exacto, modo OACI, etiqueta 300 hPa)`; los 17 botones activos y la lista inactiva; el inventario dice `FORMATO: etiquetado por FL, modo OACI`. Con el de OACI56 la lista «Otros FL del archivo» trae `FL060 · 800 hPa (812 ISA) …`. Cambiar de FL redibuja sin «interpolado entre». |
 | O3 | Archivo local crudo convertido | Abrir un GFS con 1000 hPa en niveles de presión | Barra de estado «Convertido a WAFS: …_wafs.grib2»; junto al original aparecen `<nombre>_wafs.grib2`, `.json` e `.idx`; el visor muestra el convertido. Con «Convertir también los archivos locales» desmarcado, se abre el original e interpola. |
 | O4 | Rango ampliado | Bajar ECMWF o ICON con niveles 1000 y 50 hPa, convertir | El rango llega a FL050–FL600 (con «ampliar» marcado; la tabla empieza en F050); sin marcarlo, FL050–FL530. |
 | O5 | Extrapolar | Bajar sólo 700–300 hPa con «extrapolar» marcado | Hay 49 niveles; el `.json` lista `extrapolados`; sin marcar, sólo FL100–FL300 y `fl_omitidos`. |
-| O6 | Ya etiquetado | Abrir `tests/data/WAFS_like_test.grib2` y `tests/data/FDP_MULTI.grib2` | No se crea ningún `_wafs.grib2`; se abren tal cual con FUENTE «archivo local» y `WAFS FL050–FL530 · modo WAFS` / `· modo INDRA`. |
+| O6 | Ya etiquetado | Abrir `tests/data/WAFS_like_test.grib2`, `tests/data/FDP_MULTI.grib2` y `tests/data/WAFS_oaci_test.grib2` | No se crea ningún `_wafs.grib2`; se abren tal cual con FUENTE «archivo local» y `WAFS FL050–FL530 · modo WAFS` / `· modo INDRA` / `· modo OACI`. |
 | O7 | Línea de comandos | `python -m app.wafs_format tests/data/FDP_MULTI.grib2 /tmp/w.grib2 --forzar --modo WAFS` y `--validar` | «441 mensajes escritos …; FL050–FL530», `/tmp/w.grib2.idx` creado; `wgrib2 -s` igual que `tests/data/WAFS_like_test.grib2` salvo F290 (`314.9 mb` contra `314.8 mb`); sin `--forzar` dice «ya está etiquetado por FL (modo INDRA)»; `--validar` responde OK. |
 | O8 | Validador avisa | `python -m app.wafs_format --validar` con un GRIB que tenga 1000 hPa | Aviso «nivel 100000 Pa no es la presión ISA ni la etiqueta nominal de un FL» y no bloquea. |
-| O9 | Modos al exportar | Archivo ▸ Exportar a WAFS… ▸ modo INDRA, OACI, OACI56 y WAFS, «Ver tabla» en cada uno | «Ver tabla» muestra 14 / 16 / 56 / 56 filas con FL, ISA_Pa y etiqueta (`850 hPa` o `84310 Pa`); cada exportación se reabre con el mismo FL activo, el modo detectado y el mismo dato (STATUS igual salvo la etiqueta). |
+| O9 | Modos al exportar | Archivo ▸ Exportar a WAFS… ▸ modo INDRA, OACI, OACI56 y WAFS, «Ver tabla» en cada uno | El selector arranca en el modo de Preferencias (OACI); «Ver tabla» muestra 14 / 17 / 56 / 56 filas con FL, ISA_Pa, etiqueta (`850 hPa` o `84310 Pa`), la columna Regla (`nominal OACI`, `múltiplo de 25`, `múltiplo de 5`) y los tildes OACI17 / INDRA14; cada exportación se reabre con el mismo FL activo, el modo detectado y el mismo dato (STATUS igual salvo la etiqueta); exportar un WAFS de 56 en modo OACI deja sólo los 17. |
 | O10 | Modo por defecto | Preferencias ▸ WAFS ▸ modo WAFS ▸ Aplicar; abrir un GFS crudo | El convertido lleva presiones ISA (`843.1 mb`); `config.json` tiene `wafs_mode: WAFS`. |
 
 ## I. Tema y preferencias

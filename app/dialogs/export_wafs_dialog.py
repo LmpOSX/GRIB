@@ -124,7 +124,7 @@ class ExportWafsDialog(GlassDialog):
             self.cb_mode.addItem(flt.MODE_LABELS[m], m)
         self.cb_mode.setCurrentIndex(max(0, self.cb_mode.findData(
             str(self._cfg.get("wafs_mode", flt.DEFAULT_MODE)).upper())))
-        self.cb_mode.setToolTip("INDRA: 14 FL del FDP; OACI: 16 FL del Anexo 3; OACI56: los 56 FL; "
+        self.cb_mode.setToolTip("INDRA: 14 FL del FDP; OACI: 17 FL del Anexo 3; OACI56: los 56 FL; "
                                 "los tres con etiqueta nominal en hPa. WAFS: 56 FL con la presión ISA "
                                 "en Pa, como NOAA. El dato se interpola siempre a la ISA exacta.")
         row.addWidget(self.cb_mode, 1)

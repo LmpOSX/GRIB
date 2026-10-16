@@ -4,8 +4,8 @@ Aplicación de escritorio (Python 3.14 + PyQt6 + matplotlib + cartopy
 opcional) para visualizar archivos GRIB2 con componentes de viento
 (UGRD/VGRD) y temperatura (TMP) en niveles de presión, con un panel de
 controles al estilo de un sistema ATC: selección de paso (Current / Next /
-Advanced), nivel de vuelo (16 botones F050…F530 convertidos a presión ISA e interpolados
-en ln p), barbas coloreadas por velocidad, contornos de temperatura, "Extra
+Advanced), nivel de vuelo (17 botones OACI F050…F530, cada uno en la presión ISA
+exacta de su FL), barbas coloreadas por velocidad, contornos de temperatura, "Extra
 Info", grilla, zoom/pan y exportación a PNG/CSV.
 
 El **formato interno único es el WAFS** (producto OACI de viento y
@@ -324,20 +324,23 @@ la pantalla) y recuerda tamaño y posición.
 * **TIME**: `Current (+0)`, `Next (+1)`, `Advanced (+2)` eligen el 1.°, 2.° y
   3.° paso del archivo, con su hora de validez al lado. Si hay más de tres
   pasos aparece un combo con todos.
-* **LEVEL**: una botonera fija de **16 botones, siempre los mismos**: los
-  FL OACI16 del Anexo 3 (F050, F080, F100, F140, F180, F240, F270, F300,
-  F320, F340, F360, F390, F410, F450, F480, F530). Un botón queda
-  deshabilitado si ese FL no está en el archivo (F080 y F480 con un archivo
-  INDRA) o, en un archivo crudo, si su presión ISA cae fuera de los niveles
-  del archivo (no se extrapola). La lista **Otros FL** trae los demás FL
-  disponibles que no tienen botón (en OACI56 o WAFS, los otros 40: F060,
-  F070, F090 … F600) y, en archivos crudos, al final los niveles de presión
-  del archivo sin interpolar. Elegir en la lista deselecciona la botonera y
-  viceversa. El FL activo se muestra siempre en el mismo lugar con sus dos
-  presiones: `F050 · etiqueta 850 hPa · 843.1 hPa ISA (nivel exacto, modo
-  OACI56)` o `(interpolado en ln(p))` en un archivo crudo. Las presiones
-  salen de la tabla del generador WAFS (ver «Formato WAFS»): el dato de cada
-  FL corresponde siempre a su presión ISA exacta.
+* **LEVEL**: una botonera fija de **17 botones, siempre los mismos**, en
+  tres filas de seis: los FL OACI17 del Anexo 3 (F050, F080, F100, F140,
+  F180, F210, F240, F270, F300, F320, F340, F360, F390, F410, F450, F480,
+  F530). Un botón queda deshabilitado si ese FL no está en el archivo
+  (F080, F210 y F480 con un archivo INDRA) o, en un archivo crudo, si su
+  presión ISA cae fuera de los niveles del archivo (no se extrapola). La
+  lista **Otros FL** trae los demás FL disponibles que no tienen botón (en
+  OACI56 o WAFS, los otros 39: F060, F070, F090 … F600) y, en archivos
+  crudos, al final los niveles de presión del archivo sin interpolar; si
+  todos los FL del archivo tienen botón (INDRA u OACI) la lista queda
+  inactiva con «(ninguno: todos tienen botón)». Elegir en la
+  lista deselecciona la botonera y viceversa. El FL activo se muestra
+  siempre en el mismo lugar con sus dos presiones: `F050 · etiqueta 850 hPa
+  · 843.1 hPa ISA (nivel exacto, modo OACI)` o `(interpolado en ln(p))` en
+  un archivo crudo. Las presiones salen de la tabla del generador WAFS (ver
+  «Formato WAFS»): el dato de cada FL corresponde siempre a su presión ISA
+  exacta.
 * **VARIABLE**: Viento, Temperatura (contornos cada 2 °C) o ambas.
 * **VIENTO**: `Estilo` elige la representación: **Barbas** (convención
   meteorológica, en kt), **Flechas** (de largo fijo, apuntan hacia donde
@@ -663,12 +666,16 @@ tablas en `fix/wafs/`).
 literal de la lista oficial de NOAA (repo NOAA-EMC/wafs) que usa el
 generador de archivos WAFS del servidor; no se recalcula con la fórmula.
 Para cada FL tiene dos columnas: `ISA_Pa`, la presión ISA exacta en Pa, y
-`OACI56_hPa`, la etiqueta nominal en hPa (56 etiquetas distintas y
-decrecientes; los 16 OACI conservan el nominal del Anexo 3). **El dato de
-viento y temperatura de cada nivel corresponde siempre a la presión
-exacta**; la etiqueta es lo que se graba en el GRIB y lo que reconoce cada
-consumidor. Subconjuntos: OACI16 (050 080 100 140 180 240 270 300 320 340
-360 390 410 450 480 530) e INDRA14 (OACI16 sin 080 ni 480).
+`OACI56_hPa`, la etiqueta nominal en hPa: 56 etiquetas distintas y
+decrecientes, con la regla del generador: los 17 OACI conservan el nominal
+del Anexo 3 (Ap. 2, 1.2.2) y los demás van al múltiplo de 25 hPa más
+cercano si está libre o, si colisiona, al múltiplo de 5 (no de 25) más
+cercano y libre (F190 → 485 porque 475 chocaba con F200; F580 → 70 porque
+75 es múltiplo de 25). **El dato de viento y temperatura de cada nivel
+corresponde siempre a la presión exacta**; la etiqueta es lo que se graba
+en el GRIB y lo que reconoce cada consumidor. Subconjuntos: OACI17 (050 080
+100 140 180 210 240 270 300 320 340 360 390 410 450 480 530) e INDRA14
+(OACI17 sin 080, 210 ni 480: los 14 botones del FDP).
 
 | FL | ISA_Pa | Nominal | FL | ISA_Pa | Nominal | FL | ISA_Pa | Nominal | FL | ISA_Pa | Nominal |
 |---|---|---|---|---|---|---|---|---|---|---|---|
@@ -692,10 +699,10 @@ el dato se interpola a `ISA_Pa`):
 
 | Modo | Filas | Etiqueta grabada | Uso |
 |---|---|---|---|
-| INDRA | las 14 de INDRA14 | nominal hPa | el FDP |
-| OACI | las 16 de OACI16 | nominal hPa | Anexo 3 |
-| OACI56 | las 56 | nominal hPa | **por defecto** |
-| WAFS | las 56 | ISA_Pa | como codifica NOAA |
+| INDRA | las 14 de INDRA14 | nominal hPa | los 14 botones del FDP |
+| OACI | las 17 de OACI17 | nominal hPa | Anexo 3; **por defecto** (lo que genera el servidor) |
+| OACI56 | las 56 | nominal hPa única | el FDP reconoce sus 14, el visor tiene los 56 |
+| WAFS | las 56 | ISA_Pa | como codifica NOAA; el FDP sólo reconoce 300/250/100 |
 
 El modo por defecto se elige en Preferencias ▸ WAFS (persistido,
 `wafs_mode`) y vale para la conversión automática al abrir o descargar; el
@@ -749,9 +756,14 @@ literalmente):
 | FL140 | 59520 | **FL300** | **30090** | FL460 | 14060 |  |  |
 | FL150 | 57180 | FL310 | 28740 | FL470 | 13400 |  |  |
 
-**Conversión** (`app/wafs_format.py`, sin interfaz; reestructura el
-conversor de referencia `docs/referencia/make_wafs_like.py` sin cambiar su
-aritmética: con las opciones por defecto reproduce byte a byte su salida):
+**Conversión** (`app/wafs_format.py`, sin interfaz; misma tabla,
+interpolación y etiquetas que el generador del servidor,
+`docs/referencia/gfs_to_wafs.py`, copia del paquete `gfs_wafs` que corre en
+el servidor; el conversor histórico `docs/referencia/make_wafs_like.py`
+queda como referencia del modo WAFS y se reproduce con tolerancia de 0,1).
+La muestra `tests/data/WAFS_oaci_test.grib2` (con su `.idx`) la generó ese
+paquete en modo `oaci`: el visor la lee como OACI, 17 niveles exactos, y su
+inventario coincide byte a byte con el del servidor:
 
 * Para cada plazo y variable se apilan los niveles de presión del origen y
   se interpola **linealmente en ln(p)** a la presión ISA de cada FL.
@@ -784,10 +796,11 @@ python -m app.wafs_format --validar archivo.grib2
 
 En el visor, con un archivo etiquetado por FL cada FL cae en un **nivel
 exacto del archivo** (STATUS: `LEVEL: F300 = 30090 Pa ISA (nivel exacto,
-modo OACI56, etiqueta 300 hPa)`), la lista «Otros FL del archivo» trae los
+modo OACI, etiqueta 300 hPa)`), la lista «Otros FL del archivo» trae los
 FL sin botón como `FL060 · 800 hPa (812 ISA)` (su primera opción es «el FL
-del botón elegido»), el inventario dice `FORMATO: etiquetado por FL, modo …`
-y FUENTE agrega `WAFS FL050–FL530 · modo OACI56 (convertido)`.
+del botón elegido»; en INDRA u OACI no hay ninguno y queda inactiva), el
+inventario dice `FORMATO: etiquetado por FL, modo …` y FUENTE agrega
+`WAFS FL050–FL530 · modo OACI (convertido)`.
 
 **Exportar a WAFS…** (Archivo, ⌘⇧W) toma lo cargado y escribe GRIB2 WAFS:
 todos los plazos y niveles o una selección (plazos, rango de FL), sólo

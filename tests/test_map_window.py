@@ -354,7 +354,7 @@ class TestCargaYRedibujo(_MapBase):
         self.assertLessEqual(side.minimumSizeHint().height(), 800)   # entra en una pantalla de 13"
         from PyQt6.QtWidgets import QScrollArea
         self.assertEqual(w.findChildren(QScrollArea), [])            # sólo el inventario se desplaza
-        self.assertEqual(len(w.panel._fl_buttons), 16)
+        self.assertEqual(len(w.panel._fl_buttons), 17)
         map_w = w.plot.canvas.width()
         w._btn_panel.click()
         _app.processEvents()
