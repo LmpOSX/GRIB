@@ -306,12 +306,19 @@ class DownloadDialog(GlassDialog):
         self.chk_open = QCheckBox("Abrir en el visor al terminar")
         self.chk_open.setChecked(bool(self._cfg.get("download_open", True)))
         g.addWidget(self.chk_open, 3, 1)
-        self.chk_wafs = QCheckBox("Convertir a WAFS (FL cada 1000 ft, según Preferencias ▸ WAFS)")
+        self.chk_wafs = QCheckBox("Convertir a WAFS (FL cada 1000 ft)")
         self.chk_wafs.setChecked(bool(self._cfg.get("wafs_convert", True)))
         self.chk_wafs.setToolTip("El valor inicial es «Convertir a WAFS por defecto» de "
                                  "Preferencias ▸ WAFS. Sin marcar, el archivo queda en los "
                                  "niveles de presión de la fuente.")
-        g.addWidget(self.chk_wafs, 4, 1)
+        wrow = QHBoxLayout()
+        wrow.addWidget(self.chk_wafs, 1)
+        self.btn_wafs_prefs = QPushButton("Preferencias WAFS…")
+        self.btn_wafs_prefs.setToolTip("Modo de etiquetado, rango de FL, extrapolación y el valor "
+                                       "por defecto de esta casilla (Preferencias ▸ WAFS).")
+        self.btn_wafs_prefs.clicked.connect(self._open_wafs_prefs)
+        wrow.addWidget(self.btn_wafs_prefs)
+        g.addLayout(wrow, 4, 1)
         lay.addLayout(g)
 
         # ── Progreso y botones ──
@@ -666,6 +673,23 @@ class DownloadDialog(GlassDialog):
             self.btn_domain.setEnabled(self._domain_region is not None)
         self.btn_cancel.setText("Cancelar" if busy else "Cerrar")
 
+    def _open_wafs_prefs(self):
+        """Preferencias ▸ WAFS. Por la ventana principal si la hay (aplica y
+        guarda); si no, el diálogo solo sobre la configuración recibida. Al
+        aplicar, la casilla toma el nuevo «Convertir a WAFS por defecto»."""
+        parent = self.parent()
+        if parent is not None and hasattr(parent, "_open_settings"):
+            applied = parent._open_settings(tab="WAFS")
+        else:
+            from .settings_dialog import SettingsDialog
+            dlg = SettingsDialog(self, cfg=self._cfg)
+            dlg.select_tab("WAFS")
+            applied = bool(dlg.exec())
+            if applied:
+                self._cfg.update(dlg.values())
+        if applied and self.chk_wafs.isEnabled():
+            self.chk_wafs.setChecked(bool(self._cfg.get("wafs_convert", True)))
+
     def _refresh_wafs_check(self):
         """La casilla «Convertir a WAFS» sólo tiene sentido en fuentes de altura
         en niveles de presión; lo que ya viene por FL no se toca."""
@@ -678,7 +702,7 @@ class DownloadDialog(GlassDialog):
             self.chk_wafs.setText("Convertir a WAFS (ya viene por FL: no se toca)")
         else:
             self.chk_wafs.setEnabled(True)
-            self.chk_wafs.setText("Convertir a WAFS (FL cada 1000 ft, según Preferencias ▸ WAFS)")
+            self.chk_wafs.setText("Convertir a WAFS (FL cada 1000 ft)")
 
     def wafs_enabled(self):
         """True si esta descarga se convierte a WAFS: la casilla del diálogo

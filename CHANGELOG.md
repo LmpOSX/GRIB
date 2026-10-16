@@ -1,5 +1,13 @@
 # Cambios
 
+## Sin publicar
+
+- Botón «Preferencias WAFS…» al lado de la casilla «Convertir a WAFS» del
+  diálogo de descarga: abre Preferencias en la pestaña WAFS y, al aplicar,
+  la casilla toma el nuevo valor por defecto.
+- Botón «Límites de FIR y Working Areas…» en Preferencias ▸ Áreas / FIR
+  que abre la ventana «Límites de FIR» (la de Vista ▸ FIR).
+
 ## 0.3.2 — 2026-10-16
 
 - Consulta de punto con el clic derecho sobre el mapa (también Vista ▸

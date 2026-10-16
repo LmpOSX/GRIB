@@ -147,7 +147,9 @@ vuelo) y `Obtener datos…` (⌘⇧D) abre el diálogo de descarga de esa fuente
   «Áreas de descarga por FIR».
 * **Destino**: carpeta y nombre; un archivo por plazo o uno con todos;
   abrir al terminar; **Convertir a WAFS** (FL cada 1000 ft, con el rango y
-  el modo de Preferencias ▸ WAFS). La casilla arranca como «Convertir a
+  el modo de Preferencias ▸ WAFS; el botón `Preferencias WAFS…` de al lado
+  abre esa pestaña y, al aplicar, la casilla toma el nuevo valor por
+  defecto). La casilla arranca como «Convertir a
   WAFS por defecto» de Preferencias; sin marcar, el archivo queda en los
   niveles de presión de la fuente y sin el sufijo `_wafs`, y al abrirlo al
   terminar se muestra tal cual, en modo presión, aunque Preferencias
@@ -895,7 +897,10 @@ con siete pestañas:
   `Vaciar caché`.
 * **Áreas / FIR**: tabla de áreas de descarga (código, nombre, N/S/W/E,
   habilitada, a verificar), margen de seguridad, formato de coordenadas,
-  exportar/importar (ver «Áreas de descarga por FIR»).
+  exportar/importar (ver «Áreas de descarga por FIR»); el botón `Límites
+  de FIR y Working Areas…` abre la ventana «Límites de FIR» (la misma de
+  Vista ▸ FIR), donde se eligen las FIR a dibujar, su estilo, los datos de
+  los límites y las Working Areas.
 * **WAFS**: convertir a WAFS por defecto (valor inicial de la casilla del
   diálogo de descarga) y al abrir archivos locales,
   rango de FL (por defecto FL050–FL530), ampliar el rango si la fuente trae

@@ -1812,16 +1812,21 @@ class MainWindow(QMainWindow):
 
     # ── Preferencias ─────────────────────────────────────────────────────────
 
-    def _open_settings(self):
+    def _open_settings(self, tab=None):
+        """Preferencias; `tab` abre una pestaña dada («WAFS», «Áreas / FIR»).
+        Devuelve True si se aplicó."""
         saved_color = self._cfg["accent_color"]
         saved_opacity = self._cfg.get("opacity", 180)
         dlg = SettingsDialog(self, cfg=self._cfg)
+        if tab:
+            dlg.select_tab(tab)
         dlg.theme_changed.connect(self._apply_theme)
         dlg.opacity_changed.connect(lambda v: self._apply_theme(opacity=v))
         if dlg.exec():
             self.apply_settings(dlg.values())
-        else:
-            self._apply_theme(saved_color, opacity=saved_opacity)
+            return True
+        self._apply_theme(saved_color, opacity=saved_opacity)
+        return False
 
     def apply_settings(self, values: dict):
         """Aplica y guarda lo elegido en Preferencias: tema, proyección,

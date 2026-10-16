@@ -436,7 +436,17 @@ class SettingsDialog(GlassDialog):
     # ── Áreas / FIR ──
     def _tab_areas(self):
         w, lay = self._page()
-        self._sub(lay, "Áreas de descarga por FIR (envolvente de las marcadas + margen)")
+        row = QHBoxLayout()
+        lbl = QLabel("Áreas de descarga por FIR (envolvente de las marcadas + margen)")
+        lbl.setObjectName("SubHeading")
+        row.addWidget(lbl, 1)
+        self.btn_fir = QPushButton("Límites de FIR y Working Areas…")
+        self.btn_fir.setToolTip("La ventana «Límites de FIR» (Vista ▸ FIR): qué FIR se dibujan y "
+                                "con qué estilo, sus extremos, los datos de los límites y las "
+                                "Working Areas. Lo que se cambia ahí se aplica al cerrarla.")
+        self.btn_fir.clicked.connect(self._open_fir_dialog)
+        row.addWidget(self.btn_fir)
+        lay.addLayout(row)
         regions_fn = None
         parent = self.parent()
         if parent is not None and hasattr(parent, "_fir_regions"):
@@ -444,6 +454,23 @@ class SettingsDialog(GlassDialog):
         self.areas_editor = AreasEditor(self._cfg, regions_fn=regions_fn)
         lay.addWidget(self.areas_editor, 1)
         return w
+
+    def _open_fir_dialog(self):
+        """«Límites de FIR»: por la ventana principal si la hay (aplica y
+        guarda al cerrar); si no, el diálogo solo sobre la copia local."""
+        parent = self.parent()
+        if parent is not None and hasattr(parent, "open_fir_dialog"):
+            parent.open_fir_dialog()
+            return
+        from .fir_dialog import FirDialog
+        dlg = FirDialog(self, cfg=self._cfg)
+        if dlg.exec():
+            self._cfg.update(dlg.values())
+
+    def select_tab(self, name):
+        """Muestra la pestaña por su nombre («WAFS», «Áreas / FIR», …)."""
+        if name in self.TABS:
+            self.tabs.setCurrentIndex(self.TABS.index(name))
 
     def _accept(self):
         from PyQt6.QtWidgets import QMessageBox

@@ -568,6 +568,29 @@ class TestDialogoDescargaArea(_QtBase):
             self.assertEqual(d.job().suffix, "", key)
         d.close()
 
+    def test_boton_preferencias_wafs_del_dialogo(self):
+        from app.dialogs import settings_dialog as sd
+        d = self._dialog(wafs_convert=True)
+        self.assertTrue(d.chk_wafs.isChecked())
+        seen = {}
+
+        def fake_exec(self_):
+            # Preferencias abierta en WAFS; el usuario apaga «por defecto» y aplica
+            seen["tab"] = self_.tabs.tabText(self_.tabs.currentIndex())
+            self_.chk_wafs.setChecked(False)
+            return 1
+        old = sd.SettingsDialog.exec
+        sd.SettingsDialog.exec = fake_exec
+        try:
+            d.btn_wafs_prefs.click()
+        finally:
+            sd.SettingsDialog.exec = old
+        self.assertEqual(seen["tab"], "WAFS")
+        self.assertFalse(self.cfg.get("wafs_convert"))
+        self.assertFalse(d.chk_wafs.isChecked())
+        self.assertEqual(d.job().suffix, "")
+        d.close()
+
     def test_descarga_con_area_escribe_etiqueta(self):
         from app.dialogs import download_dialog as dd
         from app.sources import gfs as gfs_src
@@ -599,6 +622,26 @@ class TestDialogoDescargaArea(_QtBase):
 
 
 class TestPreferenciasAreas(_QtBase):
+    def test_boton_limites_de_fir(self):
+        from app.dialogs.settings_dialog import SettingsDialog
+        from app.dialogs import fir_dialog as fd
+        self.w = SettingsDialog(None, cfg=self._cfg())
+        self.w.select_tab("Áreas / FIR")
+        self.assertEqual(self.w.tabs.tabText(self.w.tabs.currentIndex()), "Áreas / FIR")
+        self.assertIn("Working Areas", self.w.btn_fir.text())
+        seen = {}
+
+        def fake_exec(self_):
+            seen["title"] = self_.windowTitle()
+            return 0
+        old = fd.FirDialog.exec
+        fd.FirDialog.exec = fake_exec
+        try:
+            self.w.btn_fir.click()
+        finally:
+            fd.FirDialog.exec = old
+        self.assertEqual(seen["title"], "Límites de FIR")
+
     def test_pestana_y_tabla(self):
         from app.dialogs.settings_dialog import SettingsDialog
         from PyQt6.QtCore import Qt
