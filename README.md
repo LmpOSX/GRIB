@@ -452,14 +452,14 @@ capa cuando el FL es un nivel exacto del archivo; si no, la interpolación
 lineal en ln(p) entre ambas capas usando la presión real de cada una (en
 un archivo etiquetado por FL, la ISA del FL, no la etiqueta nominal: igual
 que el mapa); fuera del rango del archivo no se extrapola, se da el valor
-de la capa más cercana y se avisa. `Celda` elige qué punto de la grilla
-representa al clic: el nodo más cercano (como la barra de estado) o el
-origen de la celda que lo contiene (esquina suroeste, como el FDP); el
-punto elegido se muestra como «Origen de celda». `Copiar` deja en el
-portapapeles el bloque de texto completo (geodésico, hora, nivel, paso,
-celda y las tres capas). Otro clic derecho cambia el punto y conserva la
-hora, el FL y la celda cargados; al cerrar el archivo la ventana queda sin
-datos.
+de la capa más cercana y se avisa. El dato es el del **origen de la
+celda** de la grilla que contiene al punto (su esquina suroeste), que es
+la convención del FDP; la ventana lo muestra en grados y minutos y en
+decimales (la barra de estado, en cambio, usa el nodo más cercano).
+`Copiar` deja en el portapapeles el bloque de texto completo (geodésico,
+hora, nivel, paso, origen de celda y las tres capas). Otro clic derecho
+cambia el punto y conserva la hora y el FL cargados; al cerrar el archivo
+la ventana queda sin datos.
 
 En cualquier proyección las barbas y flechas se rotan a la orientación
 local del mapa (las curvas se calculan sobre una grilla regular de la

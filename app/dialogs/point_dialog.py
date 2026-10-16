@@ -3,15 +3,16 @@
 capa inferior, la superior y el valor en un FL cualquiera, para el paso
 cuya ventana de validez contiene la hora pedida, al estilo del FDP.
 
-Ventana no modal y única: cada clic derecho le cambia el punto; el FL, la
-hora y la convención de celda que cargó el usuario se conservan. No
+Ventana no modal y única: cada clic derecho le cambia el punto; el FL y la
+hora que cargó el usuario se conservan. El dato es el del origen (esquina
+suroeste) de la celda de la grilla que contiene al punto, como en el FDP. No
 conoce la ventana principal: recibe el lector con set_reader y un
 callable que devuelve la variación magnética vigente (norte magnético).
 """
 from PyQt6.QtCore import Qt, QRegularExpression
 from PyQt6.QtGui import QRegularExpressionValidator, QGuiApplication
 from PyQt6.QtWidgets import (
-    QVBoxLayout, QHBoxLayout, QGridLayout, QLabel, QPushButton, QFrame, QComboBox,
+    QVBoxLayout, QHBoxLayout, QGridLayout, QLabel, QPushButton, QFrame,
     QLineEdit, QSpinBox, QTableWidget, QTableWidgetItem, QHeaderView, QAbstractItemView,
     QSizePolicy,
 )
@@ -50,7 +51,8 @@ class PointDialog(GlassDialog):
         grid = QGridLayout()
         grid.setHorizontalSpacing(12)
         grid.setVerticalSpacing(8)
-        edit_w = 170        # ancho de los campos: 12 caracteres sobran
+        # Ancho de los campos: 12 caracteres del tipo de letra en uso y el margen
+        edit_w = self.fontMetrics().horizontalAdvance("0" * 12) + 28
 
         def field_label(text, note):
             """Rótulo en dos líneas: el nombre y, debajo, la aclaración chica."""
@@ -108,19 +110,11 @@ class PointDialog(GlassDialog):
         self.lbl_fl = info_label()
         grid.addWidget(self.lbl_fl, 2, 2)
 
-        grid.addLayout(field_label("Celda", "punto de grilla del dato"), 3, 0)
-        self.cb_cell = QComboBox()
-        for key, name in pq.CELL_MODES:
-            self.cb_cell.addItem(name, key)
-        self.cb_cell.setFixedWidth(edit_w)
-        self.cb_cell.setSizeAdjustPolicy(QComboBox.SizeAdjustPolicy.AdjustToMinimumContentsLengthWithIcon)
-        self.cb_cell.setToolTip("El dato es de un punto de la grilla del archivo: el nodo más "
-                                "cercano al clic, o la esquina suroeste de la celda que lo "
-                                "contiene (así lo hace el FDP)")
-        self.cb_cell.currentIndexChanged.connect(lambda _i: self.refresh())
-        grid.addWidget(self.cb_cell, 3, 1)
+        # Celda: convención del FDP, el dato es el del origen (esquina
+        # suroeste) de la celda de la grilla que contiene al punto
+        grid.addLayout(field_label("Origen de celda", "esquina SO de la celda, como el FDP"), 3, 0)
         self.lbl_cell = info_label()
-        grid.addWidget(self.lbl_cell, 3, 2)
+        grid.addWidget(self.lbl_cell, 3, 1, 1, 2)
         grid.setColumnStretch(2, 1)
         grid.setColumnMinimumWidth(2, 210)
         grid.setAlignment(Qt.AlignmentFlag.AlignTop)
@@ -220,8 +214,9 @@ class PointDialog(GlassDialog):
     def fl(self):
         return int(self.sp_fl.value())
 
-    def cell(self):
-        return self.cb_cell.currentData() or "nearest"
+    @staticmethod
+    def cell():
+        return "origin"
 
     def when(self):
         return pq.parse_overflown_time(self.ed_time.text())

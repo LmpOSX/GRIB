@@ -211,6 +211,7 @@ class TestDialogo(unittest.TestCase):
         self.assertFalse(dlg.isModal())
         self.assertFalse(w.plot._panning)                       # el botón derecho no arrastra
         self.assertEqual(dlg.ed_geo.text(), "0000N04200W")
+        self.assertIn("0000N04200W", dlg.lbl_cell.text())        # sobre el nodo: la celda es él
         self.assertEqual(dlg.ed_time.text(), "2610131800")       # validez del paso del panel
         self.assertEqual(dlg.fl(), 300)                          # FL del panel
         self.assertEqual(dlg.table.item(1, 0).text(), "Nivel F300")
@@ -234,12 +235,12 @@ class TestDialogo(unittest.TestCase):
         self.assertEqual(dlg.table.item(1, 2).text(), "—")
         dlg.ed_time.setText("2610131900")
         self.app.processEvents()
-        # Origen de celda: esquina suroeste de la celda que contiene el punto
+        # Origen de celda (convención del FDP): esquina suroeste de la celda
+        # que contiene el punto, no el nodo más cercano
         dlg.set_point(2.0, -43.0)
         self.assertEqual(dlg.ed_geo.text(), "0200N04300W")
-        self.assertIn("0000N04200W", dlg.lbl_cell.text())             # nodo más cercano
-        dlg.cb_cell.setCurrentIndex(1)
         self.assertIn("0000N04800W", dlg.lbl_cell.text())             # esquina SO (lons cada 6°)
+        self.assertEqual(dlg.cell(), "origin")
         # Otro clic derecho cambia el punto pero respeta FL y hora cargados
         w.open_point_dialog(-5.0, -36.0)
         self.assertEqual(dlg.ed_geo.text(), "0500S03600W")
