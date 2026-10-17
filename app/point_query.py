@@ -1,5 +1,5 @@
 # -*- coding: utf-8 -*-
-"""Consulta de un punto del mapa (clic derecho): formatos de entrada y de
+"""Consulta de un punto del mapa (ficha del clic): formatos de entrada y de
 salida al estilo del FDP, sin interfaz gráfica.
 
 * geodesic_ddmm / parse_geodesic: `3125S06411W` (grados y minutos).

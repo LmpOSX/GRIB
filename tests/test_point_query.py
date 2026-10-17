@@ -1,5 +1,5 @@
 # -*- coding: utf-8 -*-
-"""Consulta de un punto (clic derecho): formatos, paso por hora, celda,
+"""Consulta de un punto (ficha del clic): formatos, paso por hora, celda,
 capas de abajo/arriba e interpolación en el lector, y el diálogo."""
 import datetime as dt
 import math
@@ -190,81 +190,122 @@ class TestDialogo(unittest.TestCase):
         config.CONFIG_PATH = self._old_cfg_path
         self._tmp.cleanup()
 
-    def test_clic_derecho_abre_la_consulta(self):
-        from app.dialogs.glass_dialog import GlassDialog
+    def _click(self, lon, lat):
+        """Clic (sin arrastrar) sobre el mapa en lon/lat: press + release."""
+        from matplotlib.backend_bases import MouseEvent
+        x, y = self.w.plot.ax.transData.transform((lon, lat))
+        self.w.plot._on_press(MouseEvent("button_press_event", self.w.plot.canvas, x, y, button=1))
+        self.w.plot._on_release(MouseEvent("button_release_event", self.w.plot.canvas, x, y, button=1))
+        self.app.processEvents()
+
+    def test_clic_abre_la_ficha_editable(self):
         w = self.w
         r = _reader_sintetico([850, 700, 500, 300, 200], shape=(5, 6))
         r.path = os.path.join(self._tmp.name, "sintetico.grib2")
         w.load_reader(r, r.path)
         self.app.processEvents()
-        self.assertIsNone(w._point_dialog)
-        # Clic derecho sobre el mapa (matplotlib: botón 3) con el lat/lon del evento
-        x, y = w.plot.ax.transData.transform((-42.0, 0.0))
-        from matplotlib.backend_bases import MouseEvent
-        ev = MouseEvent("button_press_event", w.plot.canvas, x, y, button=3)
-        w.plot._on_press(ev)
-        self.app.processEvents()
-        dlg = w._point_dialog
-        self.assertIsNotNone(dlg)
-        self.assertIsInstance(dlg, GlassDialog)
-        self.assertTrue(dlg.isVisible())
-        self.assertFalse(dlg.isModal())
-        self.assertFalse(w.plot._panning)                       # el botón derecho no arrastra
-        self.assertEqual(dlg.ed_geo.text(), "0000N04200W")
-        self.assertIn("0000N04200W", dlg.lbl_cell.text())        # sobre el nodo: la celda es él
-        self.assertEqual(dlg.ed_time.text(), "2610131800")       # validez del paso del panel
-        self.assertEqual(dlg.fl(), 300)                          # FL del panel
-        rows = dlg.rows()
+        self.assertIsNone(w._info_popup)
+        self._click(-42.0, 0.0)
+        pop = w._info_popup
+        self.assertIsNotNone(pop)
+        self.assertTrue(pop.isVisible())
+        self.assertIs(pop.parentWidget(), w.plot.canvas)        # hija del mapa, no una ventana
+        q = pop.query
+        self.assertTrue(q.isVisible())
+        self.assertEqual(q.ed_geo.text(), "0000N04200W")
+        self.assertIn("0000N04200W", q.lbl_cell.text())          # sobre el nodo: la celda es él
+        self.assertEqual(q.ed_time.text(), "2610131800")         # validez del paso del panel
+        self.assertEqual(q.fl(), 300)                            # FL del panel
+        rows = q.rows()
         self.assertEqual(rows[1][0], "Nivel F300")
         self.assertEqual(rows[0][1], "300 hPa")       # F300 = 300.9 hPa: entre 500 y 300
         self.assertEqual(rows[2][1], "500 hPa")
-        self.assertIn("interpolado en ln(p)", dlg.lbl_mode.text())
-        # Cualquier FL y cualquier hora
-        dlg.sp_fl.setValue(310)
-        dlg.ed_time.setText("2610132200")
+        self.assertIn("interpolado en ln(p)", q.lbl_mode.text())
+        # Los campos son editables ahí mismo: cualquier FL y cualquier hora
+        self.assertFalse(q.ed_time.isReadOnly())
+        q.sp_fl.setValue(310)
+        q.ed_time.setText("2610132200")
         self.app.processEvents()
-        self.assertIn("paso [0] +6 h", dlg.lbl_step.text())
-        self.assertIn("fuera de las ventanas", dlg.lbl_step.text())
-        rows = dlg.rows()
+        self.assertIn("paso [0] +6 h", q.lbl_step.text())
+        self.assertIn("fuera de las ventanas", q.lbl_step.text())
+        rows = q.rows()
         self.assertEqual(rows[1][1], "287.4 hPa ISA")
         self.assertEqual(rows[0][1], "200 hPa")
         self.assertEqual(rows[2][1], "300 hPa")
         self.assertNotEqual(rows[1][2], "—")
         self.assertRegex(rows[1][3], r"^-?\d+\.\d °C$")
-        dlg.ed_time.setText("261013")
+        q.ed_time.setText("261013")
         self.app.processEvents()
-        self.assertIn("hora inválida", dlg.lbl_step.text())
-        self.assertEqual(dlg.rows()[1][2], "—")
-        dlg.ed_time.setText("2610131900")
+        self.assertIn("hora inválida", q.lbl_step.text())
+        self.assertEqual(q.rows()[1][2], "—")
+        q.ed_time.setText("2610131900")
         self.app.processEvents()
         # Origen de celda (convención del FDP): esquina suroeste de la celda
         # que contiene el punto, no el nodo más cercano
-        dlg.set_point(2.0, -43.0)
-        self.assertEqual(dlg.ed_geo.text(), "0200N04300W")
-        self.assertIn("0000N04800W", dlg.lbl_cell.text())             # esquina SO (lons cada 6°)
-        self.assertEqual(dlg.cell(), "origin")
-        # Otro clic derecho cambia el punto pero respeta FL y hora cargados
-        w.open_point_dialog(-5.0, -36.0)
-        self.assertEqual(dlg.ed_geo.text(), "0500S03600W")
-        self.assertEqual((dlg.fl(), dlg.ed_time.text()), (310, "2610131900"))
+        q.set_point(2.0, -43.0)
+        self.assertEqual(q.ed_geo.text(), "0200N04300W")
+        self.assertIn("0000N04800W", q.lbl_cell.text())              # esquina SO (lons cada 6°)
+        self.assertEqual(q.cell(), "origin")
         # Se puede escribir el punto a mano
-        dlg.ed_geo.setText("0500N05200W")
-        self.assertIn("0500N05400W", dlg.lbl_cell.text())             # origen: -54 ≤ -52 < -48
+        q.ed_geo.setText("0500N05200W")
+        self.assertIn("0500N05400W", q.lbl_cell.text())              # origen: -54 ≤ -52 < -48
         # Copiar
-        dlg.copy_text()
+        pop.btn_copy.click()
         from PyQt6.QtGui import QGuiApplication
         txt = QGuiApplication.clipboard().text()
         self.assertTrue(txt.startswith("Geodésico (grados y minutos): 0500N05200W\n"
                                        "Hora de sobrevuelo (YYMMDDHHMM): 2610131900\n"
                                        "Nivel de sobrevuelo (banda, sin F): 310\n"))
-        # Cerrar el archivo deja la consulta sin datos; Vista ▸ Consultar punto la reabre
+        # Escape la cierra (el único Escape de la ventana)
+        w._on_escape()
+        self.assertFalse(pop.isVisible())
+        # Otro clic la abre en el punto nuevo, con el paso y el FL del panel
+        self._click(-36.0, -5.0)
+        self.assertTrue(pop.isVisible())
+        self.assertEqual(q.ed_geo.text(), "0500S03600W")
+        self.assertEqual((q.fl(), q.ed_time.text()), (300, "2610131800"))
+
+    def test_clic_afuera_solo_cierra_y_cmd_i_reabre(self):
+        from PyQt6.QtCore import QEvent, QPointF, Qt
+        from PyQt6.QtGui import QMouseEvent
+        w = self.w
+        r = _reader_sintetico([850, 700, 500, 300, 200], shape=(5, 6))
+        r.path = os.path.join(self._tmp.name, "sintetico.grib2")
+        w.load_reader(r, r.path)
+        self.app.processEvents()
+        self._click(-42.0, 0.0)
+        pop = w._info_popup
+        self.assertTrue(pop.isVisible())
+        # Un clic sobre la ficha no llega al mapa (no abre otra ni arrastra)
+        self.assertIsNone(pop.mousePressEvent(QMouseEvent(
+            QEvent.Type.MouseButtonPress, QPointF(5, 5), Qt.MouseButton.LeftButton,
+            Qt.MouseButton.LeftButton, Qt.KeyboardModifier.NoModifier)))
+        self.assertTrue(pop.isVisible())
+        # Un clic sobre el mapa, fuera de la ficha: el filtro la cierra en el
+        # press y el clic que se informa después no abre otra
+        canvas = w.plot.canvas
+        press = QMouseEvent(QEvent.Type.MouseButtonPress, QPointF(2, 2), Qt.MouseButton.LeftButton,
+                            Qt.MouseButton.LeftButton, Qt.KeyboardModifier.NoModifier)
+        pop.eventFilter(canvas, press)
+        self.assertFalse(pop.isVisible())
+        self._click(-36.0, -5.0)
+        self.assertFalse(pop.isVisible())
+        self.assertEqual(pop.query.ed_geo.text(), "0000N04200W")   # no cambió el punto
+        # El clic siguiente sí abre
+        self._click(-36.0, -5.0)
+        self.assertTrue(pop.isVisible())
+        self.assertEqual(pop.query.ed_geo.text(), "0500S03600W")
+        # Cerrar el archivo la oculta y la deja sin datos; ⌘I la reabre en el
+        # último punto, y abrir otro archivo la rellena
         w._file_close()
-        self.assertEqual(dlg.lbl_step.text(), "Sin archivo abierto")
-        self.assertEqual(dlg.rows()[1][2], "—")
-        dlg.close()
-        w._act_point.trigger()
-        self.assertTrue(dlg.isVisible())
+        self.assertFalse(pop.isVisible())
+        self.assertEqual(pop.query.lbl_step.text(), "Sin archivo abierto")
         self.assertEqual(w._act_point.shortcut().toString(), "Ctrl+I")
+        w.load_reader(r, r.path)
+        w._act_point.trigger()
+        self.assertTrue(pop.isVisible())
+        self.assertEqual(pop.query.ed_geo.text(), "0500S03600W")
+        self.assertNotEqual(pop.query.rows()[1][2], "—")
 
 
 if __name__ == "__main__":

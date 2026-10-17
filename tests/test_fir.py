@@ -529,7 +529,7 @@ class TestVentana(unittest.TestCase):
         self.assertIn("ARCHIVO\nFUENTE:", txt)
         self.assertIn("FIR\nFIR Córdoba (SACF)", txt)
         self.assertIn("la grilla cubre la FIR completa", txt)
-        self.assertIn("⌘I", pop.lbl_hint.text())
+        self.assertIn("Escape", pop.lbl_hint.text())
         # Se edita ahí mismo: otro FL recalcula
         pop.query.sp_fl.setValue(310)
         self.assertEqual(pop.query.rows()[1][1], "287.4 hPa ISA")

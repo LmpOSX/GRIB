@@ -17,7 +17,7 @@ from PyQt6.QtWidgets import (
     QApplication, QMessageBox, QMenuBar, QFileDialog, QStatusBar, QScrollArea,
     QLabel, QComboBox,
 )
-from PyQt6.QtCore import Qt, QEvent
+from PyQt6.QtCore import QPoint, Qt, QEvent
 from PyQt6.QtGui import QKeySequence, QShortcut, QAction, QActionGroup, QCursor
 
 from .config import (
@@ -147,6 +147,9 @@ class MainWindow(QMainWindow):
     def _on_escape(self):
         """Único atajo Escape de la ventana: devuelve el foco al mapa (el pan
         por arrastre y el zoom con la rueda no tienen modo que cancelar)."""
+        if self._info_popup is not None and self._info_popup.isVisible():
+            self._info_popup.hide()
+            return
         if self._reader is not None:
             self.plot.canvas.setFocus()
 
@@ -278,8 +281,6 @@ class MainWindow(QMainWindow):
 
         # ── Capa de límites de FIR ──
         self.plot.on_click = self._on_map_click
-        self.plot.on_context = self._on_map_context
-        self._point_dialog = None          # Consulta de punto (clic derecho), única
         self._info_popup = None            # Ficha del clic izquierdo (punto, archivo, FIR)
         self._load_fir_layer(redraw=False)
         self._apply_area_layer(redraw=False)
@@ -462,7 +463,7 @@ class MainWindow(QMainWindow):
         self._act_zoom_in = self._add_action(vista, "Acercar (fino)", self.zoom_in_fine, "Ctrl+Alt+=")
         self._act_zoom_out = self._add_action(vista, "Alejar (fino)", self.zoom_out_fine, "Ctrl+Alt+-")
         self._act_update = self._add_action(vista, "Actualizar", self.redraw, "F5")
-        self._act_point = self._add_action(vista, "Consultar punto…", self.open_point_dialog,
+        self._act_point = self._add_action(vista, "Consultar punto…", self.open_point_popup,
                                            "Ctrl+I")
         self._act_layer = self._add_action(vista, "Capa de datos activada",
                                            self.toggle_layer, "Ctrl+D")
@@ -887,8 +888,6 @@ class MainWindow(QMainWindow):
         self._set_plot_projection(self.panel.projection(), reader.lons, reader.lats)
         self._apply_area_layer(redraw=False)     # el marco pasa a ser el de este archivo
         self.redraw(keep_extent=False)
-        if self._point_dialog is not None:
-            self._point_dialog.set_reader(reader)
         if self._info_popup is not None:
             self._info_popup.hide()
             self._info_popup.query.set_reader(reader)
@@ -898,8 +897,6 @@ class MainWindow(QMainWindow):
         self._path = None
         self._provenance = None
         self._current = None
-        if self._point_dialog is not None:
-            self._point_dialog.set_reader(None)
         if self._info_popup is not None:
             self._info_popup.hide()
             self._info_popup.query.set_reader(None)
@@ -1562,11 +1559,12 @@ class MainWindow(QMainWindow):
         return "\n".join(lines)
 
     def _on_map_click(self, event):
-        """Clic sin arrastre: ficha junto al mouse con el punto (coordenadas,
-        origen de celda, viento y temperatura en el nivel y paso actuales),
-        el archivo (lo que muestra STATUS) y la FIR bajo el cursor (extremos
-        y cobertura), con un botón a la consulta de punto. La primera línea
-        de la FIR va también a la barra de estado."""
+        """Clic sin arrastre: ficha junto al mouse con PUNTO (la consulta
+        editable), ARCHIVO (lo que muestra STATUS) y la FIR bajo el cursor
+        (extremos y cobertura; la primera línea va también a la barra de
+        estado). El clic que cierra una ficha abierta no abre otra."""
+        if self._info_popup is not None and self._info_popup.take_click():
+            return
         try:
             inside, edges = self.plot.fir_hit(event)
         except Exception:
@@ -1580,6 +1578,12 @@ class MainWindow(QMainWindow):
             lat = lon = None
         if fir_txt:
             self.set_status(fir_txt.splitlines()[0])
+        self._show_point_popup(lat, lon, fir_txt, self.plot.canvas.mapFromGlobal(QCursor.pos()))
+
+    def _show_point_popup(self, lat, lon, fir_txt="", pos=None):
+        """Arma y muestra la ficha: PUNTO editable con el paso y el FL que
+        muestra el panel (o, sin consulta por FL, el nodo más cercano),
+        ARCHIVO y FIR. `pos` en coordenadas del canvas (None = centro)."""
         file_txt = self.file_info_text() if self._reader is not None else ""
         if lat is None and not (file_txt or fir_txt):
             return
@@ -1589,7 +1593,6 @@ class MainWindow(QMainWindow):
         pop = self._info_popup
         r = self._reader
         if lat is not None and r is not None and r.steps and self.panel.level_mode == "fl":
-            # Consulta editable con el paso y el FL que muestra el panel
             step_idx = max(0, min(self.panel.step_index(), len(r.steps) - 1))
             pop.set_point_static(None)
             pop.query.set_defaults(when=r.steps[step_idx].valid, fl=self.panel.sel_fl, force=True)
@@ -1598,7 +1601,11 @@ class MainWindow(QMainWindow):
             pop.set_point_static(self.point_info_text(lat, lon) if lat is not None else "—")
         # En la ficha, cada FIR en tres renglones (extremos / cobertura / fuente)
         pop.set_sections([("ARCHIVO", file_txt), ("FIR", fir_txt.replace("  ·  ", "\n  "))])
-        pop.show_at(self.plot.canvas.mapFromGlobal(QCursor.pos()))
+        if pos is None:
+            c = self.plot.canvas
+            pos = QPoint(c.width() // 2, c.height() // 2)
+        pop.show_at(pos)
+        return pop
 
     def point_info_text(self, lat, lon) -> str:
         """Sección PUNTO de la ficha cuando no hay consulta por FL (archivo
@@ -1617,40 +1624,27 @@ class MainWindow(QMainWindow):
                  panel.lbl_valid_utc.text(), panel.lbl_valid_loc.text(), panel.lbl_level.text()]
         return "\n".join(x for x in parts if x and not x.endswith("--"))
 
-    # ── Consulta de punto (clic derecho) ─────────────────────────────────────
+    # ── Consulta de punto (Vista ▸ Consultar punto…, ⌘I) ────────────────────
 
     def _magnetic_variation(self) -> float:
         """Variación magnética de la tangencia vigente (0 sin norte magnético)."""
         return float((self.plot.tangent or {}).get("variation_deg", 0.0))
 
-    def open_point_dialog(self, lat=None, lon=None):
-        """Abre (o trae al frente) la consulta de punto; con lat/lon fija el
-        punto. Arranca con la hora del paso y el FL que muestra el panel."""
-        if self._point_dialog is None:
-            from .dialogs.point_dialog import PointDialog
-            self._point_dialog = PointDialog(self, variation_fn=self._magnetic_variation)
-            self._point_dialog.set_reader(self._reader)
-        dlg = self._point_dialog
-        r = self._reader
-        if r is not None and r.steps:
-            step_idx = max(0, min(self.panel.step_index(), len(r.steps) - 1))
-            fl = self.panel.sel_fl if self.panel.level_mode == "fl" else None
-            dlg.set_defaults(when=r.steps[step_idx].valid, fl=fl)
-        if lat is not None and lon is not None:
-            dlg.set_point(lat, lon)
-        dlg.show()
-        dlg.raise_()
-        dlg.activateWindow()
-        return dlg
-
-    def _on_map_context(self, event):
-        """Clic derecho sobre el mapa: consulta de punto en ese lat/lon."""
-        if event.xdata is None or event.ydata is None:
-            return
-        lon, lat = self.plot.to_lonlat(float(event.xdata), float(event.ydata))
-        if lon is None:
-            return
-        self.open_point_dialog(lat, lon)
+    def open_point_popup(self, lat=None, lon=None):
+        """Vista ▸ Consultar punto… (⌘I): la misma ficha del clic, en el
+        último punto consultado o, si no hubo, en el centro de la vista; la
+        ficha se muestra en el centro del mapa."""
+        if lat is None or lon is None:
+            pop = self._info_popup
+            if pop is not None and pop.query.lat is not None:
+                lat, lon = pop.query.lat, pop.query.lon
+            else:
+                x0, x1 = self.plot.ax.get_xlim()
+                y0, y1 = self.plot.ax.get_ylim()
+                lon, lat = self.plot.to_lonlat(0.5 * (x0 + x1), 0.5 * (y0 + y1))
+                if lon is None:
+                    lat = lon = None
+        return self._show_point_popup(lat, lon)
 
     # ── Área de descarga (rectángulos) ───────────────────────────────────────
 

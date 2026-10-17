@@ -1,14 +1,15 @@
 # -*- coding: utf-8 -*-
-"""Ficha que aparece con un clic (sin arrastrar) sobre el mapa: PUNTO (la
-consulta editable: geodésico, hora, FL y las tres capas, el mismo bloque
-que la ventana «Consulta de punto»), ARCHIVO (lo de STATUS) y FIR (la que
-está bajo el cursor).
+"""Ficha del punto: aparece con un clic (sin arrastrar) sobre el mapa, o con
+Vista ▸ Consultar punto… (⌘I), con PUNTO (la consulta editable: geodésico,
+hora, FL y las tres capas), ARCHIVO (lo de STATUS) y FIR (la que está bajo
+el cursor). Es la única consulta de punto de la aplicación.
 
 Es un widget hijo del canvas del mapa (no una ventana aparte): se dibuja
-encima con los colores y tamaños del tema (QFrame#MapInfoPopup) y se
-cierra sola con un clic fuera de ella o con Escape.
+encima con los colores y tamaños del tema (QFrame#MapInfoPopup). Se queda
+con sus propios clics y su rueda (no llegan al mapa) y se cierra sola con
+Escape o con un clic fuera de ella; ese clic sólo la cierra, no abre otra.
 """
-from PyQt6.QtCore import Qt, QPoint, QEvent
+from PyQt6.QtCore import Qt, QPoint, QEvent, QTimer
 from PyQt6.QtWidgets import (QFrame, QVBoxLayout, QHBoxLayout, QLabel, QPushButton,
                              QApplication)
 
@@ -20,7 +21,9 @@ class MapInfoPopup(QFrame):
         super().__init__(parent)
         self.setObjectName("MapInfoPopup")
         self.setAttribute(Qt.WidgetAttribute.WA_StyledBackground, True)
+        self.setFocusPolicy(Qt.FocusPolicy.StrongFocus)
         self._sections = []
+        self._swallow_click = False
         lay = QVBoxLayout(self)
         lay.setContentsMargins(14, 10, 14, 10)
         lay.setSpacing(4)
@@ -38,8 +41,8 @@ class MapInfoPopup(QFrame):
         self._body.setSpacing(4)
         lay.addLayout(self._body)
         row = QHBoxLayout()
-        self.lbl_hint = QLabel("Cambiá geodésico, hora o FL y se recalcula  ·  ⌘I abre la consulta "
-                               "en ventana  ·  Escape o clic afuera cierra")
+        self.lbl_hint = QLabel("Cambiá geodésico, hora o FL y se recalcula  ·  Escape o clic afuera "
+                               "cierra  ·  ⌘I la vuelve a abrir")
         self.lbl_hint.setObjectName("PopupHint")
         row.addWidget(self.lbl_hint, 1)
         self.btn_copy = QPushButton("Copiar")
@@ -102,17 +105,52 @@ class MapInfoPopup(QFrame):
         self.move(x, y)
         self.show()
         self.raise_()
+        self.setFocus()
+
+    def take_click(self):
+        """True si el último clic sobre el mapa fue el que cerró la ficha (ese
+        clic no debe abrir otra)."""
+        was, self._swallow_click = self._swallow_click, False
+        return was
+
+    # ── Los eventos del mouse sobre la ficha no pasan al mapa ────────────────
+
+    def mousePressEvent(self, event):
+        event.accept()
+
+    def mouseReleaseEvent(self, event):
+        event.accept()
+
+    def mouseMoveEvent(self, event):
+        event.accept()
+
+    def mouseDoubleClickEvent(self, event):
+        event.accept()
+
+    def wheelEvent(self, event):
+        event.accept()
+
+    def _is_own(self, obj):
+        w = obj if hasattr(obj, "parentWidget") else None
+        while w is not None:
+            if w is self:
+                return True
+            w = w.parentWidget()
+        return False
 
     def eventFilter(self, obj, event):
         if self.isVisible():
             t = event.type()
-            if t == QEvent.Type.MouseButtonPress:
-                try:
-                    gp = event.globalPosition().toPoint()
-                except AttributeError:
-                    gp = None
-                if gp is None or not self.rect().contains(self.mapFromGlobal(gp)):
-                    self.hide()
-            elif t == QEvent.Type.KeyPress and event.key() == Qt.Key.Key_Escape:
+            if t == QEvent.Type.MouseButtonPress and not self._is_own(obj):
+                # Clic afuera: cierra; si fue sobre el mapa, ese clic no abre otra
+                self._swallow_click = obj is self.parentWidget()
                 self.hide()
+            elif t == QEvent.Type.MouseButtonRelease and self._swallow_click:
+                # Si el clic no llega a informarse (soltó fuera de los ejes), la
+                # marca se limpia igual después de este evento
+                QTimer.singleShot(0, lambda: setattr(self, "_swallow_click", False))
+            elif (t in (QEvent.Type.ShortcutOverride, QEvent.Type.KeyPress)
+                  and event.key() == Qt.Key.Key_Escape):
+                self.hide()
+                return True
         return super().eventFilter(obj, event)

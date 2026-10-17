@@ -15,13 +15,15 @@
   tamaño de fuente de toda la ventana.
 - La franja STATUS y la barra de estado inferior siguen el tamaño de
   fuente de la aplicación (antes tenían un tamaño fijo).
-- El clic (sin arrastrar) sobre el mapa abre una ficha con el tema, en
-  vez del tooltip amarillo: PUNTO (la consulta de punto editable ahí
-  mismo: geodésico, hora UTC, FL y las tres capas alineadas), ARCHIVO (lo
-  de STATUS) y FIR (extremos y cobertura), con «Copiar».
-- La ventana «Consulta de punto» (clic derecho, ⌘ I) usa el mismo bloque y
-  formato que la ficha (campos en una fila y capas en texto monoespaciado
-  alineado, en lugar de la tabla).
+- Una sola consulta de punto: la ficha del clic (sin arrastrar) sobre el
+  mapa, con el tema en vez del tooltip amarillo: PUNTO (la consulta
+  editable ahí mismo: geodésico, hora UTC, FL y las tres capas alineadas
+  en letra monoespaciada), ARCHIVO (lo de STATUS) y FIR (extremos y
+  cobertura), con «Copiar». La ficha se queda con sus propios clics (no
+  mueven el mapa), Escape o un clic afuera la cierran y ese clic no abre
+  otra. Desaparece la ventana «Consulta de punto» del clic derecho; Vista
+  ▸ Consultar punto… (⌘ I) abre la ficha en el último punto o en el
+  centro de la vista.
 
 ## 0.3.2 — 2026-10-16
 

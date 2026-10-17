@@ -1,9 +1,8 @@
 # -*- coding: utf-8 -*-
-"""Bloque de consulta de un punto, compartido por la ficha del clic sobre el
-mapa y por la ventana «Consulta de punto» (clic derecho, ⌘I): los tres
-campos editables (geodésico, hora de sobrevuelo, nivel de sobrevuelo) y,
-en texto monoespaciado alineado, la capa inferior, la superior y el valor
-en el FL pedido, al estilo del FDP.
+"""Bloque de consulta de un punto, la sección PUNTO de la ficha del clic
+sobre el mapa: los tres campos editables (geodésico, hora de sobrevuelo,
+nivel de sobrevuelo) y, en texto monoespaciado alineado, la capa inferior,
+la superior y el valor en el FL pedido, al estilo del FDP.
 
 El dato es el del origen (esquina suroeste) de la celda de la grilla que
 contiene al punto, como en el FDP. No conoce la ventana principal: recibe
