@@ -36,6 +36,7 @@ from .widgets.map_info_popup import MapInfoPopup
 from .point_query import geodesic_ddmm
 from .sources import enabled_sources, all_sources, get_source, source_label, read_provenance
 from . import fir as firmod
+from . import fl_table as flt
 from . import working_area as wamod
 
 APP_TITLE = "Visor GRIB"
@@ -1562,7 +1563,7 @@ class MainWindow(QMainWindow):
 
     def _on_map_click(self, event):
         """Clic sin arrastre: ficha junto al mouse con PUNTO (la consulta
-        editable), ARCHIVO (lo que muestra STATUS) y la FIR bajo el cursor
+        editable con el perfil de la celda) y la FIR bajo el cursor
         (extremos y cobertura; la primera línea va también a la barra de
         estado). El clic que cierra una ficha abierta no abre otra."""
         if self._info_popup is not None and self._info_popup.take_click():
@@ -1584,47 +1585,53 @@ class MainWindow(QMainWindow):
 
     def _show_point_popup(self, lat, lon, fir_txt="", pos=None):
         """Arma y muestra la ficha: PUNTO editable con el paso y el FL que
-        muestra el panel (o, sin consulta por FL, el nodo más cercano),
-        ARCHIVO y FIR. `pos` en coordenadas del canvas (None = centro)."""
-        file_txt = self.file_info_text() if self._reader is not None else ""
-        if lat is None and not (file_txt or fir_txt):
+        muestra el panel (en modo presión, el FL de ese nivel; en superficie,
+        el nodo más cercano) y FIR. `pos` en coordenadas del canvas (None =
+        centro)."""
+        if lat is None and not (self._reader is not None or fir_txt):
             return
         if self._info_popup is None:
             self._info_popup = MapInfoPopup(self.plot.canvas, variation_fn=self._magnetic_variation)
             self._info_popup.query.set_reader(self._reader)
         pop = self._info_popup
         r = self._reader
-        if lat is not None and r is not None and r.steps and self.panel.level_mode == "fl":
+        if (lat is not None and r is not None and r.steps and r.levels
+                and self.panel.level_mode in ("fl", "p")):
             step_idx = max(0, min(self.panel.step_index(), len(r.steps) - 1))
             pop.set_point_static(None)
-            pop.query.set_defaults(when=r.steps[step_idx].valid, fl=self.panel.sel_fl, force=True)
+            pop.query.set_defaults(when=r.steps[step_idx].valid, fl=self._popup_fl(), force=True)
             pop.query.set_point(lat, lon)
         else:
             pop.set_point_static(self.point_info_text(lat, lon) if lat is not None else "—")
         # En la ficha, cada FIR en tres renglones (extremos / cobertura / fuente)
-        pop.set_sections([("ARCHIVO", file_txt), ("FIR", fir_txt.replace("  ·  ", "\n  "))])
+        pop.set_sections([("FIR", fir_txt.replace("  ·  ", "\n  "))])
         if pos is None:
             c = self.plot.canvas
             pos = QPoint(c.width() // 2, c.height() // 2)
         pop.show_at(pos)
         return pop
 
+    def _popup_fl(self) -> int:
+        """FL inicial de la ficha: el del panel o, en modo presión, el FL
+        del nivel elegido (el etiquetado, o el de la tabla cuya ISA cae
+        más cerca de esa presión)."""
+        panel = self.panel
+        if panel.level_mode != "p" or panel.sel_p is None:
+            return int(panel.sel_fl)
+        r = self._reader
+        fl = r.fl_of_level(panel.sel_p) if r is not None else None
+        if fl is None:
+            fl = min(flt.FLS, key=lambda f: abs(flt.isa_pa(f) / 100.0 - float(panel.sel_p)))
+        return int(fl)
+
     def point_info_text(self, lat, lon) -> str:
         """Sección PUNTO de la ficha cuando no hay consulta por FL (archivo
-        de superficie o en niveles de presión): coordenadas y, con archivo,
-        el nodo más cercano con su viento y temperatura, como la barra de
-        estado."""
+        de superficie): coordenadas y, con archivo, el nodo más cercano con
+        su viento y temperatura, como la barra de estado."""
         lines = [f"{geodesic_ddmm(lat, lon)}  ({lat:.2f}, {lon:.2f})"]
         if self._reader is not None:
             lines.extend(x.strip() for x in self.cursor_text(lon, lat).split("|")[1:])
         return "\n".join(lines)
-
-    def file_info_text(self) -> str:
-        """Sección ARCHIVO de la ficha: los renglones de la franja STATUS."""
-        panel = self.panel
-        parts = [panel.lbl_source.text(), panel.lbl_run.text(), panel.lbl_step.text(),
-                 panel.lbl_valid_utc.text(), panel.lbl_valid_loc.text(), panel.lbl_level.text()]
-        return "\n".join(x for x in parts if x and not x.endswith("--"))
 
     # ── Consulta de punto (Vista ▸ Consultar punto…, ⌘I) ────────────────────
 

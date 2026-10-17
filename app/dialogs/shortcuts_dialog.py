@@ -37,7 +37,7 @@ SHORTCUTS = [
     ("Mapa", "Volver a la vista inicial", "Botón Inicio"),
     ("Mapa", "Valores bajo el cursor", "Mover el mouse sobre el mapa"),
     ("Mapa", "FIR bajo el cursor (nombre y código)", "Mover el mouse con la capa de FIR activa"),
-    ("Mapa", "Ficha del punto, del archivo y de la FIR (con botón a la consulta)", "Clic (sin arrastrar) sobre el mapa"),
+    ("Mapa", "Ficha del punto: consulta editable con el perfil vertical de la celda, y la FIR", "Clic (sin arrastrar) sobre el mapa"),
     ("Panel", "Cambiar paso, nivel, variable u opción", "Redibuja automáticamente"),
     ("Panel", "Aplicar el recuadro lat/lon", "Enter en un campo"),
     ("Ayuda", "Atajos de teclado", "Cmd /"),

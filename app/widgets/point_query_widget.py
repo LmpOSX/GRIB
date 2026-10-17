@@ -1,8 +1,11 @@
 # -*- coding: utf-8 -*-
 """Bloque de consulta de un punto, la sección PUNTO de la ficha del clic
 sobre el mapa: los tres campos editables (geodésico, hora de sobrevuelo,
-nivel de sobrevuelo) y, en texto monoespaciado alineado, la capa inferior,
-la superior y el valor en el FL pedido, al estilo del FDP.
+nivel de sobrevuelo) y el perfil vertical de la celda (WindProfileWidget):
+todos los niveles del archivo con el color de la velocidad, la barba y los
+números, con el FL pedido intercalado (interpolado) y resaltado. Las tres
+capas al estilo del FDP (inferior, FL pedido, superior) siguen disponibles
+en rows() y en el texto que se copia.
 
 El dato es el del origen (esquina suroeste) de la celda de la grilla que
 contiene al punto, como en el FDP. No conoce la ventana principal: recibe
@@ -15,6 +18,7 @@ from PyQt6.QtGui import QRegularExpressionValidator, QGuiApplication
 from PyQt6.QtWidgets import QFrame, QVBoxLayout, QHBoxLayout, QLabel, QLineEdit, QSpinBox
 
 from .. import point_query as pq
+from .wind_profile_widget import WindProfileWidget
 
 ROWS = ("Capa superior", "Nivel pedido", "Capa inferior")
 
@@ -85,9 +89,10 @@ class PointQueryWidget(QFrame):
         row2.addStretch(1)
         lay.addLayout(row2)
 
-        # ── Las tres capas, alineadas ──
-        self.lbl_layers = _mono_label()
-        lay.addWidget(self.lbl_layers)
+        # ── Perfil vertical de la celda ──
+        self.profile = WindProfileWidget(self)
+        lay.addWidget(self.profile)
+        self._column = []
         self.lbl_mode = QLabel("")
         self.lbl_mode.setObjectName("PopupHint")
         lay.addWidget(self.lbl_mode)
@@ -173,6 +178,7 @@ class PointQueryWidget(QFrame):
             self._variation = float(self._variation_fn() or 0.0) if self._variation_fn else 0.0
         except Exception:
             self._variation = 0.0
+        self._column = []
         if r is None:
             self.lbl_cell.setText("")
             self.lbl_step.setText("Sin archivo abierto")
@@ -203,6 +209,7 @@ class PointQueryWidget(QFrame):
             self._fill_rows(None)
             return
         self._res = r.point_query(idx, self.fl(), self.lat, self.lon, self.cell())
+        self._column = r.column_query(idx, self.lat, self.lon, self.cell()) or []
         if self._res is None:
             self.lbl_cell.setText("origen de celda: fuera de la grilla del archivo  ·")
         else:
@@ -219,12 +226,11 @@ class PointQueryWidget(QFrame):
         names = (ROWS[0], f"Nivel F{fl:03d}", ROWS[2])
         self._rows = [(n, pq.layer_name(l), pq.wind_text(l, self._variation), pq.temp_text(l))
                       for n, l in zip(names, layers)]
-        w1 = max(len(r[1]) for r in self._rows + [("", "nivel", "", "")])
-        w2 = max(len(r[2]) for r in self._rows + [("", "", "viento (kt / °)", "")])
-        lines = [f"{'':<14} {'nivel':<{w1}}  {'viento (kt / °)':<{w2}}  temperatura"]
-        for n, lv, wd, t in self._rows:
-            lines.append(f"{n:<14} {lv:<{w1}}  {wd:<{w2}}  {t}")
-        self.lbl_layers.setText("\n".join(lines))
+        column = self._column if res is not None else []
+        self.profile.set_layers(column, value=layers[1] if column else None,
+                                variation=self._variation,
+                                southern=(self.lat is not None and self.lat < 0))
+        self.profile.setVisible(bool(column))
         if res is None:
             self.lbl_mode.setText(f"F{fl:03d} = {fl_to_hpa(fl):.1f} hPa ISA")
         else:
@@ -240,7 +246,8 @@ class PointQueryWidget(QFrame):
     def report_text(self):
         idx, step, inside = self._step if self._step else (None, None, False)
         return pq.report_text(self.lat, self.lon, self.ed_time.text().strip(), self.fl(),
-                              step, idx, inside, self._res, self._variation, self.cell())
+                              step, idx, inside, self._res, self._variation, self.cell(),
+                              column=self._column)
 
     def copy_text(self):
         if self.lat is None:

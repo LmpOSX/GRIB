@@ -1,5 +1,16 @@
 # Cambios
 
+## Sin publicar
+
+- La ficha del clic muestra el perfil vertical de la celda en lugar de la
+  tabla de tres capas y de la sección ARCHIVO: una fila por nivel del
+  archivo, con la etiqueta, una barra con el color de la escala de
+  velocidad del mapa (largo según los kt), la barba sobre una brújula con
+  el norte arriba y los números (kt, ° y °M, °C); el FL pedido se intercala
+  interpolado y resaltado. Con muchos niveles las filas se achican para
+  entrar en el mapa. La consulta funciona también en modo presión (arranca
+  con el FL del nivel elegido) y `Copiar` agrega el perfil entero.
+
 ## 0.3.3 — 2026-10-16
 
 - Botón «Preferencias WAFS…» al lado de la casilla «Convertir a WAFS» del

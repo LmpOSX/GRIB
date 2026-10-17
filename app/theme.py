@@ -661,6 +661,14 @@ QLabel#PopupHint {{
     font-size: {h3}px;
     margin-top: 6px;
 }}
+QWidget#WindProfile {{
+    font-family: "Menlo", "Consolas", "DejaVu Sans Mono", monospace;
+    font-size: {font_size}px;
+    color: {txt};
+    background: transparent;
+    selection-background-color: {acc};       /* fila del FL pedido */
+    alternate-background-color: {_rgba(p["bg2"], 200)};   /* pista de las barras */
+}}
 QFrame#PointQuery QLineEdit, QFrame#PointQuery QSpinBox {{
     font-family: "Menlo", "Consolas", "DejaVu Sans Mono", monospace;
     font-size: {font_size}px;

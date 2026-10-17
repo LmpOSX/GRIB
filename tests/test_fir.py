@@ -526,13 +526,19 @@ class TestVentana(unittest.TestCase):
         self.assertEqual(pop.query.rows()[1][0], f"Nivel F{w.panel.sel_fl:03d}")
         self.assertNotEqual(pop.query.rows()[1][2], "—")
         txt = pop.text()
-        self.assertIn("ARCHIVO\nFUENTE:", txt)
+        self.assertNotIn("ARCHIVO", txt)                     # lo de STATUS ya no va en la ficha
         self.assertIn("FIR\nFIR Córdoba (SACF)", txt)
         self.assertIn("la grilla cubre la FIR completa", txt)
         self.assertIn("Escape", pop.lbl_hint.text())
+        # El perfil vertical de la celda: los cinco niveles de arriba hacia
+        # abajo, con el FL del panel (F300 = 300.9 hPa) intercalado y resaltado
+        prof = pop.query.profile.rows()
+        self.assertEqual([r[0] for r in prof], ["200 hPa", "300 hPa", "F300", "500 hPa", "700 hPa", "850 hPa"])
+        self.assertEqual([r[4] for r in prof], [False, False, True, False, False, False])
         # Se edita ahí mismo: otro FL recalcula
         pop.query.sp_fl.setValue(310)
         self.assertEqual(pop.query.rows()[1][1], "287.4 hPa ISA")
+        self.assertEqual([r[0] for r in pop.query.profile.rows()][:3], ["200 hPa", "F310", "300 hPa"])
         # Otro clic vuelve al FL del panel y al punto nuevo; fuera de toda FIR
         # la ficha igual muestra el punto y el archivo
         w._on_map_click(self._event(-85.0, 0.0))

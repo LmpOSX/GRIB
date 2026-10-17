@@ -1,8 +1,8 @@
 # -*- coding: utf-8 -*-
 """Ficha del punto: aparece con un clic (sin arrastrar) sobre el mapa, o con
 Vista ▸ Consultar punto… (⌘I), con PUNTO (la consulta editable: geodésico,
-hora, FL y las tres capas), ARCHIVO (lo de STATUS) y FIR (la que está bajo
-el cursor). Es la única consulta de punto de la aplicación.
+hora, FL y el perfil vertical de la celda) y FIR (la que está bajo el
+cursor). Es la única consulta de punto de la aplicación.
 
 Es un widget hijo del canvas del mapa (no una ventana aparte): se dibuja
 encima con los colores y tamaños del tema (QFrame#MapInfoPopup). Se queda
@@ -41,8 +41,9 @@ class MapInfoPopup(QFrame):
         self._body.setSpacing(4)
         lay.addLayout(self._body)
         row = QHBoxLayout()
-        self.lbl_hint = QLabel("Cambiá geodésico, hora o FL y se recalcula  ·  Escape o clic afuera "
-                               "cierra  ·  ⌘I la vuelve a abrir")
+        self.lbl_hint = QLabel("Cambiá geodésico, hora o FL y se recalcula  ·  perfil de la celda, "
+                               "barbas con el norte arriba  ·  Escape o clic afuera cierra  ·  ⌘I la "
+                               "vuelve a abrir")
         self.lbl_hint.setObjectName("PopupHint")
         row.addWidget(self.lbl_hint, 1)
         self.btn_copy = QPushButton("Copiar")
@@ -92,9 +93,18 @@ class MapInfoPopup(QFrame):
     def show_at(self, pos: QPoint):
         """Muestra la ficha junto a `pos` (coordenadas del padre), dentro de
         los límites del padre."""
-        self.adjustSize()
         parent = self.parentWidget()
         pw, ph = parent.width(), parent.height()
+        # El perfil se achica para que la ficha entera entre en el mapa
+        prof = self.query.profile
+        other = self.sizeHint().height() - (prof.sizeHint().height() if prof.isVisibleTo(self) else 0)
+        prof.set_max_height(ph - other - 16)
+        # Los layouts cachean el sizeHint: sin esto la ficha no se achica
+        # cuando el perfil tiene menos filas que la vez anterior
+        for lay in (self.query.layout(), self.layout()):
+            lay.invalidate()
+            lay.activate()
+        self.adjustSize()
         x, y = pos.x() + 14, pos.y() + 14
         if x + self.width() > pw:
             x = pos.x() - self.width() - 14

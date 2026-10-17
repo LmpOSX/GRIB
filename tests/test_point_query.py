@@ -148,6 +148,14 @@ class TestLector(unittest.TestCase):
         self.assertEqual(r.step_for_time(run + dt.timedelta(hours=10)), (1, True))
         self.assertEqual(r.step_for_time(run + dt.timedelta(hours=20)), (2, False))
 
+    def test_columna_de_la_celda(self):
+        r = _reader_sintetico([850, 700, 500, 300, 200], shape=(3, 4))
+        col = r.column_query(0, 0.0, -40.0, "nearest")
+        self.assertEqual([l["label"] for l in col], [850, 700, 500, 300, 200])
+        self.assertEqual(col[0]["p"], 850.0)
+        self.assertAlmostEqual(col[-1]["spd"], math.hypot(200, 200) * 1.943844, places=1)
+        self.assertIsNone(r.column_query(0, 50.0, -40.0, "nearest"))
+
     def test_informe(self):
         r = _reader_sintetico([850, 700, 500, 300, 200], shape=(5, 6))
         res = r.point_query(0, 310, 0.0, -42.0)
@@ -165,6 +173,69 @@ class TestLector(unittest.TestCase):
         self.assertIn("°M)", txt)
         self.assertEqual(txt.count("Temperatura (°C):"), 3)
         self.assertIn("fuera de la grilla", pq.report_text(80.0, 0.0, "x", 300, None, None, False, None))
+
+
+class TestPerfil(unittest.TestCase):
+    """WindProfileWidget: filas, FL intercalado o coincidente, perfil denso."""
+
+    @classmethod
+    def setUpClass(cls):
+        os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
+        from PyQt6.QtWidgets import QApplication
+        cls.app = QApplication.instance() or QApplication([])
+
+    @staticmethod
+    def _layers(levels, spd=20.0):
+        return [dict(p=float(p), label=float(p), fl=None, spd=spd, dir=270.0, t=250.0) for p in levels]
+
+    def test_barbas_y_nombres(self):
+        from app.widgets.wind_profile_widget import barb_counts, level_name
+        self.assertEqual(barb_counts(0), (0, 0, 0))
+        self.assertEqual(barb_counts(3), (0, 0, 1))
+        self.assertEqual(barb_counts(15), (0, 1, 1))
+        self.assertEqual(barb_counts(52), (1, 0, 0))
+        self.assertEqual(barb_counts(78), (1, 3, 0))
+        self.assertEqual(barb_counts(120), (2, 2, 0))
+        self.assertEqual(level_name(dict(p=300.9, label=300.0, fl=300)), "F300")
+        self.assertEqual(level_name(dict(p=300.0, label=300.0, fl=None)), "300 hPa")
+        self.assertEqual(level_name(dict(p=287.4, label=None, fl=310)), "F310")
+
+    def test_filas_fl_intercalado_o_coincidente(self):
+        from app.widgets.wind_profile_widget import WindProfileWidget
+        w = WindProfileWidget()
+        self.assertEqual(w.sizeHint().height(), 0)                    # sin filas no ocupa lugar
+        w.set_layers(self._layers([850, 500, 300]), value=dict(p=287.4, label=None, fl=310, spd=33.3,
+                                                                dir=359.6, t=230.0), variation=-8.0)
+        rows = w.rows()
+        self.assertEqual([r[0] for r in rows], ["F310", "300 hPa", "500 hPa", "850 hPa"])
+        self.assertEqual(rows[0], ("F310", 33, 0, -43.1, True))
+        self.assertEqual(rows[1], ("300 hPa", 20, 270, -23.1, False))
+        self.assertIn("°M", w._row_text(dict(rows=None, spd=33.3, dir=359.6, t=230.0)))
+        # FL que coincide con un nivel: se resalta ese y toma el nombre del FL
+        w.set_layers(self._layers([850, 500, 300]), value=dict(p=300.0, label=None, fl=300, spd=20.0,
+                                                                dir=270.0, t=250.0))
+        self.assertEqual([(r[0], r[4]) for r in w.rows()],
+                         [("F300", True), ("500 hPa", False), ("850 hPa", False)])
+        # Sin dato de viento no falla
+        w.set_layers([dict(p=500.0, label=500.0, fl=None, spd=None, dir=None, t=None)])
+        self.assertEqual(w.rows(), [("500 hPa", None, None, None, False)])
+        w.resize(w.sizeHint())
+        w.grab()                                                       # se dibuja sin error
+
+    def test_perfil_denso_entra_en_la_altura(self):
+        from app.widgets.wind_profile_widget import WindProfileWidget, ROW_MIN, ROW_MAX
+        w = WindProfileWidget()
+        w.set_layers(self._layers(range(1000, 95, -25)))              # 37 niveles
+        w.set_max_height(2000)
+        h_full = w.sizeHint().height()
+        self.assertGreaterEqual(w._row_h(), ROW_MAX)
+        w.set_max_height(300)
+        self.assertLessEqual(w.sizeHint().height(), 37 * ROW_MIN + w._header_h() + 2)
+        self.assertLess(w.sizeHint().height(), h_full)
+        w.resize(w.sizeHint())
+        w.grab()
+        w.set_max_height(2000)                                        # vuelve a las filas altas
+        self.assertGreaterEqual(w._row_h(), ROW_MAX)
 
 
 class TestDialogo(unittest.TestCase):
@@ -221,6 +292,13 @@ class TestDialogo(unittest.TestCase):
         self.assertEqual(rows[0][1], "300 hPa")       # F300 = 300.9 hPa: entre 500 y 300
         self.assertEqual(rows[2][1], "500 hPa")
         self.assertIn("interpolado en ln(p)", q.lbl_mode.text())
+        # El perfil de la celda: los cinco niveles con F300 intercalado y resaltado
+        self.assertTrue(q.profile.isVisible())
+        prof = q.profile.rows()
+        self.assertEqual([r[0] for r in prof], ["200 hPa", "300 hPa", "F300", "500 hPa", "700 hPa", "850 hPa"])
+        self.assertTrue(prof[2][4])
+        self.assertEqual(prof[1][1], round(math.hypot(300, 300) * 1.943844))
+        self.assertNotIn("ARCHIVO", pop.text())
         # Los campos son editables ahí mismo: cualquier FL y cualquier hora
         self.assertFalse(q.ed_time.isReadOnly())
         q.sp_fl.setValue(310)
@@ -238,6 +316,7 @@ class TestDialogo(unittest.TestCase):
         self.app.processEvents()
         self.assertIn("hora inválida", q.lbl_step.text())
         self.assertEqual(q.rows()[1][2], "—")
+        self.assertFalse(q.profile.isVisible())                  # sin dato no hay perfil
         q.ed_time.setText("2610131900")
         self.app.processEvents()
         # Origen de celda (convención del FDP): esquina suroeste de la celda
@@ -256,6 +335,8 @@ class TestDialogo(unittest.TestCase):
         self.assertTrue(txt.startswith("Geodésico (grados y minutos): 0500N05200W\n"
                                        "Hora de sobrevuelo (YYMMDDHHMM): 2610131900\n"
                                        "Nivel de sobrevuelo (banda, sin F): 310\n"))
+        self.assertIn("Perfil de la celda (de arriba hacia abajo):\n  200 hPa  ", txt)
+        self.assertTrue(txt.rstrip().endswith("°C"))
         # Escape la cierra (el único Escape de la ventana)
         w._on_escape()
         self.assertFalse(pop.isVisible())
@@ -264,6 +345,13 @@ class TestDialogo(unittest.TestCase):
         self.assertTrue(pop.isVisible())
         self.assertEqual(q.ed_geo.text(), "0500S03600W")
         self.assertEqual((q.fl(), q.ed_time.text()), (300, "2610131800"))
+        # En modo presión la consulta es la misma, con el FL de ese nivel
+        w.panel.level_mode, w.panel.sel_p = "p", 500.0
+        w._on_escape()
+        self._click(-36.0, -5.0)
+        self.assertTrue(q.isVisible())
+        self.assertEqual(q.fl(), 180)                            # F180 = 500 hPa ISA
+        self.assertIn("F180", [r[0] for r in q.profile.rows()])
 
     def test_clic_afuera_solo_cierra_y_cmd_i_reabre(self):
         from PyQt6.QtCore import QEvent, QPointF, Qt

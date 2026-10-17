@@ -33,7 +33,7 @@ app/
   areas.py                  áreas de descarga por FIR: tabla, coordenadas, envolvente + margen, redondeo hacia afuera, exportar/importar
   point_query.py            consulta de punto (ficha del clic): geodésico DDMM, hora YYMMDDHHMM, texto del informe
   config.py, theme.py, platform_blur.py, crash_guard.py, utils.py
-  widgets/                  control_panel, inventory_panel, welcome_widget, areas_editor (tabla de áreas, CoordEdit), point_query_widget y map_info_popup (ficha del punto)
+  widgets/                  control_panel, inventory_panel, welcome_widget, areas_editor (tabla de áreas, CoordEdit), point_query_widget, wind_profile_widget y map_info_popup (ficha del punto)
   dialogs/                  glass_dialog, settings_dialog, shortcuts_dialog, about_dialog, export_wafs_dialog, fir_dialog, aip_convert_dialog, areas_dialog, fl_table_dialog
 resources/fir/              copia filtrada de Boundaries.geojson (VATSpy, CC BY-SA 4.0)
 docs/FUENTES_FIR.md         fuentes de los límites de FIR y sus licencias
@@ -448,33 +448,41 @@ dirección (°) y temperatura (°C).
 **Consulta de punto (ficha del clic).** Un clic sin arrastrar sobre el
 mapa (o Vista ▸ Consultar punto…, ⌘ I, que la abre en el último punto o
 en el centro de la vista) muestra junto al mouse una ficha, hija del mapa,
-con tres secciones. *PUNTO* es la consulta al estilo del FDP, editable ahí
+con dos secciones. *PUNTO* es la consulta al estilo del FDP, editable ahí
 mismo: el punto en grados y minutos (`3125S06411W`; se consulta en cuanto
 está completo), la **hora de sobrevuelo** `YYMMDDHHMM` en UTC (arranca con
 la validez del paso que muestra el panel; cualquier otra elige el paso
 cuya ventana de validez la contiene, o el de validez más cercana si cae
 fuera de todas, y lo dice) y el **nivel de sobrevuelo** (banda, sin F:
-cualquier FL, arranca con el del panel). Debajo, en letra monoespaciada
-alineada, van para ese paso y en ese punto la **capa superior** y la
-**capa inferior** del archivo que encierran al FL (etiqueta, FL y presión
-ISA real de cada una) y el **valor en el FL**: viento en kt y grados (y
-`°M` si el mapa tiene norte magnético), y temperatura en °C. El valor del
-FL es el de la capa cuando el FL es un nivel exacto del archivo; si no, la
-interpolación lineal en ln(p) entre ambas capas usando la presión real de
-cada una (en un archivo etiquetado por FL, la ISA del FL, no la etiqueta
-nominal: igual que el mapa); fuera del rango del archivo no se extrapola,
-se da el valor de la capa más cercana y se avisa. El dato es el del
+cualquier FL, arranca con el del panel o, en modo presión, con el FL del
+nivel elegido). Debajo va el **perfil vertical de la celda** para ese
+paso: una fila por nivel del archivo, de arriba hacia abajo, con la
+etiqueta del nivel (`F300`, o `300 hPa` en un archivo crudo), una barra
+pintada con el color de la escala de velocidad del mapa cuyo largo es la
+velocidad, la barba del viento sobre una brújula con el norte arriba
+(barbas del lado del hemisferio, como en el mapa) y los números: kt,
+dirección en grados (y `°M` si el mapa tiene norte magnético) y
+temperatura en °C. La fila del **FL pedido** se intercala y se resalta;
+su valor es el de la capa cuando el FL es un nivel exacto del archivo y,
+si no, la interpolación lineal en ln(p) entre la capa de abajo y la de
+arriba usando la presión real de cada una (en un archivo etiquetado por
+FL, la ISA del FL, no la etiqueta nominal: igual que el mapa); fuera del
+rango del archivo no se extrapola, se da el valor de la capa más cercana
+y se avisa debajo del perfil. Con muchos niveles (un GFS crudo, OACI56)
+las filas se achican y los números se escriben cada tantas filas, siempre
+el del FL pedido; la columna de colores queda entera. El dato es el del
 **origen de la celda** de la grilla que contiene al punto (su esquina
 suroeste), que es la convención del FDP; la ficha lo muestra en grados y
 minutos y en decimales (la barra de estado, en cambio, usa el nodo más
-cercano). *ARCHIVO* repite los renglones de STATUS y *FIR* da los
-extremos, la cobertura y la fuente de la FIR bajo el cursor. `Copiar`
-deja en el portapapeles el bloque de texto completo (geodésico, hora,
-nivel, paso, origen de celda y las tres capas). La ficha se queda con sus
-propios clics (no mueven el mapa); Escape o un clic afuera la cierran, y
-ese clic no abre otra. Cada clic nuevo la abre en el punto nuevo con el
-paso y el FL del panel. Con un archivo de superficie o en niveles de
-presión, PUNTO muestra el nodo más cercano con su viento y temperatura.
+cercano). *FIR* da los extremos, la cobertura y la fuente de la FIR bajo
+el cursor; lo del archivo (fuente, corrida, validez) sigue en STATUS.
+`Copiar` deja en el portapapeles el bloque de texto completo (geodésico,
+hora, nivel, paso, origen de celda, las capas inferior y superior con el
+valor en el FL, y el perfil entero). La ficha se queda con sus propios
+clics (no mueven el mapa); Escape o un clic afuera la cierran, y ese clic
+no abre otra. Cada clic nuevo la abre en el punto nuevo con el paso y el
+FL del panel. Con un archivo de superficie, PUNTO muestra el nodo más
+cercano con su viento y temperatura.
 
 En cualquier proyección las barbas y flechas se rotan a la orientación
 local del mapa (las curvas se calculan sobre una grilla regular de la
@@ -666,7 +674,7 @@ licencias en `docs/FUENTES_FIR.md`.
 | Acercar / alejar alrededor del cursor | Rueda | Rueda |
 | Acercar / alejar fino alrededor del cursor | ⌘ o ⇧ + rueda | Ctrl o Shift + rueda |
 | Acercar / alejar un paso fino (botones + y −) | ⌘⌥= / ⌘⌥− | Ctrl Alt = / Ctrl Alt − |
-| Ficha del punto (consulta editable, archivo y FIR) | Clic sin arrastrar en el mapa | Clic sin arrastrar en el mapa |
+| Ficha del punto (consulta editable con el perfil de la celda, y FIR) | Clic sin arrastrar en el mapa | Clic sin arrastrar en el mapa |
 | Atajos de teclado | ⌘ / | Ctrl / |
 
 **Pantalla completa.** Vista ▸ Pantalla completa (⌃⌘F en macOS, F11 en

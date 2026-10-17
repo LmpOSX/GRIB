@@ -127,9 +127,11 @@ def temp_text(layer):
 
 
 def report_text(lat, lon, when_text, fl, step, step_idx, in_window, res, variation=0.0,
-                cell="nearest"):
+                cell="nearest", column=None):
     """Bloque de texto (para copiar) con la consulta y sus resultados, al
-    estilo del FDP. `res` es lo que devuelve GribReader.point_query."""
+    estilo del FDP. `res` es lo que devuelve GribReader.point_query;
+    `column`, si se da, es la columna completa de la celda (column_query)
+    y va al final como perfil, de arriba hacia abajo."""
     lines = [f"Geodésico (grados y minutos): {geodesic_ddmm(lat, lon)}",
              f"Hora de sobrevuelo (YYMMDDHHMM): {when_text}",
              f"Nivel de sobrevuelo (banda, sin F): {int(fl)}"]
@@ -159,4 +161,9 @@ def report_text(lat, lon, when_text, fl, step, step_idx, in_window, res, variati
         lines.append(f"{name} {layer_name(layer)}{extra}")
         lines.append(f"  Viento (kt / grados): {wind_text(layer, variation)}")
         lines.append(f"  Temperatura (°C): {temp_text(layer)}")
+    if column:
+        lines.append("Perfil de la celda (de arriba hacia abajo):")
+        w = max(len(layer_name(l)) for l in column)
+        for layer in sorted(column, key=lambda l: l["p"]):
+            lines.append(f"  {layer_name(layer):<{w}}  {wind_text(layer, variation)}  {temp_text(layer)}")
     return "\n".join(lines)

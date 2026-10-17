@@ -565,6 +565,27 @@ class GribReader:
                 break
         return res
 
+    def column_query(self, step_idx, lat, lon, cell="nearest"):
+        """Perfil vertical del punto: todos los niveles del archivo en la
+        celda (de más presión a menos, es decir de abajo hacia arriba), cada
+        uno como en point_query ('p' real, 'label', 'fl', 'spd', 'dir', 't').
+        None si el punto está fuera de la grilla; [] sin niveles."""
+        idx = self.grid_index(lat, lon, cell)
+        if idx is None:
+            return None
+        j, i = idx
+        present = [v for v in ("u", "v", "t") if self.levels_for(step_idx, v)]
+        if not present:
+            return []
+        common = None
+        for var in present:
+            lv = set(self.levels_for(step_idx, var))
+            common = lv if common is None else (common & lv)
+        if not common:
+            common = set(self.levels_for(step_idx, present[0]))
+        prof = sorted(((self.true_pressure(lv), lv) for lv in common), reverse=True)
+        return [self._layer_at(step_idx, p, lv, j, i) for p, lv in prof]
+
     # ---------------------------------------------------------- inventario
     def run_time(self):
         """datetime UTC de la corrida (del primer paso disponible)."""
