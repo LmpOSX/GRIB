@@ -35,10 +35,17 @@ KELVIN = 273.15              # K -> °C
 # Niveles de vuelo de la botonera: los 17 OACI del Anexo 3 (fl_table.OACI17)
 FLIGHT_LEVELS = list(flt.OACI17)
 
-# Escala de colores fija de velocidad (kt)
-SPEED_BINS = [0, 10, 20, 30, 40, 50]
-SPEED_COLORS = ["#00e5ff", "#3b7bff", "#2ecc40", "#ffe600", "#ff8c00", "#ff2a2a"]
-SPEED_LABELS = ["0–9 kt", "10–19 kt", "20–29 kt", "30–39 kt", "40–49 kt", "≥50 kt"]
+# Escala de colores continua de velocidad (kt): el color de una velocidad
+# es la interpolación lineal (RGB) entre los dos anclajes que la encierran;
+# por encima del último anclaje queda el último color. La usan las barbas,
+# flechas y curvas, el fondo de velocidad, la leyenda del mapa y el perfil
+# de la ficha del clic (speed_color), así que todos pintan igual.
+# Anclajes con sentido operativo: 0 calma, 30 moderado, 60 umbral de jet
+# (OMM), 90 jet definido, 120 jet fuerte, 150 muy fuerte, 200+ extremo.
+SPEED_STOPS = [0, 30, 60, 90, 120, 150, 200]
+SPEED_COLORS = ["#27348f", "#33a1d6", "#43b04a", "#f2dc3b", "#f0831e", "#d2261f", "#6e0a2e"]
+SPEED_TICKS = list(SPEED_STOPS)             # marcas de la leyenda (la última, «200+»)
+_SPEED_RGB = np.array([[int(c[i:i + 2], 16) for i in (1, 3, 5)] for c in SPEED_COLORS], dtype=float)
 
 
 # ---------------------------------------------------------------------------
@@ -74,12 +81,12 @@ def speed_dir_from_uv(u, v):
 
 
 def speed_color(spd_kt):
-    """Color de la escala fija para una velocidad en kt."""
+    """Color (hex) de la escala continua para una velocidad en kt; gris sin dato."""
     if spd_kt is None or (isinstance(spd_kt, float) and math.isnan(spd_kt)):
         return "#888888"
-    idx = int(np.searchsorted(SPEED_BINS, spd_kt, side="right")) - 1
-    idx = max(0, min(idx, len(SPEED_COLORS) - 1))
-    return SPEED_COLORS[idx]
+    s = min(max(float(spd_kt), 0.0), float(SPEED_STOPS[-1]))
+    rgb = (int(round(float(np.interp(s, SPEED_STOPS, _SPEED_RGB[:, k])))) for k in range(3))
+    return "#%02x%02x%02x" % tuple(rgb)
 
 
 def fmt_dt(d, with_date=True):

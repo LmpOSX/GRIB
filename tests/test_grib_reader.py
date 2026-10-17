@@ -54,10 +54,23 @@ class TestVientoYColores(unittest.TestCase):
         self.assertAlmostEqual(float(direc), (270.0 - math.degrees(math.atan2(4, 3))) % 360)
 
     def test_escala_colores(self):
-        esperado = {0: 0, 9.9: 0, 10: 1, 19.9: 1, 20: 2, 29.9: 2, 30: 3,
-                    39.9: 3, 40: 4, 49.9: 4, 50: 5, 120: 5}
-        for kt, idx in esperado.items():
-            self.assertEqual(speed_color(kt), gr.SPEED_COLORS[idx], msg=f"{kt} kt")
+        # Continua: en los anclajes, su color; entre dos, la mezcla; arriba del
+        # último, el último; sin dato, gris
+        for kt, color in zip(gr.SPEED_STOPS, gr.SPEED_COLORS):
+            self.assertEqual(speed_color(kt), color, msg=f"{kt} kt")
+        self.assertEqual(speed_color(260), gr.SPEED_COLORS[-1])
+        self.assertEqual(speed_color(-3), gr.SPEED_COLORS[0])
+
+        def mezcla(a, b):
+            return "#" + "".join("%02x" % int(round((int(a[i:i + 2], 16) + int(b[i:i + 2], 16)) / 2.0))
+                                 for i in (1, 3, 5))
+        self.assertEqual(speed_color(15), mezcla(gr.SPEED_COLORS[0], gr.SPEED_COLORS[1]))     # azul oscuro / celeste
+        self.assertEqual(speed_color(105), mezcla(gr.SPEED_COLORS[3], gr.SPEED_COLORS[4]))    # amarillo / naranja
+        # Dos velocidades que se escriben «40 kt» tienen casi el mismo color
+        # (la pendiente mayor de la escala es ~10 por kt en un canal)
+        a, b = speed_color(39.6), speed_color(40.3)
+        for i in (1, 3, 5):
+            self.assertLessEqual(abs(int(a[i:i + 2], 16) - int(b[i:i + 2], 16)), 8)
         self.assertEqual(speed_color(float("nan")), "#888888")
         self.assertEqual(speed_color(None), "#888888")
 

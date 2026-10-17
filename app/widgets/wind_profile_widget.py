@@ -5,8 +5,8 @@ clic: una fila por nivel del archivo, de arriba hacia abajo, con
 * la etiqueta del nivel (F300 en un archivo etiquetado por FL, 300 hPa en
   uno crudo),
 * una barra pintada con el color de la escala de velocidad del mapa
-  (grib_reader.speed_color, la excepción conocida al tema) cuyo largo es
-  la velocidad,
+  (grib_reader.speed_color, continua; la excepción conocida al tema) cuyo
+  largo es la velocidad,
 * la barba sobre una brújula con el norte arriba (barbas del lado del
   hemisferio, como en el mapa) y
 * los números: kt, dirección (° y °M si hay variación) y temperatura.
@@ -27,12 +27,12 @@ from PyQt6.QtCore import Qt, QSize, QRectF, QPointF
 from PyQt6.QtGui import QPainter, QPen, QColor, QPolygonF, QPalette, QFont
 from PyQt6.QtWidgets import QWidget
 
-from ..grib_reader import speed_color, KELVIN
+from ..grib_reader import speed_color, KELVIN, SPEED_STOPS
 
 ROW_MAX = 28        # alto máximo de una fila (px)
 ROW_MIN = 8         # alto mínimo (perfil denso)
-BAR_W = 64          # largo de la barra a la velocidad máxima de la escala
-BAR_MAX_KT = 150.0  # velocidad que llena la barra
+BAR_W = 64          # largo de la barra al tope de la escala
+BAR_MAX_KT = float(SPEED_STOPS[-1])   # velocidad que llena la barra (tope de la escala)
 GAP = 10
 
 

@@ -10,6 +10,14 @@
   interpolado y resaltado. Con muchos niveles las filas se achican para
   entrar en el mapa. La consulta funciona también en modo presión (arranca
   con el FL del nivel elegido) y `Copiar` agrega el perfil entero.
+- Escala de colores del viento continua: el color se interpola entre los
+  anclajes con sentido operativo (0 azul oscuro, 30 celeste, 60 verde
+  —umbral de jet—, 90 amarillo, 120 naranja, 150 rojo, 200+ granate) en
+  vez de saltar cada 10 kt, en barbas, flechas, curvas, fondo de velocidad
+  y el perfil de la ficha. La leyenda del mapa pasa a ser una franja
+  vertical con el gradiente y marcas en los anclajes, sin cuadros por tramo.
+- Las flechas (vectores) pasan a ser un asta de cuatro píxeles con punta
+  triangular, en vez de las cuñas gordas que tapaban la dirección.
 
 ## 0.3.3 — 2026-10-16
 

@@ -30,9 +30,9 @@ import matplotlib
 matplotlib.use("QtAgg")
 import matplotlib.ticker as mticker  # noqa: E402
 from matplotlib.backends.backend_qtagg import FigureCanvasQTAgg  # noqa: E402
-from matplotlib.colors import BoundaryNorm, ListedColormap  # noqa: E402
+from matplotlib.colors import LinearSegmentedColormap, Normalize  # noqa: E402
+from matplotlib.patches import Rectangle  # noqa: E402
 from matplotlib.figure import Figure  # noqa: E402
-from matplotlib.lines import Line2D  # noqa: E402
 from matplotlib.transforms import Bbox, Affine2D  # noqa: E402
 from matplotlib.collections import PathCollection, LineCollection  # noqa: E402
 from matplotlib.textpath import TextPath  # noqa: E402
@@ -45,7 +45,7 @@ from PyQt6.QtCore import QPoint, Qt, QTimer  # noqa: E402
 from PyQt6.QtGui import QImage, QPainter  # noqa: E402
 
 from .grib_reader import (  # noqa: E402
-    KELVIN, MS_TO_KT, SPEED_BINS, SPEED_COLORS, SPEED_LABELS,
+    KELVIN, MS_TO_KT, SPEED_STOPS, SPEED_COLORS, SPEED_TICKS,
     speed_color, speed_dir_from_uv)
 from .fir import densify  # noqa: E402
 
@@ -73,9 +73,12 @@ except Exception:  # pragma: no cover - depende del entorno
     cfeature = None
     HAVE_CARTOPY = False
 
-# Escala de colores de las barbas como mapa de colores de matplotlib
-SPEED_CMAP = ListedColormap(SPEED_COLORS)
-SPEED_NORM = BoundaryNorm(SPEED_BINS + [10000], ncolors=len(SPEED_COLORS))
+# Escala continua de velocidad como mapa de colores de matplotlib (los
+# mismos anclajes que speed_color; por encima del último, su color)
+SPEED_MAX_KT = float(SPEED_STOPS[-1])
+SPEED_CMAP = LinearSegmentedColormap.from_list(
+    "viento", [(s / SPEED_MAX_KT, c) for s, c in zip(SPEED_STOPS, SPEED_COLORS)])
+SPEED_NORM = Normalize(0.0, SPEED_MAX_KT, clip=True)
 
 # Paleta por defecto del mapa (fondo oscuro estilo pantalla ATC). La ventana
 # la reemplaza con los colores del tema vía WindPlot.set_palette(). Los
@@ -242,6 +245,9 @@ class TranslucentCanvas(FigureCanvasQTAgg):
 MAX_BARBS = 2500        # barbas / flechas visibles como máximo (se ralea automáticamente)
 WIND_STYLES = [("barbas", "Barbas"), ("flechas", "Flechas (vectores)"), ("curvas", "Curvas (líneas de corriente)")]
 ARROW_LEN_IN = 0.24         # largo fijo de las flechas (pulgadas, a escala de fuente 1)
+ARROW_SHAFT_PX = 4.4        # grosor del asta de las flechas (px, a escala de fuente 1)
+ARROW_HEAD_W = 4.0          # ancho de la punta, en astas
+ARROW_HEAD_L = 5.0          # largo de la punta, en astas
 BARB_LENGTH_PT = 5.5        # largo nominal de las barbas (puntos de matplotlib)
 BARB_PX_PER_PT = 3.1        # px que ocupa el asta por punto de `length` (a 72 dpi)
 GLYPH_MIN_FACTOR = 0.5      # al alejar, barbas y flechas se achican hasta la mitad y recién ahí se ralean
@@ -1018,15 +1024,57 @@ class WindPlot:
         self._gridlines(dlon, dlat, fine, step)
         self._base_key = key
 
+    def _fill_cmap(self, alpha=0.30):
+        """La escala continua mezclada con el fondo de los ejes (opaca), para
+        el fondo de velocidad: equivale a dibujarla con ese alpha, sin las
+        costuras que deja la transparencia en la malla sombreada."""
+        bg = np.array(matplotlib.colors.to_rgb(self.pal["ax_bg"]))
+        stops = []
+        for s, c in zip(SPEED_STOPS, SPEED_COLORS):
+            rgb = alpha * np.array(matplotlib.colors.to_rgb(c)) + (1.0 - alpha) * bg
+            stops.append((s / SPEED_MAX_KT, tuple(rgb)))
+        return LinearSegmentedColormap.from_list("viento_fondo", stops)
+
     def _legend(self):
-        handles = [Line2D([0], [0], color=c, lw=3) for c in SPEED_COLORS]
-        leg = self.ax.legend(handles, SPEED_LABELS, loc="lower left", fontsize=self._fs(7),
-                             title="Viento (kt)", title_fontsize=self._fs(8),
-                             facecolor=self.pal["legend_bg"], edgecolor=self.pal["text_dim"],
-                             labelcolor=self.pal["text"], framealpha=0.85)
-        leg.get_title().set_color(self.pal["text"])
-        leg.set_zorder(20)
-        return leg
+        """Leyenda de la escala continua, abajo a la izquierda: una franja
+        vertical con el gradiente y marcas en los anclajes (la última, «200+»),
+        sobre un recuadro con el fondo del tema. Devuelve los artistas (recuadro y
+        ejes de la franja) para quitarlos en el redibujo."""
+        ax = self.ax
+        # Tamaño en puntos (como la letra: así en pantallas retina, donde la
+        # figura dibuja a más DPI, los márgenes crecen con los números), a
+        # escala de fuente: franja de 22 × 108 pt (30 × 144 px a 96 dpi) con
+        # 6 pt de margen a los costados y 7.5 arriba y abajo dentro del
+        # recuadro (arriba, además, el título)
+        fs = max(0.8, self.font_scale) * float(self.fig.dpi) / 72.0     # px por pt
+        w_px, h_px = ax.bbox.width, ax.bbox.height
+        bar_w, bar_h = 22.0 * fs / w_px, 108.0 * fs / h_px
+        mx, my, title_h, labels_w = 6.0 * fs, 7.5 * fs, 13.0 * fs, 30.0 * fs
+        x0, y0 = 6.0 * fs / w_px, 6.0 * fs / h_px
+        box = Rectangle((x0, y0), (2 * mx + labels_w) / w_px + bar_w,
+                        (2 * my + title_h) / h_px + bar_h, transform=ax.transAxes,
+                        facecolor=self.pal["legend_bg"], edgecolor=self.pal["text_dim"],
+                        alpha=0.85, zorder=19)
+        ax.add_patch(box)
+        cax = ax.inset_axes([x0 + mx / w_px, y0 + my / h_px, bar_w, bar_h], zorder=20)
+        grad = np.linspace(0.0, SPEED_MAX_KT, 256)[:, None]
+        cax.imshow(grad, aspect="auto", cmap=SPEED_CMAP, norm=SPEED_NORM, origin="lower",
+                   extent=[0.0, 1.0, 0.0, SPEED_MAX_KT], interpolation="bilinear")
+        cax.set_ylim(0.0, SPEED_MAX_KT)
+        cax.set_xticks([])
+        cax.yaxis.tick_right()
+        cax.set_yticks(SPEED_TICKS)
+        cax.set_yticklabels([f"{t:g}" if t < SPEED_MAX_KT else f"{t:g}+" for t in SPEED_TICKS])
+        cax.set_yticks(SPEED_STOPS, minor=True)
+        cax.tick_params(axis="y", which="both", colors=self.pal["text"], labelsize=self._fs(8),
+                        length=3, pad=1.5)
+        cax.tick_params(axis="y", which="minor", length=1.5, colors=self.pal["text_dim"])
+        for sp in cax.spines.values():
+            sp.set_edgecolor(self.pal["text_dim"])
+            sp.set_linewidth(0.6)
+        cax.set_title("kt", color=self.pal["text"], fontsize=self._fs(9), pad=3, loc="left")
+        cax.patch.set_alpha(0.0)
+        return [box, cax]
 
     # -------------------------------------------------------------- draw
     def draw(self, lats, lons, u, v, t, opts):
@@ -1098,10 +1146,17 @@ class WindPlot:
             X, Y = np.meshgrid(lons, lats)
 
             if draw_wind and opts.get("fill", False):
-                top = max(float(np.nanmax(spd)) + 1.0, SPEED_BINS[-1] + 10.0)
-                self._static_artists.append(ax.contourf(
-                    X, Y, spd, levels=SPEED_BINS + [top], colors=SPEED_COLORS,
-                    alpha=0.30, zorder=1, **tr))
+                # Relleno con la escala continua: malla sombreada (Gouraud, sin
+                # bandas). Los colores van ya mezclados con el fondo (opacos):
+                # con alpha, Agg deja costuras en cada triángulo de la malla.
+                # Si la proyección no admite Gouraud, celdas planas
+                spd_f = np.ma.masked_invalid(spd)
+                kw = dict(cmap=self._fill_cmap(), norm=SPEED_NORM, zorder=1, **tr)
+                try:
+                    fill = ax.pcolormesh(X, Y, spd_f, shading="gouraud", **kw)
+                except Exception:
+                    fill = ax.pcolormesh(X, Y, spd_f, shading="auto", **kw)
+                self._static_artists.append(fill)
 
             if draw_temp:
                 tc = np.ma.masked_invalid(t - KELVIN)
@@ -1121,7 +1176,7 @@ class WindPlot:
                             pass
 
             if draw_wind:
-                self._static_artists.append(self._legend())
+                self._static_artists.extend(self._legend())
             # El título va sólo en el PNG exportado: en pantalla lo da STATUS
             self._title = opts.get("title", "")
             ax.set_title("")
@@ -1369,11 +1424,14 @@ class WindPlot:
                 ve = vk / mag
             if ue.count() == 0:
                 return
+            # Flechas: asta de ~4 px (en píxeles, no relativa al ancho del mapa)
+            # con punta triangular, para que se lea la dirección
+            shaft = ARROW_SHAFT_PX * scale * max(0.55, factor)
             self._view_artists.append(ax.quiver(
                 X, Y, ue, ve, spd, cmap=SPEED_CMAP, norm=SPEED_NORM,
                 pivot="middle", scale_units="inches", scale=1.0 / (ARROW_LEN_IN * scale),
-                width=0.003 * max(0.55, factor), headwidth=3.5, headlength=4.5,
-                headaxislength=4.0, minlength=0.0, zorder=5, clip_on=True, **tr))
+                units="dots", width=shaft, headwidth=ARROW_HEAD_W, headlength=ARROW_HEAD_L,
+                headaxislength=ARROW_HEAD_L - 0.5, minlength=0.0, zorder=5, clip_on=True, **tr))
             return
         uk, vk, spd = d["uk"][sj, si], d["vk"][sj, si], d["spd"][sj, si]
         self._view_artists.append(ax.barbs(

@@ -355,9 +355,9 @@ la pantalla) y recuerda tamaño y posición.
   exacta.
 * **VARIABLE**: Viento, Temperatura (contornos cada 2 °C) o ambas.
 * **VIENTO**: `Estilo` elige la representación: **Barbas** (convención
-  meteorológica, en kt), **Flechas** (de largo fijo, apuntan hacia donde
-  sopla el viento; la velocidad va sólo en el color y donde hay calma no
-  hay flecha) o **Curvas** (líneas de corriente del campo con una flecha
+  meteorológica, en kt), **Flechas** (de largo fijo, con asta y punta
+  triangular; apuntan hacia donde sopla el viento, la velocidad va sólo en el
+  color y donde hay calma no hay flecha) o **Curvas** (líneas de corriente del campo con una flecha
   de sentido cada pocos centímetros); las tres usan la misma escala de
   colores por velocidad. `Densidad` dibuja un punto cada N (en curvas baja
   la densidad de líneas). Capas adicionales: `Extra Info` escribe la
@@ -458,8 +458,8 @@ cualquier FL, arranca con el del panel o, en modo presión, con el FL del
 nivel elegido). Debajo va el **perfil vertical de la celda** para ese
 paso: una fila por nivel del archivo, de arriba hacia abajo, con la
 etiqueta del nivel (`F300`, o `300 hPa` en un archivo crudo), una barra
-pintada con el color de la escala de velocidad del mapa cuyo largo es la
-velocidad, la barba del viento sobre una brújula con el norte arriba
+pintada con el color de la escala continua de velocidad del mapa cuyo largo
+es la velocidad (llena a 200 kt), la barba del viento sobre una brújula con el norte arriba
 (barbas del lado del hemisferio, como en el mapa) y los números: kt,
 dirección en grados (y `°M` si el mapa tiene norte magnético) y
 temperatura en °C. La fila del **FL pedido** se intercala y se resalta;
@@ -491,8 +491,11 @@ rotando los vectores), los meridianos y paralelos cada 10° llevan etiquetas en 
 la grilla del archivo (opcional) se dibuja punteada. La barra de estado
 convierte la posición del cursor a lat/lon.
 
-Escala de colores del viento (barbas, flechas y curvas): 0–9 kt cian, 10–19 azul, 20–29 verde,
-30–39 amarillo, 40–49 naranja, ≥50 rojo. Conversiones: 1 m/s = 1.943844 kt;
+Escala de colores del viento (barbas, flechas, curvas, fondo de velocidad, leyenda y
+perfil de la ficha): continua, interpolando entre los anclajes 0 kt azul oscuro (calma), 30 celeste, 60 verde (umbral de
+jet), 90 amarillo, 120 naranja, 150 rojo y 200 granate (por encima, granate); así dos velocidades casi iguales
+tienen casi el mismo color. La leyenda del mapa es una franja vertical con el
+gradiente y marcas en los anclajes (la última, «200+»). Conversiones: 1 m/s = 1.943844 kt;
 dirección meteorológica = (270 − atan2(v, u)) mod 360; T(°C) = T(K) −
 273.15. Las longitudes 0–360 se normalizan a −180…180 y las latitudes se
 reordenan de sur a norte si el archivo viene de norte a sur.
