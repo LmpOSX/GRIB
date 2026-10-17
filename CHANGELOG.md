@@ -1,6 +1,6 @@
 # Cambios
 
-## Sin publicar
+## 0.3.3 — 2026-10-16
 
 - Botón «Preferencias WAFS…» al lado de la casilla «Convertir a WAFS» del
   diálogo de descarga: abre Preferencias limitadas a la pestaña WAFS (las
