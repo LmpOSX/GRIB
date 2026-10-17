@@ -19,9 +19,9 @@
   mapa, con el tema en vez del tooltip amarillo: PUNTO (la consulta
   editable ahí mismo: geodésico, hora UTC, FL y las tres capas alineadas
   en letra monoespaciada), ARCHIVO (lo de STATUS) y FIR (extremos y
-  cobertura), con «Copiar». La ficha se queda con sus propios clics (no
-  mueven el mapa), Escape o un clic afuera la cierran y ese clic no abre
-  otra. Desaparece la ventana «Consulta de punto» del clic derecho; Vista
+  cobertura), con «Copiar». Mientras está abierta el mapa no reconoce el
+  botón izquierdo: un clic sobre la ficha edita el campo (o no hace nada),
+  y Escape o un clic afuera la cierran sin abrir otra. Desaparece la ventana «Consulta de punto» del clic derecho; Vista
   ▸ Consultar punto… (⌘ I) abre la ficha en el último punto o en el
   centro de la vista.
 

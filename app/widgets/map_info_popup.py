@@ -11,7 +11,7 @@ Escape o con un clic fuera de ella; ese clic sólo la cierra, no abre otra.
 """
 from PyQt6.QtCore import Qt, QPoint, QEvent, QTimer
 from PyQt6.QtWidgets import (QFrame, QVBoxLayout, QHBoxLayout, QLabel, QPushButton,
-                             QApplication)
+                             QApplication, QWidget)
 
 from .point_query_widget import PointQueryWidget
 
@@ -141,8 +141,12 @@ class MapInfoPopup(QFrame):
     def eventFilter(self, obj, event):
         if self.isVisible():
             t = event.type()
-            if t == QEvent.Type.MouseButtonPress and not self._is_own(obj):
-                # Clic afuera: cierra; si fue sobre el mapa, ese clic no abre otra
+            if t == QEvent.Type.MouseButtonPress and isinstance(obj, QWidget) and not self._is_own(obj):
+                # Clic afuera: cierra; si fue sobre el mapa, ese clic no abre otra.
+                # Sólo el evento dirigido al widget: el mismo clic llega antes
+                # dirigido a la ventana nativa (QWindow), que no es «propia» ni
+                # ajena, y con él la ficha se cerraba aunque el clic fuera sobre
+                # un campo suyo
                 self._swallow_click = obj is self.parentWidget()
                 self.hide()
             elif t == QEvent.Type.MouseButtonRelease and self._swallow_click:

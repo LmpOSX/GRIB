@@ -281,6 +281,8 @@ class MainWindow(QMainWindow):
 
         # ── Capa de límites de FIR ──
         self.plot.on_click = self._on_map_click
+        self.plot.click_blocked = lambda: (self._info_popup is not None
+                                           and self._info_popup.isVisible())
         self._info_popup = None            # Ficha del clic izquierdo (punto, archivo, FIR)
         self._load_fir_layer(redraw=False)
         self._apply_area_layer(redraw=False)

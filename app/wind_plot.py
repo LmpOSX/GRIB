@@ -492,6 +492,7 @@ class WindPlot:
         self._wa_key = None
         self.on_click = None            # callable(event): clic sin arrastre sobre el mapa
         self.on_context = None          # callable(event): clic derecho sobre el mapa
+        self.click_blocked = None       # callable() -> True: ignorar el botón izquierdo (ficha abierta)
         self._press_xy = None
         self._in_draw = False
         self._interacting = False
@@ -735,6 +736,10 @@ class WindPlot:
             return
         if (event.button != 1 or event.inaxes is not self.ax or not self.has_data
                 or event.dblclick):
+            return
+        if self.click_blocked is not None and self.click_blocked():
+            # Con la ficha del punto abierta, el mapa no reconoce el botón
+            # izquierdo: ni arrastra ni informa el clic
             return
         if self.on_view_push is not None:
             try:

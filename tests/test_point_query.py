@@ -281,6 +281,27 @@ class TestDialogo(unittest.TestCase):
             QEvent.Type.MouseButtonPress, QPointF(5, 5), Qt.MouseButton.LeftButton,
             Qt.MouseButton.LeftButton, Qt.KeyboardModifier.NoModifier)))
         self.assertTrue(pop.isVisible())
+        # El mismo clic llega antes dirigido a la ventana nativa (QWindow): no
+        # cuenta como «afuera» (si no, un clic en un campo cerraba la ficha)
+        from PyQt6.QtCore import QObject
+        self.assertFalse(pop.eventFilter(QObject(), QMouseEvent(
+            QEvent.Type.MouseButtonPress, QPointF(5, 5), Qt.MouseButton.LeftButton,
+            Qt.MouseButton.LeftButton, Qt.KeyboardModifier.NoModifier)))
+        self.assertTrue(pop.isVisible())
+        # Un clic dirigido a un campo de la ficha tampoco la cierra
+        pop.eventFilter(pop.query.ed_geo, QMouseEvent(
+            QEvent.Type.MouseButtonPress, QPointF(5, 5), Qt.MouseButton.LeftButton,
+            Qt.MouseButton.LeftButton, Qt.KeyboardModifier.NoModifier))
+        self.assertTrue(pop.isVisible())
+        # Con la ficha abierta, el mapa no reconoce el botón izquierdo: ni
+        # arrastra ni abre otra ficha
+        from matplotlib.backend_bases import MouseEvent
+        x, y = w.plot.ax.transData.transform((-36.0, -5.0))
+        w.plot._on_press(MouseEvent("button_press_event", w.plot.canvas, x, y, button=1))
+        self.assertFalse(w.plot._panning)
+        w.plot._on_release(MouseEvent("button_release_event", w.plot.canvas, x, y, button=1))
+        self.assertTrue(pop.isVisible())
+        self.assertEqual(pop.query.ed_geo.text(), "0000N04200W")
         # Un clic sobre el mapa, fuera de la ficha: el filtro la cierra en el
         # press y el clic que se informa después no abre otra
         canvas = w.plot.canvas
