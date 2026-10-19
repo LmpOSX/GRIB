@@ -1,6 +1,6 @@
 # Cambios
 
-## Sin publicar
+## 0.3.4 — 2026-10-19
 
 - La ficha del clic muestra el perfil vertical de la celda en lugar de la
   tabla de tres capas y de la sección ARCHIVO: una fila por nivel del
