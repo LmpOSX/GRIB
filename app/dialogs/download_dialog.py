@@ -21,7 +21,7 @@ para interpolar cada FL entre dos capas. Lo tildado a mano se suma; «Todos»
 y «Ninguno» salen del modo."""
 import os
 
-from PyQt6.QtCore import Qt, QThread, QObject, pyqtSignal
+from PyQt6.QtCore import Qt, QThread, QObject, QTimer, pyqtSignal
 from PyQt6.QtWidgets import (
     QVBoxLayout, QHBoxLayout, QGridLayout, QLabel, QPushButton, QFrame,
     QComboBox, QSpinBox, QDoubleSpinBox, QCheckBox, QLineEdit, QRadioButton,
@@ -771,7 +771,26 @@ class DownloadDialog(GlassDialog):
             self._set_fields(default_region)
         self._refresh_steps_hint()
         self._refresh_area()
-        self.adjustSize()
+        # Ahora y otra vez cuando los widgets nuevos ya estén pulidos (fuentes,
+        # métricas) y los viejos borrados: recién ahí el sizeHint es el real
+        self._refit()
+        QTimer.singleShot(0, self._refit)
+
+    def _refit(self):
+        """Tras cambiar de fuente el diálogo toma el alto de su contenido
+        nuevo, más chico o más grande, acotado a la pantalla. adjustSize()
+        no sirve: Qt limita las ventanas a dos tercios de la pantalla, y al
+        pasar de una fuente con pocas opciones (SMN) al GFS el diálogo no
+        crecía y las grillas se aplastaban."""
+        try:
+            lay = self.layout()
+        except RuntimeError:                 # el diálogo ya se borró
+            return
+        lay.invalidate()
+        lay.activate()
+        self.setMinimumSize(700, 0)          # que el mínimo anterior no lo deje grande
+        self._fit_to_contents()              # mínimo = contenido, acotado a la pantalla
+        self.resize(max(self.width(), self.minimumWidth()), self.minimumHeight())
 
     def params(self):
         return self.form.values() if self.form is not None else {}

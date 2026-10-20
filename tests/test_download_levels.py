@@ -158,6 +158,30 @@ class TestBotonesDeModo(unittest.TestCase):
         self.assertTrue(d.form.widget("niveles_intermedios").isChecked())
         self.assertEqual(len(self._on()), 32)
 
+    def test_cambiar_de_fuente_reajusta_el_alto(self):
+        from app.sources import get_source
+        if get_source("smn_wrf") is None:
+            self.skipTest("sin fuente SMN")
+        d = self._dialog(sources={"smn_wrf": {"enabled": True}, "gfs": {"enabled": True}}, source="smn_wrf")
+        if d.cb_source.findData("smn_wrf") < 0:
+            self.skipTest("SMN no habilitada")
+        d.cb_source.setCurrentIndex(d.cb_source.findData("smn_wrf"))
+        _app.processEvents()
+        h_smn = d.height()
+        d.cb_source.setCurrentIndex(d.cb_source.findData("gfs"))
+        _app.processEvents()
+        # El alto natural, acotado a la pantalla (en offscreen la pantalla es
+        # de 800 px y el tope de GlassDialog es pantalla − 40)
+        cap = d.screen().availableGeometry().height() - 40
+        want = min(d.sizeHint().height(), cap)
+        self.assertGreater(d.height(), h_smn + 100)
+        self.assertGreaterEqual(d.height(), want - 2)
+        if d.sizeHint().height() <= cap:                                       # no aplastado
+            self.assertEqual(d.level_grid_w.height(), d.level_grid_w.sizeHint().height())
+        d.cb_source.setCurrentIndex(d.cb_source.findData("smn_wrf"))
+        _app.processEvents()
+        self.assertLess(d.height(), h_smn + 60)                               # vuelve a achicarse
+
     def test_otras_fuentes(self):
         from app.sources import get_source
         d = self._dialog(wafs_convert=False)

@@ -40,6 +40,10 @@
   descarga, con el mensaje del plazo, la barra y «Cancelar»; no se quita con
   Escape ni con el botón de la ventana y se cierra solo al terminar. El
   diálogo de descarga ya no cambia de tamaño al descargar.
+- Al cambiar de fuente en el diálogo de descarga, el diálogo toma el alto
+  de su contenido nuevo (crece al pasar de SMN al GFS y se achica al revés).
+  Antes usaba `adjustSize()`, que Qt limita a dos tercios de la pantalla, y
+  al volver a una fuente con más opciones las grillas quedaban aplastadas.
 
 ## 0.3.4 — 2026-10-19
 
