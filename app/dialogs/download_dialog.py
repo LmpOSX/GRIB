@@ -21,11 +21,11 @@ para interpolar cada FL entre dos capas. Lo tildado a mano se suma; «Todos»
 y «Ninguno» salen del modo."""
 import os
 
-from PyQt6.QtCore import Qt, QThread, QObject, QSize, pyqtSignal
+from PyQt6.QtCore import Qt, QThread, QObject, pyqtSignal
 from PyQt6.QtWidgets import (
     QVBoxLayout, QHBoxLayout, QGridLayout, QLabel, QPushButton, QFrame,
     QComboBox, QSpinBox, QDoubleSpinBox, QCheckBox, QLineEdit, QRadioButton,
-    QButtonGroup, QProgressBar, QFileDialog, QMessageBox, QWidget, QScrollArea,
+    QButtonGroup, QProgressBar, QFileDialog, QMessageBox, QWidget,
 )
 
 from .glass_dialog import GlassDialog, add_shadow as _add_shadow
@@ -66,19 +66,6 @@ class _Worker(QThread):
             self.done.emit([], str(exc))
         except Exception as exc:          # pragma: no cover - imprevistos
             self.done.emit([], f"{type(exc).__name__}: {exc}")
-
-
-class _FitScrollArea(QScrollArea):
-    """Scroll que pide el tamaño de su contenido: el diálogo toma su alto
-    natural y, sólo si la pantalla es más baja, el cuerpo se desplaza en vez
-    de aplastar las grillas."""
-
-    def sizeHint(self):
-        w = self.widget()
-        if w is None:
-            return super().sizeHint()
-        h = w.sizeHint()
-        return QSize(h.width() + self.verticalScrollBar().sizeHint().width() + 2, h.height() + 2)
 
 
 class _Forms(QObject):
@@ -159,8 +146,8 @@ class DownloadDialog(GlassDialog):
         box.setObjectName("DownloadGroup")
         parent_lay.addWidget(box)
         lay = QVBoxLayout(box)
-        lay.setContentsMargins(12, 6, 12, 8)
-        lay.setSpacing(4)
+        lay.setContentsMargins(10, 4, 10, 6)
+        lay.setSpacing(3)
         lbl = QLabel(title)
         lbl.setObjectName("GroupTitle")
         lay.addWidget(lbl)
@@ -174,8 +161,8 @@ class DownloadDialog(GlassDialog):
         _add_shadow(panel)
         outer.addWidget(panel)
         plan = QVBoxLayout(panel)
-        plan.setContentsMargins(24, 20, 24, 20)
-        plan.setSpacing(8)
+        plan.setContentsMargins(24, 16, 24, 16)
+        plan.setSpacing(6)
         lay = plan
 
         # ── Fuente ──
@@ -183,7 +170,10 @@ class DownloadDialog(GlassDialog):
         title = QLabel("Obtener datos")
         title.setObjectName("Heading")
         row.addWidget(title)
-        row.addStretch()
+        row.addSpacing(16)
+        self.lbl_model = QLabel("")           # modelo y tipo de la fuente, en el mismo renglón
+        self.lbl_model.setObjectName("Hint")
+        row.addWidget(self.lbl_model, 1)
         row.addWidget(QLabel("Fuente"))
         self.cb_source = QComboBox()
         sources = enabled_sources(self._cfg) or all_sources()
@@ -192,61 +182,41 @@ class DownloadDialog(GlassDialog):
         self.cb_source.currentIndexChanged.connect(self._on_source_changed)
         row.addWidget(self.cb_source)
         lay.addLayout(row)
-        self.lbl_model = QLabel("")
-        self.lbl_model.setObjectName("Hint")
-        self.lbl_model.setWordWrap(True)
-        lay.addWidget(self.lbl_model)
-
-        # Cuerpo con scroll: los cuatro recuadros; si la pantalla es más baja
-        # que el diálogo, se desplaza en vez de aplastar las grillas
-        self._body = QWidget()
-        body = QVBoxLayout(self._body)
-        body.setContentsMargins(0, 0, 0, 0)
-        body.setSpacing(8)
-        self._scroll = _FitScrollArea()
-        self._scroll.setObjectName("DownloadScroll")
-        self._scroll.setWidgetResizable(True)
-        self._scroll.setFrameShape(QFrame.Shape.NoFrame)
-        self._scroll.setHorizontalScrollBarPolicy(Qt.ScrollBarPolicy.ScrollBarAlwaysOff)
-        self._scroll.viewport().setAutoFillBackground(False)
-        self._body.setAutoFillBackground(False)
-        self._scroll.setWidget(self._body)
-        plan.addWidget(self._scroll, 1)
 
         # ── Corrida y plazos ──
-        lay = self._group(body, "Corrida y plazos (los que ofrece la fuente)")
-        g = QGridLayout()
-        g.setHorizontalSpacing(8)
-        g.addWidget(QLabel("Corrida (UTC)"), 0, 0)
+        lay = self._group(plan, "Corrida y plazos (los que ofrece la fuente)")
+        row = QHBoxLayout()
+        row.addWidget(QLabel("Corrida (UTC)"))
         self.cb_run = QComboBox()
-        g.addWidget(self.cb_run, 0, 1, 1, 3)
+        row.addWidget(self.cb_run, 1)
         b = QPushButton("Última")
         b.clicked.connect(lambda: self.cb_run.setCurrentIndex(0))
-        g.addWidget(b, 0, 4)
-        g.addWidget(QLabel("Plazos: desde"), 1, 0)
+        row.addWidget(b)
+        row.addSpacing(16)
+        row.addWidget(QLabel("Plazos: desde"))
         self.h_from = QSpinBox()
-        g.addWidget(self.h_from, 1, 1)
-        g.addWidget(QLabel("hasta"), 1, 2)
+        self.h_from.setMaximumWidth(72)
+        row.addWidget(self.h_from)
+        row.addWidget(QLabel("hasta"))
         self.h_to = QSpinBox()
-        g.addWidget(self.h_to, 1, 3)
-        row = QHBoxLayout()
+        self.h_to.setMaximumWidth(72)
+        row.addWidget(self.h_to)
         row.addWidget(QLabel("cada"))
         self.h_step = QSpinBox()
         self.h_step.setRange(1, 24)
         self.h_step.setSuffix(" h")
+        self.h_step.setMaximumWidth(80)
         row.addWidget(self.h_step)
-        row.addStretch()
-        g.addLayout(row, 1, 4)
-        lay.addLayout(g)
-        self.lbl_steps = QLabel("")
+        row.addSpacing(12)
+        self.lbl_steps = QLabel("")           # los plazos resultantes, en el mismo renglón
         self.lbl_steps.setObjectName("Hint")
-        lay.addWidget(self.lbl_steps)
+        row.addWidget(self.lbl_steps, 1)
+        lay.addLayout(row)
         for w in (self.h_from, self.h_to, self.h_step):
             w.valueChanged.connect(lambda _v: self._refresh_steps_hint())
 
         # ── Variables y niveles ──
-        lay = self._group(body, "Variables y niveles")
-        self._section(lay, "Variables")
+        lay = self._group(plan, "Variables y niveles de presión (hPa)")
         self.var_box = QWidget()
         self.var_grid = QGridLayout(self.var_box)
         self.var_grid.setContentsMargins(0, 0, 0, 0)
@@ -258,7 +228,8 @@ class DownloadDialog(GlassDialog):
         self.form = None
 
         # ── Niveles ──
-        self.lbl_levels = self._section(lay, "Niveles de presión (hPa)")
+        self.lbl_levels = QLabel("Niveles")      # rótulo a la izquierda de la grilla
+        self.lbl_levels.setObjectName("SubHeading")
         self.levels_box = QWidget()
         lv_lay = QVBoxLayout(self.levels_box)
         lv_lay.setContentsMargins(0, 0, 0, 0)
@@ -269,7 +240,10 @@ class DownloadDialog(GlassDialog):
         self.level_grid.setHorizontalSpacing(6)
         self.level_grid.setVerticalSpacing(2)
         self.level_checks = {}
-        lv_lay.addWidget(self.level_grid_w)
+        row = QHBoxLayout()
+        row.addWidget(self.lbl_levels, 0, Qt.AlignmentFlag.AlignTop)
+        row.addWidget(self.level_grid_w, 1)
+        lv_lay.addLayout(row)
         self.mode_row_w = QWidget()
         row = QHBoxLayout(self.mode_row_w)
         row.setContentsMargins(0, 0, 0, 0)
@@ -317,16 +291,21 @@ class DownloadDialog(GlassDialog):
         # Reserva dos renglones: el texto cambia de largo según el modo y lo
         # de abajo no tiene que moverse
         self.lbl_levels_hint.setMinimumHeight(2 * self.lbl_levels_hint.fontMetrics().lineSpacing() + 4)
+        self.lbl_levels_hint.setAlignment(Qt.AlignmentFlag.AlignLeft | Qt.AlignmentFlag.AlignTop)
         lay.addWidget(self.lbl_levels_hint)
 
         # ── Grilla y resolución ──
-        lay = self._group(body, "Grilla y resolución")
-        self.lbl_zone = self._section(lay, "Área (grados; longitudes −180…180)")
+        lay = self._group(plan, "Grilla y resolución")
+        self.lbl_zone = QLabel("Área")
+        self.lbl_zone.setObjectName("SubHeading")
+        self.lbl_zone.setToolTip("Grados; longitudes −180…180")
         self.zone_box = QWidget()
         zl = QVBoxLayout(self.zone_box)
         zl.setContentsMargins(0, 0, 0, 0)
-        zl.setSpacing(4)
+        zl.setSpacing(3)
         row = QHBoxLayout()
+        row.addWidget(self.lbl_zone)
+        row.addSpacing(8)
         self.rb_manual = QRadioButton("Manual")
         self.rb_fir = QRadioButton("Por FIR")
         self._mode_group = QButtonGroup(self)
@@ -417,7 +396,7 @@ class DownloadDialog(GlassDialog):
         lay.addWidget(self.params_box)
 
         # ── Descarga y archivo ──
-        lay = self._group(body, "Descarga y archivo")
+        lay = self._group(plan, "Descarga y archivo")
         g = QGridLayout()
         g.setHorizontalSpacing(8)
         g.addWidget(QLabel("Carpeta"), 0, 0)
@@ -432,10 +411,14 @@ class DownloadDialog(GlassDialog):
         g.addWidget(self.name, 1, 1)
         self.chk_merge = QCheckBox("Unir los plazos en un solo archivo")
         self.chk_merge.setChecked(bool(self._cfg.get("download_merge", True)))
-        g.addWidget(self.chk_merge, 2, 1)
         self.chk_open = QCheckBox("Abrir en el visor al terminar")
         self.chk_open.setChecked(bool(self._cfg.get("download_open", True)))
-        g.addWidget(self.chk_open, 3, 1)
+        row = QHBoxLayout()
+        row.addWidget(self.chk_merge)
+        row.addSpacing(16)
+        row.addWidget(self.chk_open)
+        row.addStretch()
+        g.addLayout(row, 2, 1, 1, 2)
         lay.addLayout(g)
 
         # ── Progreso y botones ──
@@ -444,13 +427,12 @@ class DownloadDialog(GlassDialog):
         self.progress.setRange(0, 1000)
         self.progress.setValue(0)
         self.progress.setTextVisible(False)
+        self.progress.hide()                  # sólo mientras se descarga
         lay.addWidget(self.progress)
-        self.lbl_status = QLabel("Listo para descargar.")
-        self.lbl_status.setObjectName("SubHeading")
-        self.lbl_status.setWordWrap(True)
-        lay.addWidget(self.lbl_status)
         row = QHBoxLayout()
-        row.addStretch()
+        self.lbl_status = QLabel("")          # progreso, resultado o error, junto a los botones
+        self.lbl_status.setObjectName("SubHeading")
+        row.addWidget(self.lbl_status, 1)
         self.btn_cancel = QPushButton("Cerrar")
         self.btn_cancel.clicked.connect(self._on_cancel)
         self.btn_download = QPushButton("Descargar")
@@ -651,12 +633,16 @@ class DownloadDialog(GlassDialog):
         # Variables
         self._clear_layout(self.var_grid)
         self.var_checks = {}
+        lbl = QLabel("Variables")
+        lbl.setObjectName("SubHeading")
+        self.var_grid.addWidget(lbl, 0, 0)
         for k, (vk, name) in enumerate(src.variables):
             c = QCheckBox(name)
             c.setChecked(vk in src.default_variables)
             c.toggled.connect(lambda _on: self._refresh_area())
             self.var_checks[vk] = c
-            self.var_grid.addWidget(c, k // 5, k % 5)
+            self.var_grid.addWidget(c, k // 5, 1 + k % 5)
+        self.var_grid.setColumnStretch(6, 1)
         self.var_box.setVisible(bool(src.variables))
         # Parámetros propios: los de niveles van con los niveles; el resto, en
         # «Grilla y resolución»
@@ -902,6 +888,7 @@ class DownloadDialog(GlassDialog):
                 if isinstance(w, (QPushButton, QCheckBox, QSpinBox, QDoubleSpinBox,
                                   QComboBox, QLineEdit, QRadioButton)):
                     w.setEnabled(not busy)
+        self.progress.setVisible(busy)
         if not busy:
             self._refresh_levels()
             self._refresh_area()

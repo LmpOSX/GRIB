@@ -20,9 +20,12 @@
   botones de modo, «Incluir niveles intermedios», «Convertir a WAFS» y la
   línea descriptiva); Grilla y resolución (área y después las opciones de
   la fuente: resolución, regrillado, suavizado); Descarga y archivo. Los
-  parámetros de cada fuente declaran a qué grupo van. Si el diálogo no
-  entra en la pantalla, el cuerpo se desplaza con scroll en vez de aplastar
-  las grillas.
+  parámetros de cada fuente declaran a qué grupo van. Para que entre sin
+  scroll en una pantalla de notebook: la descripción de la fuente va en el
+  renglón del título; corrida, plazos y los plazos resultantes en un solo
+  renglón; «Variables», «Niveles» y «Área» como rótulos a la izquierda de
+  sus casillas; «Unir» y «Abrir» juntos; y abajo quedan sólo los botones (la
+  barra de progreso y el estado aparecen al descargar).
 
 ## 0.3.4 — 2026-10-19
 

@@ -356,10 +356,6 @@ QLabel#GroupTitle {{
     font-weight: 600;
     padding-bottom: 2px;
 }}
-QScrollArea#DownloadScroll, QScrollArea#DownloadScroll > QWidget > QWidget {{
-    background: transparent;
-    border: none;
-}}
 
 /* ── Group box ── */
 QGroupBox {{
