@@ -409,10 +409,12 @@ la pantalla) y recuerda tamaño y posición.
   cartopy; la elección se guarda en la configuración; las variantes
   «tangente a WA» están grisadas si ninguna Working Area tiene Tangencia,
   ver «Working Area»); `Grilla de grados`
-  elige los meridianos y paralelos: **10°** (sólo principales, etiquetadas
+  elige los meridianos y paralelos: **10°** (sólo principales, rotuladas
   en los bordes), **5°** (principales cada 10° y secundarias a rayas cada
-  5°) o **1°** (principales cada 5°, iguales entre sí, y secundarias
-  punteadas cada 1°); la casilla `+ la del archivo` (Vista ▸ Grilla
+  5°, rótulos cada 5°) o **1°** (principales cada 5°, iguales entre sí, y
+  secundarias punteadas cada 1°, rótulos cada 5°: nunca cada grado); los
+  rótulos sólo se ven con la capa Grilla de grados, y el margen que los
+  aloja se escala con la fuente y con el dpi de la pantalla; la casilla `+ la del archivo` (Vista ▸ Grilla
   lat/lon del archivo) agrega además la grilla fina del dato; `FIR
   Argentina`, `+ vecinas` y `FIR…` manejan la capa de límites de FIR (ver
   «Límites de FIR»); el recuadro lat/lon mín/máx (Enter o `Aplicar

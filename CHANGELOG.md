@@ -2,6 +2,10 @@
 
 ## Sin publicar
 
+- Mapa: los rótulos de latitud de la izquierda se cortaban en pantallas Retina
+  («0°S» en vez de «30°S»): el margen de las inscripciones ahora se escala con el
+  dpi del lienzo, además de con la fuente. Con la grilla de 5° los rótulos van
+  cada 5° (antes sólo cada 10°); con 1° siguen cada 5°, nunca cada grado.
 - GFS: la última corrida se calcula con 3,5 h de demora en vez de 4,5 (NOMADS
   publica los primeros plazos a esa hora): a las 15:33Z el diálogo ofrece la
   12Z, no la 06Z. Un plazo largo pedido demasiado temprano sigue avisando

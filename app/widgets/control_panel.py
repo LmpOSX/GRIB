@@ -305,7 +305,9 @@ class ControlPanel(QWidget):
         for val, name in GRID_STEPS:
             self.cb_grid_step.addItem(name, val)
         self.cb_grid_step.setToolTip("Meridianos y paralelos: cada 10°; cada 5° (secundarias a "
-                                     "rayas); o cada 1° (principales cada 5°, secundarias punteadas)")
+                                     "rayas); o cada 1° (principales cada 5°, secundarias punteadas). "
+                                     "Rótulos en los bordes cada 10° o cada 5°, nunca cada 1°; "
+                                     "sólo con la capa Grilla de grados.")
         self.cb_grid_step.currentIndexChanged.connect(
             lambda _i: self._emit_if_live(self.options_changed))
         row.addWidget(self.cb_grid_step, 1)

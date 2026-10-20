@@ -385,12 +385,30 @@ class TestCargaYRedibujo(_MapBase):
             if w.plot.use_cartopy:
                 w.plot.canvas.draw()
                 self.assertEqual(len(w.plot._gridliners), n, step)
+                # Rótulos cada 10° con 10°, cada 5° con 5° y con 1° (nunca cada 1°)
+                labeled = [gl for gl in w.plot._gridliners if gl.bottom_labels or gl.left_labels]
+                self.assertEqual(len(labeled), 1, step)
+                self.assertEqual(labeled[0].ylocator.tick_values(0, 10)[1] - labeled[0].ylocator.tick_values(0, 10)[0],
+                                 wind_plot.WindPlot.label_spacing(step), step)
+        self.assertEqual([wind_plot.WindPlot.label_spacing(s) for s in (10, 5, 1)], [10, 5, 5])
         w._grid_actions[1].trigger()
         self.assertEqual(w.panel.options()["grid_step"], 1)
         # Margen de inscripciones: los ejes no llegan al borde izquierdo ni al inferior
         pos = w.plot.ax.get_position()
         self.assertGreater(pos.x0 * w.plot.fig.get_figwidth() * w.plot.fig.dpi, 50)
         self.assertGreater(pos.y0 * w.plot.fig.get_figheight() * w.plot.fig.dpi, 28)
+        # En Retina el lienzo corre al doble de dpi y el texto ocupa el doble de
+        # píxeles: el margen (en px) se duplica para que «30°S» no quede en «0°S»
+        left_px = pos.x0 * w.plot.fig.get_figwidth() * w.plot.fig.dpi
+        old_dpi = w.plot.fig.dpi
+        try:
+            w.plot.fig.set_dpi(old_dpi * 2)
+            w.plot._apply_margins()
+            pos2 = w.plot.ax.get_position()
+            self.assertAlmostEqual(pos2.x0 * w.plot.fig.get_figwidth() * w.plot.fig.dpi, 2 * left_px, delta=1.0)
+        finally:
+            w.plot.fig.set_dpi(old_dpi)
+            w.plot._apply_margins()
 
     def test_menu_vista_sincronizado(self):
         """Vista ▸ Extra Info / Viento / Proyección reflejan y cambian el panel."""

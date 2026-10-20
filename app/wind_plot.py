@@ -257,6 +257,7 @@ CALM_KT = 0.5               # por debajo no hay dirección: sin flecha
 STREAM_ARROW_PX = 55.0      # separación entre flechas embebidas en las curvas (px)
 LABEL_SIZE_DEFAULT = 7      # tamaño base (pt) de los rótulos de Extra Info
 GRID_LABEL_MARGIN_PX = (66.0, 18.0, 14.0, 38.0)   # margen de inscripciones: izq, der, arriba, abajo
+                                                   # (px a 100 dpi; se escala con el dpi real)
 GRID_STEPS = [(10, "10°"), (5, "5°"), (1, "1°")]   # grilla de grados seleccionable
 MAX_LABELS = 900        # rótulos de Extra Info visibles como máximo
 # Capa de límites de FIR: estilo por defecto (lavanda tenue sobre fondo
@@ -687,7 +688,11 @@ class WindPlot:
         # Margen de inscripciones: las etiquetas de lat/lon se escriben
         # fuera de los ejes (izquierda y abajo) y necesitan este espacio;
         # arriba y a la derecha queda un margen chico para que nada se corte.
-        s = max(0.8, self.font_scale)
+        # Las constantes están en px a 100 dpi: en una pantalla Retina el
+        # lienzo corre a 200 dpi y el texto (en puntos) ocupa el doble de
+        # píxeles, así que el margen se escala igual; si no, «30°S» queda
+        # cortado a «0°S».
+        s = max(0.8, self.font_scale) * float(dpi) / 100.0
         left = GRID_LABEL_MARGIN_PX[0] * s
         right = GRID_LABEL_MARGIN_PX[1] * s
         top = (36.0 * s) if with_title else GRID_LABEL_MARGIN_PX[2] * s
@@ -938,13 +943,20 @@ class WindPlot:
         """(principal, secundaria) en grados para la grilla elegida: con 10°
         sólo principales cada 10; con 5°, principales cada 10 y secundarias
         (a rayas) cada 5; con 1°, principales cada 5 (10 y 5 iguales) y
-        secundarias (punteadas) cada 1."""
+        secundarias (punteadas) cada 1. Las etiquetas van cada
+        `label_spacing`: 10, 5 y 5 (nunca cada 1°)."""
         step = int(step) if step in (10, 5, 1) else 10
         if step == 10:
             return 10, None
         if step == 5:
             return 10, 5
         return 5, 1
+
+    @staticmethod
+    def label_spacing(step):
+        """Separación (grados) de los rótulos de lat/lon en los bordes: los
+        múltiplos de 10 con 10°, y los de 5 con 5° y con 1°."""
+        return 10 if int(step) == 10 else 5
 
     def _gridlines(self, dlon, dlat, fine, step=10):
         """Meridianos/paralelos de la grilla de grados elegida (principales
@@ -965,28 +977,38 @@ class WindPlot:
                 gf.n_steps = 30
                 self._gridliners.append(gf)
             return
+        labels_at = self.label_spacing(step)
         if self.use_cartopy:
-            gl = self.ax.gridlines(crs=self.data_crs, draw_labels=True,
+            def labeled(gl):
+                """Rótulos sólo a la izquierda y abajo, con la fuente del tema."""
+                gl.top_labels = False
+                gl.right_labels = False
+                gl.xlabel_style = {"color": self.pal["text"], "size": self._fs(9)}
+                gl.ylabel_style = {"color": self.pal["text"], "size": self._fs(9)}
+                gl.xpadding = 6
+                gl.ypadding = 6
+            gl = self.ax.gridlines(crs=self.data_crs, draw_labels=(labels_at == major),
                                    xlocs=mticker.MultipleLocator(major),
                                    ylocs=mticker.MultipleLocator(major),
                                    x_inline=False, y_inline=False, rotate_labels=False,
                                    color=self.pal["grid"], linewidth=0.9, linestyle="-",
                                    alpha=1.0, zorder=2)
-            gl.top_labels = False
-            gl.right_labels = False
-            gl.xlabel_style = {"color": self.pal["text"], "size": self._fs(9)}
-            gl.ylabel_style = {"color": self.pal["text"], "size": self._fs(9)}
-            gl.xpadding = 6
-            gl.ypadding = 6
+            if labels_at == major:
+                labeled(gl)
             gl.n_steps = 30          # puntos por línea (100 por defecto): mucho más rápido
             self._gridliners.append(gl)
             if minor:
+                # Con 5° los rótulos van en las secundarias (cada 5, que
+                # incluyen las de 10); las principales siguen continuas encima
                 gm = self.ax.gridlines(
-                    crs=self.data_crs, draw_labels=False,
+                    crs=self.data_crs, draw_labels=(labels_at == minor),
                     xlocs=mticker.MultipleLocator(minor),
                     ylocs=mticker.MultipleLocator(minor),
+                    x_inline=False, y_inline=False, rotate_labels=False,
                     color=self.pal["grid"], linewidth=0.7,
                     linestyle="--" if minor == 5 else ":", alpha=0.85, zorder=2)
+                if labels_at == minor:
+                    labeled(gm)
                 gm.n_steps = 30
                 self._gridliners.append(gm)
             if fine:
@@ -1000,8 +1022,9 @@ class WindPlot:
                 gf.n_steps = 30
                 self._gridliners.append(gf)
         else:
-            self.ax.xaxis.set_major_locator(mticker.MultipleLocator(major))
-            self.ax.yaxis.set_major_locator(mticker.MultipleLocator(major))
+            # Sin cartopy las marcas (y sus rótulos) van cada `labels_at`
+            self.ax.xaxis.set_major_locator(mticker.MultipleLocator(labels_at))
+            self.ax.yaxis.set_major_locator(mticker.MultipleLocator(labels_at))
             sub = minor or dlon
             self.ax.xaxis.set_minor_locator(mticker.MultipleLocator(sub))
             self.ax.yaxis.set_minor_locator(mticker.MultipleLocator(minor or dlat))
