@@ -25,7 +25,7 @@ from PyQt6.QtCore import Qt, pyqtSignal
 from PyQt6.QtGui import QColor, QPainter, QBrush
 
 from .glass_dialog import GlassDialog, add_shadow as _add_shadow
-from ..config import OPACITY_MAX
+from ..config import OPACITY_MAX, default_working_dir
 from ..utils import MOD_KEY
 from .. import gfs_download as gfs
 from ..grib_engines import ENGINES, ec, find_wgrib2, wgrib2_version
@@ -401,6 +401,25 @@ class SettingsDialog(GlassDialog):
         self._hint(lay, "La resolución, el suavizado y los niveles de cada fuente se configuran "
                         "en la pestaña Fuentes.")
 
+        self._sub(lay, "Directorio de trabajo por defecto")
+        g = QGridLayout()
+        g.setHorizontalSpacing(8)
+        g.addWidget(QLabel("Carpeta"), 0, 0)
+        self.ed_download_dir = QLineEdit(str(self._cfg.get("download_dir") or ""))
+        self.ed_download_dir.setPlaceholderText(default_working_dir())
+        self.ed_download_dir.textChanged.connect(self._refresh_download_dir_label)
+        g.addWidget(self.ed_download_dir, 0, 1)
+        b = QPushButton("Elegir…")
+        b.clicked.connect(self._pick_download_dir)
+        g.addWidget(b, 0, 2)
+        g.setColumnStretch(1, 1)
+        lay.addLayout(g)
+        self.lbl_download_dir = QLabel("")
+        self.lbl_download_dir.setObjectName("Hint")
+        self.lbl_download_dir.setWordWrap(True)
+        lay.addWidget(self.lbl_download_dir)
+        self._refresh_download_dir_label()
+
         self._sub(lay, "Caché de descargas (no se vuelve a bajar lo ya bajado)")
         g = QGridLayout()
         g.setHorizontalSpacing(8)
@@ -424,6 +443,24 @@ class SettingsDialog(GlassDialog):
         self._refresh_cache_label()
         lay.addStretch()
         return w
+
+    def _pick_download_dir(self):
+        start = self.ed_download_dir.text().strip() or default_working_dir()
+        d = QFileDialog.getExistingDirectory(self, "Directorio de trabajo por defecto", start)
+        if d:
+            self.ed_download_dir.setText(d)
+
+    def _refresh_download_dir_label(self):
+        """Explica dónde se guarda y avisa si la carpeta indicada no existe."""
+        d = self.ed_download_dir.text().strip()
+        base = ("Carpeta inicial de «Obtener datos…» y de las exportaciones al arrancar. "
+                "Al abrir un archivo (también desde el Finder o el gestor de archivos), el "
+                "directorio de trabajo pasa a ser el de ese archivo hasta cerrar el programa.")
+        if d and not os.path.isdir(d):
+            base = f"La carpeta «{d}» no existe: se usará {default_working_dir()}. " + base
+        elif not d:
+            base = f"Vacío: se usa {default_working_dir()}. " + base
+        self.lbl_download_dir.setText(base)
 
     def _cache(self):
         return DownloadCache(max_mb=self.cache_mb.value(), max_days=self.cache_days.value())
@@ -686,6 +723,7 @@ class SettingsDialog(GlassDialog):
             "sources": dict(self._wrap()["sources"]),
             "cache_max_mb": int(self.cache_mb.value()),
             "cache_max_days": int(self.cache_days.value()),
+            "download_dir": self.ed_download_dir.text().strip(),
             "download_merge": self.chk_merge.isChecked(),
             "download_open": self.chk_open.isChecked(),
             "download_h_from": int(self.h_from.value()),

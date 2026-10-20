@@ -194,6 +194,61 @@ class TestDialogos(_Base):
         _app.processEvents()
         self.assertTrue(config.load_config()["map_extra_info"])
 
+    def test_directorio_de_trabajo_por_defecto(self):
+        """Preferencias ▸ Descarga fija el directorio por defecto; la sesión
+        arranca ahí (no en el `last_directory` guardado), al abrir un archivo
+        el directorio de trabajo pasa a ser el de ese archivo, y cambiar el
+        por defecto sin archivo abierto rige de inmediato."""
+        from app.dialogs.settings_dialog import SettingsDialog
+        from app.main_window import MainWindow
+        from app.config import working_dir, default_working_dir
+        base = os.path.join(self._tmp.name, "base")
+        otro = os.path.join(self._tmp.name, "otro")
+        datos = os.path.join(self._tmp.name, "datos")
+        for d in (base, otro, datos):
+            os.makedirs(d)
+        # Función pura: sesión > por defecto > Documentos; lo inexistente se saltea
+        self.assertEqual(working_dir({"last_directory": otro, "download_dir": base}), otro)
+        self.assertEqual(working_dir({"last_directory": "", "download_dir": base}), base)
+        self.assertEqual(working_dir({"last_directory": "/no/existe", "download_dir": base}), base)
+        self.assertEqual(working_dir({"download_dir": "/no/existe"}), default_working_dir())
+        # Preferencias: campo con placeholder, aviso si no existe, y values()
+        cfg = dict(config.DEFAULTS, download_dir=base)
+        dlg = SettingsDialog(None, cfg=cfg)
+        self.assertEqual(dlg.ed_download_dir.text(), base)
+        self.assertEqual(dlg.ed_download_dir.placeholderText(), default_working_dir())
+        self.assertNotIn("no existe", dlg.lbl_download_dir.text())
+        dlg.ed_download_dir.setText("/no/existe")
+        self.assertIn("no existe", dlg.lbl_download_dir.text())
+        self.assertEqual(dlg.values()["download_dir"], "/no/existe")
+        dlg.close(); dlg.deleteLater()
+        # La ventana arranca en el por defecto aunque haya un last_directory guardado
+        config.save_config(dict(config.DEFAULTS, download_dir=base, last_directory=otro))
+        self.w = MainWindow()
+        self.w.show()
+        _app.processEvents()
+        self.assertEqual(self.w._cfg["last_directory"], "")
+        self.assertEqual(working_dir(self.w._cfg), base)
+        # Cambiar el por defecto sin archivo abierto rige ya
+        self.w._cfg["last_directory"] = otro
+        self.w.apply_settings(dict(self.w._cfg, download_dir=datos))
+        self.assertEqual(working_dir(self.w._cfg), datos)
+        self.assertEqual(config.load_config()["download_dir"], datos)
+        # Abrir un archivo (como desde el Finder) lo lleva a la carpeta del archivo
+        from app import wafs_format as wf
+        if wf.ec is None:
+            return
+        from tests.test_wafs import _grib
+        local = os.path.join(otro, "crudo.grib2")
+        with open(local, "wb") as fh:
+            fh.write(_grib([850, 700, 500, 300, 200, 100], steps=(6,)))
+        self.w.open_file(local, convert=False)
+        _app.processEvents()
+        self.assertEqual(working_dir(self.w._cfg), otro)
+        # Con archivo abierto, cambiar el por defecto no mueve la sesión
+        self.w.apply_settings(dict(self.w._cfg, download_dir=base))
+        self.assertEqual(working_dir(self.w._cfg), otro)
+
     def test_motor_wgrib2_ausente_cae_a_eccodes(self):
         """Con motor wgrib2 configurado pero sin el programa, abrir un archivo
         avisa y sigue con ecCodes."""

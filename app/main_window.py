@@ -48,6 +48,9 @@ class MainWindow(QMainWindow):
     def __init__(self):
         super().__init__()
         self._cfg = load_config()
+        # El directorio de trabajo dura la sesión: arranca en el por defecto de
+        # Preferencias ▸ Descarga y pasa al del archivo que se abra
+        self._cfg["last_directory"] = ""
         self._reader = None            # GribReader del archivo abierto
         self._path: str | None = None  # ruta del archivo abierto
         self._current = None           # campos del paso/nivel dibujados (hover, CSV)
@@ -1891,7 +1894,11 @@ class MainWindow(QMainWindow):
         valores de VIENTO y MAPA del panel, descarga y motor."""
         old_proj = self._cfg.get("projection", "platecarree")
         old_engine = (self._cfg.get("engine", "eccodes"), self._cfg.get("wgrib2_path", ""))
+        old_dir = self._cfg.get("download_dir", "")
         self._cfg.update(values)
+        if self._cfg.get("download_dir", "") != old_dir and self._path is None:
+            # Sin archivo abierto, el nuevo directorio por defecto rige ya
+            self._cfg["last_directory"] = ""
         self._apply_theme(values.get("accent_color"), opacity=values.get("opacity"))
         self.panel.set_options(self._map_options_from_cfg())
         self._apply_fine_divisor()

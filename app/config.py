@@ -50,7 +50,8 @@ DEFAULTS = {
     "window_h": 1000,
     "panel_visible": True,   # panel lateral de controles visible
     "recent_files": [],      # list[str] — most-recent first
-    "last_directory": "",    # working directory for open/save dialogs
+    "last_directory": "",    # directorio de trabajo de la sesión (el del último archivo abierto o exportado)
+    "download_dir": "",      # directorio de trabajo por defecto (vacío = Documentos); ver working_dir()
     "projection": "platecarree",   # clave de wind_plot.PROJECTIONS
     # Mapa: valores iniciales de CONFIG del panel (se guardan al cambiarlos)
     "map_wind_style": "barbas",   # 'barbas' | 'flechas' | 'curvas' (wind_plot.WIND_STYLES)
@@ -140,12 +141,15 @@ def default_working_dir() -> str:
 def working_dir(cfg: dict) -> str:
     """Directorio de trabajo vigente para abrir / guardar / exportar.
 
-    Es la carpeta del último .grib2 abierto o de la última exportación (`last_directory`).
-    Si todavía no hay uno, o ya no existe, cae al default.
+    Mientras dura la sesión es la carpeta del último archivo abierto (también
+    desde el Finder o la línea de comandos) o de la última exportación
+    (`last_directory`). Si todavía no hay uno, o ya no existe, es el
+    directorio por defecto de Preferencias ▸ Descarga (`download_dir`), y si
+    tampoco está, Documentos.
     """
-    d = cfg.get("last_directory") or ""
-    if d and os.path.isdir(d):
-        return d
+    for d in (cfg.get("last_directory"), cfg.get("download_dir")):
+        if d and os.path.isdir(d):
+            return d
     return default_working_dir()
 
 

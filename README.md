@@ -944,8 +944,12 @@ con siete pestañas:
   todavía no publicado`. Debajo, «Límites de FIR (capa del mapa)» con la
   fuente openAIP: su clave de API se guarda y se borra del mismo modo.
 * **Descarga**: plazos, unir plazos y abrir al terminar como valores
-  iniciales de `Obtener datos…`; tamaño y antigüedad máximos de la caché y
-  `Vaciar caché`.
+  iniciales de `Obtener datos…`; el directorio de trabajo por defecto
+  (vacío = Documentos), que es la carpeta inicial de las descargas y las
+  exportaciones al arrancar; tamaño y antigüedad máximos de la caché y
+  `Vaciar caché`. El directorio de trabajo dura la sesión: al abrir un
+  archivo (también desde el Finder, el gestor de archivos o la línea de
+  comandos) pasa a ser la carpeta de ese archivo, y lo mismo al exportar.
 * **Áreas / FIR**: tabla de áreas de descarga (código, nombre, N/S/W/E,
   habilitada, a verificar), margen de seguridad, formato de coordenadas,
   exportar/importar (ver «Áreas de descarga por FIR»); el botón `Límites

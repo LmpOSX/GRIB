@@ -1,5 +1,15 @@
 # Cambios
 
+## Sin publicar
+
+- Preferencias ▸ Descarga: «Directorio de trabajo por defecto» (vacío =
+  Documentos), con botón para elegirlo y aviso si la carpeta no existe. Es la
+  carpeta inicial de «Obtener datos…» y de las exportaciones al arrancar. El
+  directorio de trabajo ya no se guarda entre sesiones: al abrir un archivo
+  (también desde el Finder, el gestor de archivos o la línea de comandos)
+  pasa a ser la carpeta de ese archivo, y cambiar el por defecto sin archivo
+  abierto rige de inmediato.
+
 ## 0.3.5 — 2026-10-20
 
 - Diálogo de descarga: debajo de la grilla de niveles hay cuatro botones
