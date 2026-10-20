@@ -414,7 +414,9 @@ la pantalla) y recuerda tamaño y posición.
   5°, rótulos cada 5°) o **1°** (principales cada 5°, iguales entre sí, y
   secundarias punteadas cada 1°, rótulos cada 5°: nunca cada grado); los
   rótulos sólo se ven con la capa Grilla de grados, y el margen que los
-  aloja se escala con la fuente y con el dpi de la pantalla; la casilla `+ la del archivo` (Vista ▸ Grilla
+  aloja se mide en cada dibujado sobre los rótulos reales (fuente y dpi de
+  la pantalla incluidos), sin desperdiciar mapa, y desaparece si la grilla
+  está apagada; la casilla `+ la del archivo` (Vista ▸ Grilla
   lat/lon del archivo) agrega además la grilla fina del dato; `FIR
   Argentina`, `+ vecinas` y `FIR…` manejan la capa de límites de FIR (ver
   «Límites de FIR»); el recuadro lat/lon mín/máx (Enter o `Aplicar

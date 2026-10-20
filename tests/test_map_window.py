@@ -393,12 +393,38 @@ class TestCargaYRedibujo(_MapBase):
         self.assertEqual([wind_plot.WindPlot.label_spacing(s) for s in (10, 5, 1)], [10, 5, 5])
         w._grid_actions[1].trigger()
         self.assertEqual(w.panel.options()["grid_step"], 1)
-        # Margen de inscripciones: los ejes no llegan al borde izquierdo ni al inferior
+        # Margen de inscripciones: lo justo para el rótulo más ancho («88°S» a
+        # 9 pt y 100 dpi: unos 30 px) más el relleno; ni cortado ni sobrado
         pos = w.plot.ax.get_position()
-        self.assertGreater(pos.x0 * w.plot.fig.get_figwidth() * w.plot.fig.dpi, 50)
-        self.assertGreater(pos.y0 * w.plot.fig.get_figheight() * w.plot.fig.dpi, 28)
+        left_px0 = pos.x0 * w.plot.fig.get_figwidth() * w.plot.fig.dpi
+        lab_w, lab_h = w.plot._label_size_px("88°S")
+        self.assertGreater(lab_w, 20)
+        self.assertGreater(left_px0, lab_w + 8)
+        self.assertLess(left_px0, lab_w + 20)
+        bottom_px0 = pos.y0 * w.plot.fig.get_figheight() * w.plot.fig.dpi
+        self.assertGreater(bottom_px0, lab_h + 8)
+        self.assertLess(bottom_px0, lab_h + 20)
+        # Con la grilla apagada y redibujado, el margen baja al aire mínimo; al
+        # volver a prenderla se mide de nuevo y vuelve a alojar los rótulos
+        if w.plot.use_cartopy:
+            def settle():
+                for _ in range(3):
+                    w.plot.canvas.draw()
+                    _app.processEvents()
+            w.plot.set_base_layers(graticule=False)
+            w.redraw(); settle()
+            pos_off = w.plot.ax.get_position()
+            self.assertLess(pos_off.x0 * w.plot.fig.get_figwidth() * w.plot.fig.dpi, 12)
+            w.plot.set_base_layers(graticule=True)
+            w.redraw(); settle()
+            pos_on = w.plot.ax.get_position()
+            self.assertGreater(pos_on.x0 * w.plot.fig.get_figwidth() * w.plot.fig.dpi, lab_w + 8)
         # En Retina el lienzo corre al doble de dpi y el texto ocupa el doble de
-        # píxeles: el margen (en px) se duplica para que «30°S» no quede en «0°S»
+        # píxeles: la estimación del margen (en px) se duplica para que «30°S»
+        # no quede en «0°S»
+        w.plot._measured = None
+        w.plot._apply_margins()
+        pos = w.plot.ax.get_position()
         left_px = pos.x0 * w.plot.fig.get_figwidth() * w.plot.fig.dpi
         old_dpi = w.plot.fig.dpi
         try:

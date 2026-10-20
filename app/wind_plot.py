@@ -256,8 +256,10 @@ STREAM_NOMINAL_CELL_PX = 18.0   # curvas: por debajo de esta separación entre p
 CALM_KT = 0.5               # por debajo no hay dirección: sin flecha
 STREAM_ARROW_PX = 55.0      # separación entre flechas embebidas en las curvas (px)
 LABEL_SIZE_DEFAULT = 7      # tamaño base (pt) de los rótulos de Extra Info
-GRID_LABEL_MARGIN_PX = (66.0, 18.0, 14.0, 38.0)   # margen de inscripciones: izq, der, arriba, abajo
-                                                   # (px a 100 dpi; se escala con el dpi real)
+GRID_LABEL_PAD_PT = 6.0     # separación rótulo–eje (puntos; xpadding/ypadding del Gridliner)
+GRID_LABEL_GAP_PX = 4.0     # aire entre el rótulo y el borde de la figura (px a 100 dpi)
+GRID_MARGIN_RIGHT_PX = 18.0   # márgenes chicos derecho y superior (px a 100 dpi)
+GRID_MARGIN_TOP_PX = 14.0
 GRID_STEPS = [(10, "10°"), (5, "5°"), (1, "1°")]   # grilla de grados seleccionable
 MAX_LABELS = 900        # rótulos de Extra Info visibles como máximo
 # Capa de límites de FIR: estilo por defecto (lavanda tenue sobre fondo
@@ -516,6 +518,9 @@ class WindPlot:
         self.canvas.mpl_connect("motion_notify_event", self._on_motion)
         self.canvas.mpl_connect("button_release_event", self._on_release)
         self.canvas.mpl_connect("resize_event", self._on_resize)
+        self.canvas.mpl_connect("draw_event", self._on_drawn)
+        self._measured = None       # (clave, izq px, abajo px) del último ajuste medido
+        self._saving = False        # durante save_png no se reajustan los márgenes
         self._make_axes()
         self._style_axes()
         self.draw_empty()
@@ -673,10 +678,36 @@ class WindPlot:
             cy = (y0 + y1) / 2.0
             ax.set_ylim(cy - new_h / 2.0, cy + new_h / 2.0)
 
-    def _apply_margins(self, with_title=False):
+    def _label_size_px(self, text):
+        """Ancho y alto (px del lienzo) de un rótulo de la grilla con la fuente
+        en uso: en puntos con la fuente escalada, pasados a píxeles con el dpi
+        real (en Retina el lienzo corre a 200 dpi y el texto ocupa el doble)."""
+        fs = self._fs(9)
+        px_per_pt = float(self.fig.dpi) / 72.0
+        try:
+            ext = TextPath((0, 0), text, size=fs, prop=FontProperties()).get_extents()
+            w_pt, h_pt = float(ext.width), float(ext.height)
+        except Exception:
+            w_pt, h_pt = 0.6 * fs * len(text), fs
+        return w_pt * px_per_pt, max(h_pt, fs) * px_per_pt
+
+    def _widest_label(self):
+        """El rótulo más ancho que puede aparecer a la izquierda: una latitud
+        («88°S») o, en las proyecciones cónicas, un meridiano (hasta «188°W»)."""
+        ext = self.get_extent() if self.use_cartopy else None
+        if ext and self.proj_key not in ("platecarree", "mercator") and \
+                max(abs(float(ext[0])), abs(float(ext[1]))) >= 100:
+            return "188°W"
+        if ext and self.proj_key not in ("platecarree", "mercator"):
+            return "88°W"
+        return "88°S"
+
+    def _apply_margins(self, with_title=False, left=None, bottom=None):
         """Márgenes de la figura en píxeles (no en fracción): lo justo para
         las etiquetas de lat/lon a la izquierda y abajo, y para el título
-        sólo cuando se exporta (en pantalla lo reemplaza la franja STATUS)."""
+        sólo cuando se exporta (en pantalla lo reemplaza la franja STATUS).
+        `left`/`bottom` (px) reemplazan la estimación por lo medido en los
+        rótulos ya dibujados (ver `_on_drawn`)."""
         try:
             w_in, h_in = self.fig.get_size_inches()
             dpi = float(self.fig.dpi)
@@ -685,25 +716,89 @@ class WindPlot:
             return
         if w < 80 or h < 80:
             return
-        # Margen de inscripciones: las etiquetas de lat/lon se escriben
-        # fuera de los ejes (izquierda y abajo) y necesitan este espacio;
-        # arriba y a la derecha queda un margen chico para que nada se corte.
-        # Las constantes están en px a 100 dpi: en una pantalla Retina el
-        # lienzo corre a 200 dpi y el texto (en puntos) ocupa el doble de
-        # píxeles, así que el margen se escala igual; si no, «30°S» queda
-        # cortado a «0°S».
-        s = max(0.8, self.font_scale) * float(dpi) / 100.0
-        left = GRID_LABEL_MARGIN_PX[0] * s
-        right = GRID_LABEL_MARGIN_PX[1] * s
-        top = (36.0 * s) if with_title else GRID_LABEL_MARGIN_PX[2] * s
-        bottom = GRID_LABEL_MARGIN_PX[3] * s
+        # Margen de inscripciones: los rótulos de lat/lon se escriben fuera
+        # de los ejes (izquierda y abajo), a `GRID_LABEL_PAD_PT` puntos del
+        # eje; se reserva el ancho del rótulo más ancho (alto, abajo) más ese
+        # relleno y un aire chico, medido con la fuente y el dpi reales, ni
+        # más ni menos. Arriba y a la derecha queda un margen chico.
+        px_per_pt = dpi / 72.0
+        k = dpi / 100.0
+        lab_w, lab_h = self._label_size_px(self._widest_label())
+        pad = GRID_LABEL_PAD_PT * px_per_pt + GRID_LABEL_GAP_PX * k
+        if left is None:
+            left = lab_w + pad
+        if bottom is None:
+            bottom = lab_h + pad
+        s = max(0.8, self.font_scale) * k
+        right = GRID_MARGIN_RIGHT_PX * k
+        top = (36.0 * s) if with_title else GRID_MARGIN_TOP_PX * k
         self.fig.subplots_adjust(left=left / w, right=1.0 - right / w,
                                  top=1.0 - top / h, bottom=bottom / h)
 
+    def _on_drawn(self, event):
+        """Tras cada dibujado mide los rótulos que cartopy puso a la
+        izquierda y abajo y deja el margen en lo que ocupan más el aire
+        mínimo: la estimación previa reserva el rótulo más ancho posible,
+        que en Lambert («188°W») sobra cuando a la izquierda sólo caen
+        latitudes. Sin grilla de grados el margen es sólo el aire. Si los
+        rótulos no se pueden medir se queda con la estimación. Reajusta y
+        vuelve a dibujar una sola vez por estado."""
+        if self._saving or not self.use_cartopy or self._base_key is None:
+            return          # con la base invalidada los gridliners son los viejos: se mide tras rehacerla
+        try:
+            renderer = event.renderer
+            key = (self._base_key, tuple(self.fig.get_size_inches()), float(self.fig.dpi),
+                   round(self.font_scale, 3))
+            if self._measured is not None and self._measured[0] == key:
+                return
+            dpi = float(self.fig.dpi)
+            gap = GRID_LABEL_GAP_PX * dpi / 100.0
+            w = self.fig.get_figwidth() * dpi
+            h = self.fig.get_figheight() * dpi
+            ax_box = self.ax.get_window_extent(renderer)
+            left = bottom = None                    # None = estimación
+            if not self.show_graticule:
+                left = bottom = gap
+            else:
+                lefts, bottoms = [], []
+                for gl in self._gridliners:
+                    for t in getattr(gl, "left_label_artists", []) or []:
+                        if t.get_visible() and t.get_text():
+                            b = t.get_window_extent(renderer)
+                            if b.width > 0 and b.x1 <= ax_box.x0 + 1 and b.x0 > -w:
+                                lefts.append(b.x0)
+                    for t in getattr(gl, "bottom_label_artists", []) or []:
+                        if t.get_visible() and t.get_text():
+                            b = t.get_window_extent(renderer)
+                            if b.height > 0 and b.y1 <= ax_box.y0 + 1 and b.y0 > -h:
+                                bottoms.append(b.y0)
+                if lefts:
+                    left = ax_box.x0 - min(lefts) + gap
+                if bottoms:
+                    bottom = ax_box.y0 - min(bottoms) + gap
+            cur_left = self.fig.subplotpars.left * w
+            cur_bottom = self.fig.subplotpars.bottom * h
+            self._measured = (key, left, bottom)
+            self._apply_margins(left=left, bottom=bottom)
+            new_left = self.fig.subplotpars.left * w
+            new_bottom = self.fig.subplotpars.bottom * h
+            if abs(cur_left - new_left) > 1.5 or abs(cur_bottom - new_bottom) > 1.5:
+                self.canvas.draw_idle()
+        except Exception:
+            pass
+
     def _on_resize(self, _event):
-        """Al cambiar el tamaño del canvas se recalculan los márgenes y se
-        vuelve a llenar el área."""
-        self._apply_margins()
+        """Al cambiar el tamaño del canvas se recalculan los márgenes (con lo
+        medido en los rótulos si la grilla, el dpi y la fuente no cambiaron)
+        y se vuelve a llenar el área."""
+        m = self._measured
+        key = (self._base_key, tuple(self.fig.get_size_inches()), float(self.fig.dpi),
+               round(self.font_scale, 3))
+        if m is not None and (m[0][0], m[0][2], m[0][3]) == (key[0], key[2], key[3]):
+            self._measured = (key, m[1], m[2])
+            self._apply_margins(left=m[1], bottom=m[2])     # None = estimación
+        else:
+            self._apply_margins()
         if self.has_data and not self._in_draw:
             self._fit_view_to_box()
 
@@ -985,8 +1080,8 @@ class WindPlot:
                 gl.right_labels = False
                 gl.xlabel_style = {"color": self.pal["text"], "size": self._fs(9)}
                 gl.ylabel_style = {"color": self.pal["text"], "size": self._fs(9)}
-                gl.xpadding = 6
-                gl.ypadding = 6
+                gl.xpadding = GRID_LABEL_PAD_PT
+                gl.ypadding = GRID_LABEL_PAD_PT
             gl = self.ax.gridlines(crs=self.data_crs, draw_labels=(labels_at == major),
                                    xlocs=mticker.MultipleLocator(major),
                                    ylocs=mticker.MultipleLocator(major),
@@ -1961,6 +2056,7 @@ class WindPlot:
         self.fig.patch.set_alpha(1.0)
         self.ax.patch.set_alpha(1.0)
         title = getattr(self, "_title", "")
+        self._saving = True
         try:
             if title:
                 self.ax.set_title(title, color=self.pal["text"], fontsize=self._fs(10),
@@ -1968,8 +2064,10 @@ class WindPlot:
                 self._apply_margins(with_title=True)
             self.fig.savefig(path, dpi=dpi, facecolor=self.pal["bg"])
         finally:
+            self._saving = False
             if title:
                 self.ax.set_title("")
                 self._apply_margins()
+                self._measured = None
             self.fig.patch.set_alpha(fa)
             self.ax.patch.set_alpha(aa)
