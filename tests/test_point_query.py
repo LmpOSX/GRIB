@@ -269,6 +269,46 @@ class TestDialogo(unittest.TestCase):
         self.w.plot._on_release(MouseEvent("button_release_event", self.w.plot.canvas, x, y, button=1))
         self.app.processEvents()
 
+    def test_ficha_tras_punto_sin_datos_entra_en_el_mapa(self):
+        """Después de una ficha sin datos (perfil oculto), la de un punto con
+        datos debe quedar igual que si fuera la primera: el perfil con filas
+        de la misma altura y la ficha entera dentro del mapa."""
+        from app.widgets import wind_profile_widget as wpw
+        w = self.w
+        # Muchos niveles y una ventana baja: el perfil tiene que comprimir sus
+        # filas para entrar (si no, el defecto no se nota)
+        r = _reader_sintetico(list(range(1000, 95, -25)), shape=(5, 6))
+        r.path = os.path.join(self._tmp.name, "sintetico.grib2")
+        w.resize(1000, 560)
+        w.load_reader(r, r.path)
+        self.app.processEvents()
+        canvas = w.plot.canvas
+        # Referencia: ficha limpia de un punto con datos
+        pop = w._show_point_popup(0.0, -42.0)
+        self.app.processEvents()
+        ref_h, ref_row = pop.height(), pop.query.profile._row_h()
+        self.assertLessEqual(ref_h, canvas.height())
+        self.assertLess(ref_row, wpw.ROW_MAX)                     # filas comprimidas
+        self.assertTrue(pop.query.profile.isVisible())
+        # Punto fuera de la grilla: sin perfil, ficha chica
+        w._show_point_popup(60.0, 100.0)
+        self.app.processEvents()
+        self.assertFalse(pop.query.profile.isVisible())
+        self.assertIn("fuera de la grilla", pop.query.lbl_cell.text())
+        self.assertLess(pop.height(), ref_h)
+        # El clic en el mapa la cierra (y no abre otra); con la ficha oculta
+        # Qt no refresca el tamaño de lo que cambia adentro, que es lo que
+        # dejaba el perfil estirado en el clic siguiente
+        pop.hide()
+        self.app.processEvents()
+        # Y de nuevo un punto con datos: igual que la referencia
+        w._show_point_popup(0.0, -42.0)
+        self.app.processEvents()
+        self.assertTrue(pop.query.profile.isVisible())
+        self.assertLessEqual(pop.height(), canvas.height())
+        self.assertEqual(pop.query.profile._row_h(), ref_row)
+        self.assertLessEqual(abs(pop.height() - ref_h), 2)
+
     def test_clic_abre_la_ficha_editable(self):
         w = self.w
         r = _reader_sintetico([850, 700, 500, 300, 200], shape=(5, 6))

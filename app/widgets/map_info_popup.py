@@ -95,16 +95,32 @@ class MapInfoPopup(QFrame):
         los límites del padre."""
         parent = self.parentWidget()
         pw, ph = parent.width(), parent.height()
-        # El perfil se achica para que la ficha entera entre en el mapa
         prof = self.query.profile
+
+        def refresh_layouts():
+            # Los layouts cachean el sizeHint (updateGeometry lo renueva recién
+            # en el próximo LayoutRequest): sin esto la ficha no se achica
+            # cuando el perfil tiene menos filas que la vez anterior, y al
+            # pasar de un punto sin datos (perfil oculto) a uno con datos el
+            # alto «del resto» sale sin el perfil, el perfil recibe de más y
+            # sus filas se estiran hasta salirse del mapa
+            for lay in (self.query.layout(), self.layout()):
+                lay.invalidate()
+                lay.activate()
+
+        # El perfil se achica para que la ficha entera entre en el mapa: el
+        # alto que ocupa todo lo demás se mide con el sizeHint al día
+        refresh_layouts()
         other = self.sizeHint().height() - (prof.sizeHint().height() if prof.isVisibleTo(self) else 0)
         prof.set_max_height(ph - other - 16)
-        # Los layouts cachean el sizeHint: sin esto la ficha no se achica
-        # cuando el perfil tiene menos filas que la vez anterior
-        for lay in (self.query.layout(), self.layout()):
-            lay.invalidate()
-            lay.activate()
+        refresh_layouts()
         self.adjustSize()
+        if self.height() > ph and prof.isVisibleTo(self):
+            # Por si el resto cambió de alto al reacomodarse: una pasada más
+            other = self.sizeHint().height() - prof.sizeHint().height()
+            prof.set_max_height(ph - other - 16)
+            refresh_layouts()
+            self.adjustSize()
         x, y = pos.x() + 14, pos.y() + 14
         if x + self.width() > pw:
             x = pos.x() - self.width() - 14

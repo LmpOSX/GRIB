@@ -1,5 +1,13 @@
 # Cambios
 
+## Sin publicar
+
+- Ficha del punto: después de tocar un punto sin datos (fuera de la grilla),
+  la ficha del siguiente punto con datos salía con el perfil estirado y se
+  pasaba del mapa; el alto disponible se calculaba con el tamaño cacheado de
+  la ficha anterior, sin perfil. Ahora se refrescan los layouts antes de
+  medir y la ficha queda igual que la de un primer clic.
+
 ## 0.3.7 — 2026-10-20
 
 - Mapa: los rótulos de latitud de la izquierda se cortaban en pantallas Retina
