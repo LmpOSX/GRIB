@@ -1022,7 +1022,7 @@ repositorio (`https://github.com/LmpOSX/GRIB/releases`):
 
 | Sistema | Archivo | Instalación |
 |---|---|---|
-| macOS 12+ (Apple Silicon) | `Visor_GRIB_<ver>_macOS_arm64.dmg` | Abrir el DMG y arrastrar a Aplicaciones. La app lleva firma ad hoc, sin notarizar: al abrirla por primera vez macOS la bloquea; ir a Ajustes del Sistema ▸ Privacidad y seguridad y tocar **Abrir igualmente** (o en Terminal `xattr -cr "/Applications/Visor GRIB.app"`). Si dijera «está dañada», la firma se rompió: avisar, es un error del paquete. |
+| macOS 12+ (Apple Silicon) | `Visor_GRIB_<ver>_macOS_arm64.dmg` | Abrir el DMG, arrastrar a Aplicaciones y **expulsar el DMG**: mientras una imagen queda montada, Launch Services registra la copia que hay dentro y el Finder la muestra en «Abrir con» como otra versión de la app. La app lleva firma ad hoc, sin notarizar: al abrirla por primera vez macOS la bloquea; ir a Ajustes del Sistema ▸ Privacidad y seguridad y tocar **Abrir igualmente** (o en Terminal `xattr -cr "/Applications/Visor GRIB.app"`). Si dijera «está dañada», la firma se rompió: avisar, es un error del paquete. |
 | Linux x86_64 (Debian/Ubuntu) | `Visor_GRIB_<ver>_Linux_x86_64.deb` | `sudo apt install ./Visor_GRIB_<ver>_Linux_x86_64.deb`; queda el comando `visor-grib` y la entrada en el menú. |
 | Linux x86_64 (cualquier distro) | `Visor_GRIB_<ver>_Linux_x86_64.AppImage` | `chmod +x` y ejecutar. También hay un `.tar.gz` portable con la carpeta `VisorGRIB/`. |
 | Windows 10/11 x64 | `Visor_GRIB_<ver>_Windows_x64_Setup.exe` | Ejecutar el instalador (SmartScreen avisa porque no está firmado: *Más información ▸ Ejecutar de todas formas*). También hay un `.zip` portable. |

@@ -76,6 +76,15 @@ hdiutil detach "$MOUNT_DIR"
 hdiutil convert "$DMG_TMP" -format UDZO -o "$DMG_PATH"
 rm -f "$DMG_TMP"
 
+# Launch Services registra cada copia del .app que ve (la de dist/, la del
+# DMG temporal montado) y después las lista en «Abrir con» del Finder como
+# si fueran apps distintas. Se dan de baja: sólo debe quedar la instalada.
+LSREGISTER=/System/Library/Frameworks/CoreServices.framework/Frameworks/LaunchServices.framework/Support/lsregister
+if [ -x "$LSREGISTER" ]; then
+    "$LSREGISTER" -u "$(cd "$(dirname "$APP_PATH")" && pwd)/$(basename "$APP_PATH")" >/dev/null 2>&1 || true
+    "$LSREGISTER" -u "$MOUNT_DIR/${APP_NAME}.app" >/dev/null 2>&1 || true
+fi
+
 echo ""
 echo "=== Build completado ==="
 echo "  App:        $APP_PATH"
