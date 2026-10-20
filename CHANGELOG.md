@@ -1,6 +1,6 @@
 # Cambios
 
-## Sin publicar
+## 0.3.7 — 2026-10-20
 
 - Mapa: los rótulos de latitud de la izquierda se cortaban en pantallas Retina
   («0°S» en vez de «30°S»). El margen de las inscripciones, a la izquierda y
