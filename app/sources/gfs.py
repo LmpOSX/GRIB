@@ -39,6 +39,7 @@ class GFSSource(Source):
     default_variables = ["UGRD", "VGRD", "TMP"]
     levels = gfs.ALL_LEVELS
     viewer_levels = gfs.VIEWER_LEVELS
+    extra_levels_param = "niveles_intermedios"
     cycles = gfs.CYCLES
     availability_lag_h = gfs.AVAILABILITY_LAG_H
     region_filter = "servidor"

@@ -1,5 +1,21 @@
 # Cambios
 
+## Sin publicar
+
+- Diálogo de descarga: debajo de la grilla de niveles hay cuatro botones
+  excluyentes, INDRA (14), OACI (17), OACI56 y WAFS (ISA), que tildan los
+  niveles que ese modo necesita y fijan el modo de conversión de esta
+  descarga (arranca con el de Preferencias ▸ WAFS). INDRA y OACI sin
+  «Convertir a WAFS» bajan los nominales del Anexo 3 tal cual, sin
+  interpolar; con la casilla, o siempre en OACI56 y WAFS (56 FL que ningún
+  modelo tiene: la casilla queda tildada y bloqueada), se baja el rango
+  completo de la fuente (GFS: 850–70 cada 25 hPa) para interpolar cada FL
+  entre dos capas cercanas, y los intermedios del GFS se encienden solos.
+  Lo tildado a mano se suma; «Todos» y «Ninguno» salen del modo. Una línea
+  debajo dice qué se baja y qué sale, con los FL que quedan sin nivel. La
+  casilla «Convertir a WAFS» y «Preferencias WAFS…» pasan del bloque
+  Destino al de niveles. Desaparece «Los del visor».
+
 ## 0.3.4 — 2026-10-19
 
 - La ficha del clic muestra el perfil vertical de la celda en lugar de la

@@ -195,3 +195,36 @@ def nominal_rule(fl):
 
 def fl_label(fl):
     return f"FL{int(fl):03d}"
+
+
+def download_levels(mode, available, convert, fl_min=50, fl_max=530, extend=True):
+    """Qué niveles de presión (hPa) pedir a una fuente para un modo.
+
+    Sin conversión, en INDRA u OACI, se piden los nominales del modo tal
+    cual (el archivo queda con la presión del modelo, sin interpolar); los
+    que la fuente no ofrece quedan en `missing`. Con conversión, o en OACI56
+    y WAFS (cuyos FL no existen en ningún modelo y salen siempre
+    interpolados), se piden todos los niveles de la fuente entre la ISA de
+    `fl_min` y la del FL más alto (`fl_max`, o FL600 si `extend`), más el
+    primer nivel disponible por fuera de cada extremo, para que cada FL
+    quede entre dos capas. Devuelve {"levels": [...] (hPa, descendentes),
+    "missing": [FL sin nivel nominal], "interpolated": bool}."""
+    mode = normalize_mode(mode)
+    avail = sorted({float(lv) for lv in (available or [])}, reverse=True)
+    fl_min, fl_max = int(fl_min), int(fl_max)
+    top = FL_HIGHEST if extend else fl_max
+    interpolated = bool(convert) or mode in ("OACI56", "WAFS")
+    if not interpolated:
+        want = [nominal_hpa(fl) for fl in mode_fls(mode)]
+        have = {lv for lv in avail if abs(lv - round(lv)) < 1e-6}
+        levels = [lv for lv in want if lv in have]
+        missing = [fl for fl in mode_fls(mode) if nominal_hpa(fl) not in have]
+        return {"levels": levels, "missing": missing, "interpolated": False}
+    lo = isa_pa(max(FL_LOWEST, fl_min)) / 100.0     # mayor presión (FL más bajo)
+    hi = isa_pa(min(FL_HIGHEST, top)) / 100.0       # menor presión (FL más alto)
+    inside = [lv for lv in avail if hi <= lv <= lo]
+    below = [lv for lv in avail if lv > lo]         # más presión que el FL más bajo
+    above = [lv for lv in avail if lv < hi]         # menos presión que el FL más alto
+    levels = ([min(below)] if below else []) + inside + ([max(above)] if above else [])
+    levels = [int(lv) if lv == int(lv) else lv for lv in levels]
+    return {"levels": levels, "missing": [], "interpolated": True}

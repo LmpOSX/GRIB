@@ -8,7 +8,17 @@ El bloque **Área** tiene dos modos excluyentes (ver app/areas.py): *manual*
 (cuatro campos) y *por FIR* (una casilla por área habilitada en la
 configuración; los campos se recalculan solos como la envolvente de las
 marcadas más el margen y quedan bloqueados). Se recuerdan el último modo y
-las casillas marcadas."""
+las casillas marcadas.
+
+El bloque **Niveles** tiene cuatro botones excluyentes, INDRA, OACI, OACI56 y
+WAFS, que tildan los niveles de presión que ese modo necesita
+(fl_table.download_levels) y fijan el modo de conversión de esta descarga;
+el que arranca es el de Preferencias ▸ WAFS. INDRA y OACI sin «Convertir a
+WAFS» bajan los nominales tal cual, sin interpolar; con la casilla, o en
+OACI56 y WAFS (56 FL que ningún modelo tiene: siempre interpolados, la
+casilla queda tildada y bloqueada), se baja el rango completo de la fuente
+para interpolar cada FL entre dos capas. Lo tildado a mano se suma; «Todos»
+y «Ninguno» salen del modo."""
 import os
 
 from PyQt6.QtCore import Qt, QThread, pyqtSignal
@@ -25,6 +35,9 @@ from ..sources.cache import DownloadCache
 from ..widgets.params_form import ParamsForm
 from ..widgets.areas_editor import CoordEdit
 from .. import areas as A
+from .. import fl_table as flt
+
+MODE_BUTTONS = {"INDRA": "INDRA (14)", "OACI": "OACI (17)", "OACI56": "OACI56", "WAFS": "WAFS (ISA)"}
 
 
 class _Worker(QThread):
@@ -185,16 +198,49 @@ class DownloadDialog(GlassDialog):
         self.level_grid.setVerticalSpacing(2)
         self.level_checks = {}
         lv_lay.addWidget(self.level_grid_w)
-        row = QHBoxLayout()
-        for text, fn in (("Los del visor", self._set_viewer_levels),
-                         ("Todos", lambda: self._set_levels(self.source.levels)),
-                         ("Ninguno", lambda: self._set_levels([]))):
+        self.mode_row_w = QWidget()
+        row = QHBoxLayout(self.mode_row_w)
+        row.setContentsMargins(0, 0, 0, 0)
+        self.mode_buttons = {}
+        self._mode = None            # modo elegido con los botones, o None (a mano)
+        self._applying = False
+        for m in flt.MODES:
+            b = QPushButton(MODE_BUTTONS[m])
+            b.setCheckable(True)
+            b.setToolTip(flt.MODE_LABELS[m] + ". Tilda los niveles que necesita y fija el modo "
+                         "de conversión de esta descarga.")
+            b.clicked.connect(lambda _on, m=m: self._on_mode_clicked(m))
+            self.mode_buttons[m] = b
+            row.addWidget(b)
+        row.addSpacing(16)
+        for text, fn in (("Todos", lambda: self._set_manual(self.source.levels)),
+                         ("Ninguno", lambda: self._set_manual([]))):
             b = QPushButton(text)
             b.clicked.connect(fn)
             row.addWidget(b)
         row.addStretch()
-        lv_lay.addLayout(row)
+        lv_lay.addWidget(self.mode_row_w)
+        self.lbl_levels_hint = QLabel("")
+        self.lbl_levels_hint.setObjectName("Hint")
+        self.lbl_levels_hint.setWordWrap(True)
+        lv_lay.addWidget(self.lbl_levels_hint)
         lay.addWidget(self.levels_box)
+        # Conversión a WAFS: va con los niveles porque decide cuáles se piden
+        self.chk_wafs = QCheckBox("Convertir a WAFS (FL cada 1000 ft)")
+        self.chk_wafs.setChecked(bool(self._cfg.get("wafs_convert", True)))
+        self.chk_wafs.setToolTip("El valor inicial es «Convertir a WAFS por defecto» de "
+                                 "Preferencias ▸ WAFS. Sin marcar, el archivo queda en los "
+                                 "niveles de presión de la fuente, sin interpolar.")
+        self.chk_wafs.toggled.connect(self._on_wafs_toggled)
+        wrow = QHBoxLayout()
+        wrow.addWidget(self.chk_wafs, 1)
+        self.btn_wafs_prefs = QPushButton("Preferencias WAFS…")
+        self.btn_wafs_prefs.setToolTip("Modo con el que arranca el diálogo, rango de FL, "
+                                       "extrapolación y el valor por defecto de la casilla "
+                                       "(Preferencias ▸ WAFS).")
+        self.btn_wafs_prefs.clicked.connect(self._open_wafs_prefs)
+        wrow.addWidget(self.btn_wafs_prefs)
+        lay.addLayout(wrow)
 
         # ── Área ──
         self.lbl_zone = self._section(lay, "Área (grados; longitudes −180…180)")
@@ -306,19 +352,6 @@ class DownloadDialog(GlassDialog):
         self.chk_open = QCheckBox("Abrir en el visor al terminar")
         self.chk_open.setChecked(bool(self._cfg.get("download_open", True)))
         g.addWidget(self.chk_open, 3, 1)
-        self.chk_wafs = QCheckBox("Convertir a WAFS (FL cada 1000 ft)")
-        self.chk_wafs.setChecked(bool(self._cfg.get("wafs_convert", True)))
-        self.chk_wafs.setToolTip("El valor inicial es «Convertir a WAFS por defecto» de "
-                                 "Preferencias ▸ WAFS. Sin marcar, el archivo queda en los "
-                                 "niveles de presión de la fuente.")
-        wrow = QHBoxLayout()
-        wrow.addWidget(self.chk_wafs, 1)
-        self.btn_wafs_prefs = QPushButton("Preferencias WAFS…")
-        self.btn_wafs_prefs.setToolTip("Modo de etiquetado, rango de FL, extrapolación y el valor "
-                                       "por defecto de esta casilla (Preferencias ▸ WAFS).")
-        self.btn_wafs_prefs.clicked.connect(self._open_wafs_prefs)
-        wrow.addWidget(self.btn_wafs_prefs)
-        g.addLayout(wrow, 4, 1)
         lay.addLayout(g)
 
         # ── Progreso y botones ──
@@ -556,12 +589,14 @@ class DownloadDialog(GlassDialog):
             cols = 14
             for k, lv in enumerate(src.levels):
                 c = QCheckBox(f"{lv}")
-                c.toggled.connect(lambda _on: self._refresh_area())
+                c.toggled.connect(self._on_level_toggled)
                 self.level_checks[lv] = c
                 self.level_grid.addWidget(c, k // cols, k % cols)
-            self._set_viewer_levels()
+        self.mode_row_w.setVisible(is_alt and not src.flight_levels)
         self.lbl_levels.setVisible(is_alt)
         self.levels_box.setVisible(is_alt)
+        self._mode = flt.normalize_mode(self._cfg.get("wafs_mode", flt.DEFAULT_MODE))
+        self._apply_mode()
         self._refresh_levels()
         # Zona (la fuente puede proponer su dominio si no se pidió otra)
         has_zone = src.region_filter != "ninguno"
@@ -589,6 +624,7 @@ class DownloadDialog(GlassDialog):
             if not ok:
                 c.setChecked(False)
         self._refresh_area()
+        self._refresh_levels_hint()
 
     def _refresh_steps_hint(self):
         if self.source is None:
@@ -605,6 +641,11 @@ class DownloadDialog(GlassDialog):
         self._refresh_area()
 
     def _set_viewer_levels(self):
+        """Vuelve a la selección del modo elegido (o a la sugerida por la
+        fuente si no hay modo)."""
+        if self._mode is not None and not self.source.flight_levels:
+            self._apply_mode()
+            return
         p = self.source.merged_params(self.params())
         fn = getattr(self.source, "viewer_levels_for", None)
         levels = fn(p) if fn else list(self.source.viewer_levels)
@@ -614,6 +655,104 @@ class DownloadDialog(GlassDialog):
         p = self.source.merged_params(self.params())
         for lv, c in self.level_checks.items():
             c.setChecked(lv in levels and self.source.level_enabled(lv, p))
+        self._refresh_levels_hint()
+
+    def _set_manual(self, levels):
+        """«Todos» / «Ninguno»: se sale del modo; la casilla WAFS se libera."""
+        self._mode = None
+        for b in self.mode_buttons.values():
+            b.setChecked(False)
+        self._refresh_wafs_check()
+        self._set_levels(levels)
+
+    def _on_mode_clicked(self, mode):
+        self._mode = mode
+        self._apply_mode()
+
+    def _on_level_toggled(self, _on):
+        self._refresh_area()
+        self._refresh_levels_hint()
+
+    def _on_wafs_toggled(self, _on):
+        # Con o sin conversión cambian los niveles que necesita el modo
+        if not self._applying and self._mode is not None and self.level_checks:
+            self._apply_mode()
+        self._refresh_levels_hint()
+
+    def _wanted_levels(self):
+        """Lo que pide el modo elegido a esta fuente (fl_table.download_levels)."""
+        cfg = self._cfg
+        return flt.download_levels(self._mode, self.source.levels, self.wafs_enabled(),
+                                   fl_min=int(cfg.get("wafs_fl_min", flt.FL_LOWEST)),
+                                   fl_max=int(cfg.get("wafs_fl_max", 530)),
+                                   extend=bool(cfg.get("wafs_fl_extend", True)))
+
+    def _apply_mode(self):
+        """Tilda los niveles que necesita el modo elegido, enciende el
+        parámetro de niveles extra de la fuente (intermedios del GFS) si
+        hacen falta y se pueden pedir, y bloquea «Convertir a WAFS» en OACI56
+        y WAFS, que sin conversión no existen."""
+        if self._applying:
+            return
+        self._applying = True
+        try:
+            for m, b in self.mode_buttons.items():
+                b.setChecked(m == self._mode)
+            self._refresh_wafs_check()
+            src = self.source
+            if not self.level_checks:
+                return
+            if src.flight_levels or self._mode is None:
+                self._set_levels(list(src.viewer_levels))
+                return
+            want = self._wanted_levels()["levels"]
+            key = getattr(src, "extra_levels_param", None)
+            w = self.form.widget(key) if (key and self.form is not None) else None
+            if w is not None and not w.isChecked():
+                p = src.merged_params(self.params())
+                if any(not src.level_enabled(lv, p) for lv in want):
+                    w.setChecked(True)          # dispara _refresh_levels
+                    p = src.merged_params(self.params())
+                    if any(not src.level_enabled(lv, p) for lv in want):
+                        w.setChecked(False)     # la resolución no los permite
+            self._set_levels(want)
+        finally:
+            self._applying = False
+            self._refresh_levels_hint()
+
+    def _refresh_levels_hint(self):
+        """Qué se baja y qué sale: modo, cantidad de niveles, y los FL que
+        quedan sin nivel (nominal que la fuente no tiene o que se destildó)."""
+        if self.source is None or not self.level_checks or self.source.flight_levels:
+            self.lbl_levels_hint.setText("")
+            return
+        on = [lv for lv, c in self.level_checks.items() if c.isChecked()]
+        n = len(on)
+        rng = f" ({max(on):g}–{min(on):g} hPa)" if on else ""
+        if self._mode is None:
+            txt = f"{n} nivel(es) elegido(s) a mano{rng}"
+            txt += (" · se interpola a los FL del modo de Preferencias" if self.wafs_enabled()
+                    else " · sin conversión: el archivo queda en esos niveles, sin interpolar")
+            self.lbl_levels_hint.setText(txt)
+            return
+        want = self._wanted_levels()
+        fls = flt.mode_fls(self._mode)
+        if want["interpolated"]:
+            txt = (f"Modo {self._mode}: {n} nivel(es){rng} para interpolar {len(fls)} FL a su "
+                   f"presión ISA" + (" (etiqueta nominal)" if self._mode != "WAFS"
+                                     else " (etiqueta = ISA en Pa)"))
+            faltan = [lv for lv in want["levels"] if lv not in on]
+            if faltan:
+                txt += (f" · faltan {len(faltan)} de los {len(want['levels'])} niveles: "
+                        f"los FL afectados se interpolan entre capas más separadas")
+        else:
+            txt = (f"Modo {self._mode} sin convertir: {n} nivel(es) nominales{rng} tal cual, "
+                   f"sin interpolar; el archivo queda en la presión del modelo")
+            miss = list(want["missing"]) + [fl for fl in fls if flt.nominal_hpa(fl) in want["levels"]
+                                            and flt.nominal_hpa(fl) not in on]
+            if miss:
+                txt += " · sin nivel para " + ", ".join(flt.fl_label(fl) for fl in sorted(miss))
+        self.lbl_levels_hint.setText(txt)
 
     def _on_global_toggled(self, _on):
         self._refresh_area()
@@ -688,8 +827,12 @@ class DownloadDialog(GlassDialog):
             applied = bool(dlg.exec())
             if applied:
                 self._cfg.update(dlg.values())
-        if applied and self.chk_wafs.isEnabled():
-            self.chk_wafs.setChecked(bool(self._cfg.get("wafs_convert", True)))
+        if applied:
+            if self.chk_wafs.isEnabled():
+                self.chk_wafs.setChecked(bool(self._cfg.get("wafs_convert", True)))
+            if self.level_checks and not self.source.flight_levels:
+                self._mode = flt.normalize_mode(self._cfg.get("wafs_mode", flt.DEFAULT_MODE))
+                self._apply_mode()
 
     def _refresh_wafs_check(self):
         """La casilla «Convertir a WAFS» sólo tiene sentido en fuentes de altura
@@ -701,6 +844,11 @@ class DownloadDialog(GlassDialog):
         elif src.flight_levels:
             self.chk_wafs.setEnabled(False)
             self.chk_wafs.setText("Convertir a WAFS (ya viene por FL: no se toca)")
+        elif self._mode in ("OACI56", "WAFS"):
+            # 56 FL que ningún modelo tiene: sin conversión no existen
+            self.chk_wafs.setText("Convertir a WAFS (FL cada 1000 ft; OACI56 y WAFS siempre convierten)")
+            self.chk_wafs.setChecked(True)
+            self.chk_wafs.setEnabled(False)
         else:
             self.chk_wafs.setEnabled(True)
             self.chk_wafs.setText("Convertir a WAFS (FL cada 1000 ft)")
@@ -713,12 +861,16 @@ class DownloadDialog(GlassDialog):
                 and not self.source.flight_levels)
 
     def _wafs_options(self):
-        """Opciones de conversión a WAFS (rango, modo, extrapolación) de
-        Preferencias ▸ WAFS, o None si la casilla del diálogo está sin marcar."""
+        """Opciones de conversión a WAFS (rango y extrapolación de
+        Preferencias ▸ WAFS; el modo, el del botón elegido), o None si la
+        casilla del diálogo está sin marcar."""
         from ..wafs_format import options_from_config
         if not self.wafs_enabled():
             return None
-        return options_from_config(dict(self._cfg, wafs_convert=True))
+        opts = options_from_config(dict(self._cfg, wafs_convert=True))
+        if self._mode is not None:
+            opts["mode"] = self._mode
+        return opts
 
     def _cache(self):
         return DownloadCache(max_mb=float(self._cfg.get("cache_max_mb", 500)),

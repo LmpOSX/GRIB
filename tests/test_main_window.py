@@ -307,14 +307,22 @@ class TestDialogoDescarga(_Base):
         self.w.chk_global.setChecked(True)
         self.assertFalse(self.w.lat_n.isEnabled())
         self.assertIsNone(self.w.job().region)
-        # Sin pedir intermedios, sus casillas están deshabilitadas y vacías
-        self.assertFalse(self.w.level_checks[275].isEnabled())
-        self.assertNotIn(275, job.levels)
-        # Con intermedios (parámetro de la fuente), "Los del visor" suma 275/225/175
-        self.w.form.widget("niveles_intermedios").setChecked(True)
+        # El modo inicial (OACI, el de Preferencias) con conversión necesita
+        # los intermedios cada 25 hPa: el parámetro se enciende solo y se
+        # piden 850–70 (32 niveles)
+        self.assertEqual(self.w._mode, "OACI")
+        self.assertTrue(self.w.mode_buttons["OACI"].isChecked())
+        self.assertTrue(self.w.form.widget("niveles_intermedios").isChecked())
         self.assertTrue(self.w.level_checks[275].isEnabled())
+        self.assertEqual((len(job.levels), job.levels[0], job.levels[-1]), (32, 850, 70))
+        self.assertEqual(job.params["niveles_intermedios"], True)
+        self.assertEqual([lv for lv in job.levels if lv in (275, 225, 175)], [275, 225, 175])
+        # Sin intermedios (a mano) sus casillas quedan deshabilitadas y vacías
+        self.w.form.widget("niveles_intermedios").setChecked(False)
+        self.assertFalse(self.w.level_checks[275].isEnabled())
+        self.assertNotIn(275, self.w.job().levels)
+        self.w.form.widget("niveles_intermedios").setChecked(True)
         self.w._set_viewer_levels()
-        self.assertEqual(self.w.job().params["niveles_intermedios"], True)
         self.assertEqual([lv for lv in self.w.job().levels if lv in (275, 225, 175)], [275, 225, 175])
         # A 1,00° se apagan
         res = self.w.form.widget("resolucion")

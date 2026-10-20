@@ -130,7 +130,26 @@ vuelo) y `Obtener datos…` (⌘⇧D) abre el diálogo de descarga de esa fuente
   fuente debería tener publicadas; los plazos se validan contra los que la
   fuente ofrece (el GFS: cada hora hasta +120, cada 3 h hasta +384).
 * **Variables** y **niveles** de la fuente (sin selector de nivel en las
-  fuentes de superficie), con atajos "Los del visor", "Todos" y "Ninguno".
+  fuentes de superficie). Debajo de la grilla de niveles hay cuatro
+  botones excluyentes, **INDRA (14)**, **OACI (17)**, **OACI56** y **WAFS
+  (ISA)**, que tildan los niveles que ese modo necesita y fijan el modo de
+  conversión de esta descarga (arranca con el de Preferencias ▸ WAFS), y
+  la casilla **Convertir a WAFS** con el botón `Preferencias WAFS…`:
+  - INDRA u OACI **sin** convertir: se piden los nominales del Anexo 3 tal
+    cual (850, 750, 700, … 100 hPa) y el archivo queda en la presión del
+    modelo, sin interpolar; los que la fuente no tiene (el ECMWF no publica
+    750, 450, 350, 275, 225, 175 ni 125) se listan como FL sin nivel.
+  - INDRA u OACI **con** convertir, y siempre OACI56 y WAFS (56 FL que
+    ningún modelo tiene: la casilla queda tildada y bloqueada): se pide el
+    rango completo de la fuente entre la ISA de FL050 y la de FL600, más un
+    nivel por fuera de cada extremo (en el GFS, 850–70 cada 25 hPa, 32
+    niveles), para interpolar cada FL entre dos capas cercanas; los
+    intermedios cada 25 hPa del GFS se activan solos cuando la resolución
+    lo permite.
+  - Lo tildado a mano se suma; `Todos` y `Ninguno` salen del modo (ahí
+    rige el de Preferencias si se convierte). Una línea debajo dice qué se
+    baja y qué sale: cantidad y rango de niveles, FL a interpolar o «sin
+    convertir», y los FL que quedaron sin nivel.
 * **Opciones de la fuente**: formulario generado a partir de sus parámetros
   (para el GFS: resolución, "bajar siempre 0,25° y regrillar", suavizado y
   niveles intermedios).
@@ -146,16 +165,18 @@ vuelo) y `Obtener datos…` (⌘⇧D) abre el diálogo de descarga de esa fuente
   estimado. Se recuerdan el último modo y las casillas marcadas. Ver
   «Áreas de descarga por FIR».
 * **Destino**: carpeta y nombre; un archivo por plazo o uno con todos;
-  abrir al terminar; **Convertir a WAFS** (FL cada 1000 ft, con el rango y
-  el modo de Preferencias ▸ WAFS; el botón `Preferencias WAFS…` de al lado
-  abre Preferencias limitadas a esa pestaña, con las demás bloqueadas, y
-  al aplicar la casilla toma el nuevo valor por defecto). La casilla arranca como «Convertir a
-  WAFS por defecto» de Preferencias; sin marcar, el archivo queda en los
-  niveles de presión de la fuente y sin el sufijo `_wafs`, y al abrirlo al
-  terminar se muestra tal cual, en modo presión, aunque Preferencias
-  convierta los archivos locales (si después lo abrís con Archivo ▸ Abrir,
-  ahí sí rige esa preferencia). Queda inactiva en fuentes de superficie y
-  en las que ya publican por FL.
+  abrir al terminar.
+* **Convertir a WAFS** (en el bloque de niveles): FL cada 1000 ft con el
+  rango y la extrapolación de Preferencias ▸ WAFS y el modo del botón
+  elegido; el botón `Preferencias WAFS…` de al lado abre Preferencias
+  limitadas a esa pestaña, con las demás bloqueadas, y al aplicar la
+  casilla y el botón de modo toman los nuevos valores por defecto. La
+  casilla arranca como «Convertir a WAFS por defecto» de Preferencias; sin
+  marcar, el archivo queda en los niveles de presión de la fuente y sin el
+  sufijo `_wafs`, y al abrirlo al terminar se muestra tal cual, en modo
+  presión, aunque Preferencias convierta los archivos locales (si después
+  lo abrís con Archivo ▸ Abrir, ahí sí rige esa preferencia). Queda
+  inactiva en fuentes de superficie y en las que ya publican por FL.
 
 La descarga corre en un hilo con progreso y cancelación, no deja archivos a
 medias, reintenta tres veces ante cortes de red o errores 5xx, y comprueba
@@ -310,8 +331,10 @@ real salvo la cuantización del empaquetado). Por eso la fuente ofrece:
 * **Niveles intermedios cada 25 hPa** (875 … 125; pgrb2b a 0,25°,
   incluidos en pgrb2full a 0,50°). Ningún nivel del GFS coincide
   exactamente con la presión ISA de un FL salvo F340 (250 hPa) y F530
-  (100 hPa); con los intermedios cada FL del visor queda a menos de 8 hPa
-  de un nivel del archivo (F320 ≈ 275, F360 ≈ 225, F410 ≈ 175).
+  (100 hPa); con los intermedios cada FL queda a menos de 8 hPa de un
+  nivel del archivo (F320 ≈ 275, F360 ≈ 225, F410 ≈ 175). Los botones de
+  modo del diálogo la encienden solos cuando hacen falta (los nominales
+  275, 225, 175 y 125, o el rango completo para convertir).
 
 ### Franja STATUS y panel de la derecha
 

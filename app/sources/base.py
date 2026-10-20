@@ -189,6 +189,7 @@ class Source:
     default_variables = []
     levels = []                # niveles de presión disponibles (hPa)
     viewer_levels = []         # subconjunto sugerido
+    extra_levels_param = None  # parámetro bool que habilita niveles extra (GFS: intermedios)
     cycles = [0, 6, 12, 18]
     availability_lag_h = 4.0
     region_filter = "servidor"   # 'servidor', 'local' o 'ninguno'

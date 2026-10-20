@@ -515,7 +515,8 @@ class SettingsDialog(GlassDialog):
             str(self._cfg.get("wafs_mode", DEFAULT_MODE)).upper())))
         self.cb_wafs_mode.setToolTip("Con qué etiqueta de nivel se graba cada FL al convertir o exportar: "
                                      "nominal en hPa (INDRA 14 FL / OACI 17 FL / OACI56) o la presión ISA en Pa (WAFS). "
-                                     "El dato va siempre a la ISA exacta.")
+                                     "El dato va siempre a la ISA exacta. Es el botón de modo con el que arranca "
+                                     "el diálogo Obtener datos.")
         row.addWidget(self.cb_wafs_mode, 1)
         b = QPushButton("Ver tabla…")
         b.clicked.connect(self._show_fl_table)
