@@ -1,6 +1,6 @@
 # Cambios
 
-## Sin publicar
+## 0.3.5 — 2026-10-20
 
 - Diálogo de descarga: debajo de la grilla de niveles hay cuatro botones
   excluyentes, INDRA (14), OACI (17), OACI (56) y WAFS (56), que tildan los
@@ -11,7 +11,9 @@
   modelo tiene: la casilla queda tildada y bloqueada), se baja el rango
   completo de la fuente (GFS: 850–70 cada 25 hPa) para interpolar cada FL
   entre dos capas cercanas, y los intermedios del GFS se encienden solos.
-  Lo tildado a mano se suma; «Todos» y «Ninguno» salen del modo. Una línea
+  Lo tildado a mano se suma; «Todos» y «Ninguno» salen del modo. Si se
+  desmarca «Incluir niveles intermedios» los intermedios se destildan y
+  deshabilitan, y al marcarla otra vez se vuelven a tildar los del modo. Una línea
   debajo dice qué se baja y qué sale, con los FL que quedan sin nivel. La
   casilla «Convertir a WAFS» y «Preferencias WAFS…» pasan del bloque
   Destino al de niveles. Desaparece «Los del visor».
@@ -22,8 +24,8 @@
   la fuente: resolución, regrillado, suavizado); Descarga y archivo. Los
   parámetros de cada fuente declaran a qué grupo van. Para que entre sin
   scroll en una pantalla de notebook: la descripción de la fuente va en el
-  renglón del título; corrida, plazos y los plazos resultantes en un solo
-  renglón; «Variables», «Niveles» y «Área» como rótulos a la izquierda de
+  renglón del título; corrida, plazos y la cantidad de plazos (sin la
+  lista) en un solo renglón; «Variables», «Niveles» y «Área» como rótulos a la izquierda de
   sus casillas; «Unir» y «Abrir» juntos; y abajo quedan sólo los botones (la
   barra de progreso y el estado aparecen al descargar). El área va en dos
   renglones, «Manual» con los cuatro campos y «Por FIR» con las casillas
