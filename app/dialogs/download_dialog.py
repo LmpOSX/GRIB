@@ -68,6 +68,73 @@ class _Worker(QThread):
             self.done.emit([], f"{type(exc).__name__}: {exc}")
 
 
+class _ProgressDialog(GlassDialog):
+    """Progreso de la descarga: modal y centrado sobre el diálogo de
+    descarga. No se puede quitar (ni Escape ni el botón de la ventana):
+    sólo «Cancelar», que corta la descarga; se cierra solo al terminar."""
+    cancelled = pyqtSignal()
+
+    def __init__(self, parent):
+        super().__init__(parent)
+        self.setWindowTitle("Descargando")
+        self.setWindowFlags(Qt.WindowType.Dialog | Qt.WindowType.CustomizeWindowHint
+                            | Qt.WindowType.WindowTitleHint)       # sin botón de cerrar
+        self.setWindowModality(Qt.WindowModality.WindowModal)
+        self.setMinimumWidth(480)
+        self._finished = False
+        outer = QVBoxLayout(self)
+        outer.setContentsMargins(20, 20, 20, 20)
+        panel = QFrame()
+        panel.setObjectName("GlassPanel")
+        _add_shadow(panel)
+        outer.addWidget(panel)
+        lay = QVBoxLayout(panel)
+        lay.setContentsMargins(24, 18, 24, 18)
+        lay.setSpacing(10)
+        title = QLabel("Descargando…")
+        title.setObjectName("Heading")
+        lay.addWidget(title)
+        self.lbl_status = QLabel("")
+        self.lbl_status.setObjectName("SubHeading")
+        self.lbl_status.setWordWrap(True)
+        lay.addWidget(self.lbl_status)
+        self.progress = QProgressBar()
+        self.progress.setRange(0, 1000)
+        self.progress.setValue(0)
+        self.progress.setTextVisible(False)
+        lay.addWidget(self.progress)
+        row = QHBoxLayout()
+        row.addStretch()
+        self.btn_cancel = QPushButton("Cancelar")
+        self.btn_cancel.clicked.connect(self._cancel)
+        row.addWidget(self.btn_cancel)
+        lay.addLayout(row)
+
+    def set_progress(self, msg, frac):
+        self.lbl_status.setText(msg)
+        self.progress.setValue(int(frac * 1000))
+
+    def _cancel(self):
+        self.lbl_status.setText("Cancelando…")
+        self.btn_cancel.setEnabled(False)
+        self.cancelled.emit()
+
+    def finish(self):
+        self._finished = True
+        self.hide()
+        self.deleteLater()
+
+    def reject(self):
+        if self._finished:                     # Escape no lo quita mientras baja
+            super().reject()
+
+    def closeEvent(self, event):
+        if self._finished:
+            super().closeEvent(event)
+        else:
+            event.ignore()
+
+
 class _Forms(QObject):
     """Varios ParamsForm (los parámetros de la fuente repartidos entre los
     grupos del diálogo) vistos como uno solo."""
@@ -113,6 +180,7 @@ class DownloadDialog(GlassDialog):
         self.wafs_requested = True    # False: se bajó sin «Convertir a WAFS»
         self.last_provenance = None
         self._worker = None
+        self._progress_dlg = None
         self._dest_dir = dest_dir
         self._region = region
         self._domain_region = None
@@ -432,16 +500,10 @@ class DownloadDialog(GlassDialog):
         g.addLayout(row, 2, 1, 1, 2)
         lay.addLayout(g)
 
-        # ── Progreso y botones ──
+        # ── Botones (el progreso va en un diálogo modal aparte) ──
         lay = plan
-        self.progress = QProgressBar()
-        self.progress.setRange(0, 1000)
-        self.progress.setValue(0)
-        self.progress.setTextVisible(False)
-        self.progress.hide()                  # sólo mientras se descarga
-        lay.addWidget(self.progress)
         row = QHBoxLayout()
-        self.lbl_status = QLabel("")          # progreso, resultado o error, junto a los botones
+        self.lbl_status = QLabel("")          # resultado o error, junto a los botones
         self.lbl_status.setObjectName("SubHeading")
         row.addWidget(self.lbl_status, 1)
         self.btn_cancel = QPushButton("Cerrar")
@@ -903,17 +965,36 @@ class DownloadDialog(GlassDialog):
 
     def _set_busy(self, busy):
         for w in self.findChildren(QWidget):
-            if w not in (self.btn_cancel, self.progress, self.lbl_status):
+            if w not in (self.btn_cancel, self.lbl_status) and not self._in_progress_dlg(w):
                 if isinstance(w, (QPushButton, QCheckBox, QSpinBox, QDoubleSpinBox,
                                   QComboBox, QLineEdit, QRadioButton)):
                     w.setEnabled(not busy)
-        self.progress.setVisible(busy)
         if not busy:
             self._refresh_levels()
             self._refresh_area()
             self._refresh_wafs_check()
             self.btn_domain.setEnabled(self._domain_region is not None)
         self.btn_cancel.setText("Cancelar" if busy else "Cerrar")
+
+    def _in_progress_dlg(self, w):
+        d = self._progress_dlg
+        if d is None:
+            return False
+        while w is not None:
+            if w is d:
+                return True
+            w = w.parentWidget()
+        return False
+
+    def _close_progress(self):
+        if self._progress_dlg is not None:
+            self._progress_dlg.finish()
+            self._progress_dlg = None
+
+    def _cancel_download(self):
+        if self._worker is not None and self._worker.isRunning():
+            self._worker.cancel()
+            self.lbl_status.setText("Cancelando…")
 
     def _open_wafs_prefs(self):
         """Preferencias limitadas a la pestaña WAFS (las demás bloqueadas).
@@ -1005,23 +1086,26 @@ class DownloadDialog(GlassDialog):
             if r != QMessageBox.StandardButton.Yes:
                 return
         self.downloaded_paths = []
+        self._progress_dlg = _ProgressDialog(self)
+        self._progress_dlg.cancelled.connect(self._cancel_download)
+        self._progress_dlg.set_progress(f"Conectando con {self.source.name}…", 0.0)
         self._set_busy(True)
-        self.progress.setValue(0)
-        self.lbl_status.setText(f"Conectando con {self.source.name}…")
+        self.lbl_status.setText("")
+        self._progress_dlg.show()
         self._worker = _Worker(self.source, job, self._cache(), self, wafs=self._wafs_options())
         self._worker.progress.connect(self._on_progress)
         self._worker.done.connect(self._on_done)
         self._worker.start()
 
     def _on_progress(self, _i, _n, msg, frac):
-        self.progress.setValue(int(frac * 1000))
-        self.lbl_status.setText(msg)
+        if self._progress_dlg is not None:
+            self._progress_dlg.set_progress(msg, frac)
 
     def _on_done(self, paths, error):
+        self._close_progress()
         self._set_busy(False)
         if error == "cancelada":
             self.lbl_status.setText("Descarga cancelada.")
-            self.progress.setValue(0)
             return
         if error:
             self.lbl_status.setText("Error: " + error.splitlines()[0])
@@ -1040,8 +1124,7 @@ class DownloadDialog(GlassDialog):
 
     def _on_cancel(self):
         if self._worker is not None and self._worker.isRunning():
-            self._worker.cancel()
-            self.lbl_status.setText("Cancelando…")
+            self._cancel_download()
             return
         self.reject()
 
@@ -1049,4 +1132,5 @@ class DownloadDialog(GlassDialog):
         if self._worker is not None and self._worker.isRunning():
             self._worker.cancel()
             self._worker.wait(3000)
+        self._close_progress()
         super().closeEvent(event)

@@ -32,8 +32,14 @@
   «Configurar áreas…», «Todo el globo», «Dominio del archivo abierto» y el
   tamaño. Las opciones de la fuente van en dos columnas (resolución y
   suavizado en un renglón, «bajar siempre 0,25°» debajo) con «Mostrar el
-  área en el mapa» a la derecha. Las casillas y radios deshabilitados se
-  ven grisados (antes el tema no los distinguía).
+  área en el mapa» a la derecha.
+- Lo deshabilitado se nota: texto bien atenuado y borde punteado en
+  casillas, radios, botones, combos, campos numéricos y de texto, en toda
+  la aplicación (antes el tema casi no los distinguía).
+- El progreso de la descarga va en un diálogo modal centrado sobre el de
+  descarga, con el mensaje del plazo, la barra y «Cancelar»; no se quita con
+  Escape ni con el botón de la ventana y se cierra solo al terminar. El
+  diálogo de descarga ya no cambia de tamaño al descargar.
 
 ## 0.3.4 — 2026-10-19
 

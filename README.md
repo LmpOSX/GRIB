@@ -185,8 +185,10 @@ fuente) y **Descarga y archivo**:
   lo abrís con Archivo ▸ Abrir, ahí sí rige esa preferencia). Queda
   inactiva en fuentes de superficie y en las que ya publican por FL.
 
-La descarga corre en un hilo con progreso y cancelación, no deja archivos a
-medias, reintenta tres veces ante cortes de red o errores 5xx, y comprueba
+La descarga corre en un hilo, con un diálogo de progreso modal centrado
+sobre el de descarga (no se quita con Escape ni con el botón de la ventana:
+sólo `Cancelar`, que corta la descarga, y se cierra solo al terminar). No
+deja archivos a medias, reintenta tres veces ante cortes de red o errores 5xx, y comprueba
 que lo recibido sea realmente GRIB2/NetCDF (una página HTML porque el plazo
 aún no se publicó se informa con la sugerencia de probar la corrida
 anterior; un 401/403 avisa que revises las credenciales). Lo bajado queda en

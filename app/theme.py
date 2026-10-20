@@ -108,6 +108,8 @@ def build_stylesheet(accent_hex: str, font_size: int = 13,
     txd   = _hex(p["text_dim"])
     acc_solid = _rgba(p["accent"], 230)
     sel   = _rgba(p["accent"], 90)
+    dis   = _rgba(p["text_dim"], 120)        # texto de controles deshabilitados
+    brd_dis = _rgba(p["text_dim"], 90)       # su borde (punteado)
 
     h1 = font_size + 4   # Heading
     font_size_plus = font_size + 1   # InfoValue / InfoTable (consulta de punto)
@@ -742,17 +744,6 @@ QRadioButton::indicator:checked {{
 QCheckBox::indicator:hover, QRadioButton::indicator:hover {{
     border-color: {accl};
 }}
-QCheckBox:disabled, QRadioButton:disabled {{
-    color: {txd};
-}}
-QCheckBox::indicator:disabled, QRadioButton::indicator:disabled {{
-    background: {bg1};
-    border-color: {brd};
-}}
-QCheckBox::indicator:checked:disabled, QRadioButton::indicator:checked:disabled {{
-    background: {brd};
-    border-color: {brd};
-}}
 QPlainTextEdit {{
     background: {bg_d};
     border: none;
@@ -833,6 +824,26 @@ QLabel#FieldNote {{
 }}
 QTableWidget#InfoTable {{
     font-size: {font_size_plus}px;
+}}
+
+/* ── Deshabilitado: texto bien atenuado y borde punteado, en todos los
+   controles, para que se note qué no se puede usar ── */
+QCheckBox:disabled, QRadioButton:disabled, QLabel:disabled {{
+    color: {dis};
+}}
+QCheckBox::indicator:disabled, QRadioButton::indicator:disabled {{
+    background: transparent;
+    border: 1px dashed {brd_dis};
+}}
+QCheckBox::indicator:checked:disabled, QRadioButton::indicator:checked:disabled {{
+    background: {brd_dis};
+    border: 1px solid {brd_dis};
+}}
+QPushButton:disabled, QPushButton#AccentBtn:disabled, QComboBox:disabled, QSpinBox:disabled,
+QDoubleSpinBox:disabled, QLineEdit:disabled {{
+    color: {dis};
+    background: transparent;
+    border: 1px dashed {brd_dis};
 }}
 """
     import sys as _sys
