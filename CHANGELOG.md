@@ -25,7 +25,15 @@
   renglón del título; corrida, plazos y los plazos resultantes en un solo
   renglón; «Variables», «Niveles» y «Área» como rótulos a la izquierda de
   sus casillas; «Unir» y «Abrir» juntos; y abajo quedan sólo los botones (la
-  barra de progreso y el estado aparecen al descargar).
+  barra de progreso y el estado aparecen al descargar). El área va en dos
+  renglones, «Manual» con los cuatro campos y «Por FIR» con las casillas
+  (código; nombre en el tooltip), Todas / Ninguna y el margen, y el modo
+  que no está elegido queda grisado en vez de ocultarse; debajo,
+  «Configurar áreas…», «Todo el globo», «Dominio del archivo abierto» y el
+  tamaño. Las opciones de la fuente van en dos columnas (resolución y
+  suavizado en un renglón, «bajar siempre 0,25°» debajo) con «Mostrar el
+  área en el mapa» a la derecha. Las casillas y radios deshabilitados se
+  ven grisados (antes el tema no los distinguía).
 
 ## 0.3.4 — 2026-10-19
 

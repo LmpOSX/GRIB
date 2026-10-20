@@ -3,7 +3,7 @@
 Lo usan el diálogo de configuración de la fuente (valores por defecto) y el
 de descarga (valores de esa descarga), así sumar una fuente no toca la
 interfaz."""
-from PyQt6.QtCore import pyqtSignal
+from PyQt6.QtCore import Qt, pyqtSignal
 from PyQt6.QtWidgets import (
     QWidget, QGridLayout, QLabel, QComboBox, QCheckBox, QSpinBox, QDoubleSpinBox, QLineEdit,
 )
@@ -12,32 +12,49 @@ from PyQt6.QtWidgets import (
 class ParamsForm(QWidget):
     changed = pyqtSignal()
 
-    def __init__(self, params, values=None, parent=None):
+    def __init__(self, params, values=None, parent=None, columns=1):
+        """`columns` > 1 pone varios parámetros (rótulo y campo) por fila;
+        los booleanos ocupan una fila entera."""
         super().__init__(parent)
         self._params = list(params)
         self._widgets = {}
+        self._columns = max(1, int(columns))
         grid = QGridLayout(self)
         grid.setContentsMargins(0, 0, 0, 0)
         grid.setHorizontalSpacing(8)
         grid.setVerticalSpacing(4)
-        row = 0
+        self._grid = grid
+        row = col = 0
         for p in self._params:
             w = self._make(p)
             if p.help:
                 w.setToolTip(p.help)
             if p.kind == "bool":
-                grid.addWidget(w, row, 0, 1, 2)
+                if col:
+                    row, col = row + 1, 0
+                grid.addWidget(w, row, 0, 1, 2 * self._columns)
+                row += 1
             else:
                 lbl = QLabel(p.label)
                 if p.help:
                     lbl.setToolTip(p.help)
-                grid.addWidget(lbl, row, 0)
-                grid.addWidget(w, row, 1)
+                grid.addWidget(lbl, row, 2 * col)
+                grid.addWidget(w, row, 2 * col + 1)
+                col += 1
+                if col >= self._columns:
+                    row, col = row + 1, 0
             self._widgets[p.key] = w
-            row += 1
-        grid.setColumnStretch(1, 1)
+        self._rows = row + (1 if col else 0)
+        for c in range(self._columns):
+            grid.setColumnStretch(2 * c + 1, 1)
         if values:
             self.set_values(values)
+
+    def add_right(self, widget):
+        """Un widget ajeno al formulario en su última fila, a la derecha (el
+        diálogo de descarga pone ahí «Mostrar el área en el mapa»)."""
+        self._grid.addWidget(widget, max(0, self._rows - 1), 2 * self._columns,
+                             alignment=Qt.AlignmentFlag.AlignRight | Qt.AlignmentFlag.AlignVCenter)
 
     def _make(self, p):
         if p.kind == "choice":

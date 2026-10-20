@@ -467,7 +467,8 @@ class TestDialogoDescargaArea(_QtBase):
         d._area_checks["SAEF"].setChecked(True)
         d.rb_manual.setChecked(True)
         self.assertTrue(d.lat_n.isEnabled())
-        self.assertFalse(d.fir_box.isVisible())
+        self.assertFalse(d.fir_box.isEnabled())
+        self.assertTrue(d.manual_box.isEnabled())
         self.assertEqual(d.region(), (-29.22, -47.0, -72.85, -9.0))
         d.lat_n.setText("30°00'S")
         d.lat_n.editingFinished.emit()
@@ -511,7 +512,9 @@ class TestDialogoDescargaArea(_QtBase):
         self.assertNotIn("SARR", d._area_checks)
         self.assertIn("TEST", d._area_checks)
         self.assertEqual(d.region(), (-29.0, -36.0, -61.0, -54.0))
-        self.assertEqual(d._area_checks["SAEF"].toolTip(), A.VERIFY_NOTE)
+        self.assertEqual(d._area_checks["SAEF"].text(), "SAEF")          # el nombre va en el tooltip
+        self.assertIn("Ezeiza", d._area_checks["SAEF"].toolTip())
+        self.assertIn(A.VERIFY_NOTE, d._area_checks["SAEF"].toolTip())
         # «Configurar áreas…» (diálogo simulado) actualiza las casillas
         from app.dialogs import areas_dialog as ad
 

@@ -742,6 +742,17 @@ QRadioButton::indicator:checked {{
 QCheckBox::indicator:hover, QRadioButton::indicator:hover {{
     border-color: {accl};
 }}
+QCheckBox:disabled, QRadioButton:disabled {{
+    color: {txd};
+}}
+QCheckBox::indicator:disabled, QRadioButton::indicator:disabled {{
+    background: {bg1};
+    border-color: {brd};
+}}
+QCheckBox::indicator:checked:disabled, QRadioButton::indicator:checked:disabled {{
+    background: {brd};
+    border-color: {brd};
+}}
 QPlainTextEdit {{
     background: {bg_d};
     border: none;

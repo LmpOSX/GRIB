@@ -26,11 +26,11 @@ class GFSSource(Source):
         Param("resolucion", "Resolución de la grilla", "choice", "0p25",
               choices=[(k, n) for k, n, *_ in gfs.RESOLUTIONS],
               help="0,50° y 1,00° son muestras puntuales del campo de 0,25°."),
-        Param("solo_0p25", "Bajar siempre 0,25° y regrillar localmente", "bool", False,
-              help="Para suavizar hace falta el campo fino; con suavizado se activa solo."),
         Param("suavizado", "Suavizado al regrillar", "choice", "ninguno", choices=SMOOTHING,
               help="Promedio ponderado por área de las celdas de 0,25° que cubre cada celda "
                    "gruesa. Sólo actúa al regrillar a 0,50° o 1,00°."),
+        Param("solo_0p25", "Bajar siempre 0,25° y regrillar localmente", "bool", False,
+              help="Para suavizar hace falta el campo fino; con suavizado se activa solo."),
         Param("niveles_intermedios", "Incluir niveles intermedios cada 25 hPa (pgrb2b)", "bool",
               False, help="A 0,25° se piden al producto pgrb2b; a 0,50° vienen en pgrb2full; "
                           "a 1,00° NOMADS no los filtra.", group="niveles"),

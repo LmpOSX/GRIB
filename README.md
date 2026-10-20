@@ -158,10 +158,12 @@ fuente) y **Descarga y archivo**:
   "bajar siempre 0,25° y regrillar" y suavizado; «Incluir niveles
   intermedios cada 25 hPa» va con los niveles, debajo de los botones de
   modo).
-* **Área**: dos modos excluyentes. *Manual*: lat N/S y lon W/E (grados
+* **Área** (en «Grilla y resolución»): dos modos excluyentes, cada uno en
+  su renglón y el otro grisado. *Manual*: lat N/S y lon W/E (grados
   decimales con signo o grados-minutos con hemisferio, p. ej. `34°02'S`),
   todo el globo, o "Dominio del archivo abierto". *Por FIR*: una casilla
-  por área habilitada en Preferencias ▸ Áreas / FIR; los cuatro campos se
+  por área habilitada en Preferencias ▸ Áreas / FIR (el código; el nombre
+  en el tooltip); los cuatro campos se
   recalculan solos como la **envolvente** de las marcadas (la latitud más
   al norte, la más al sur, la longitud más al oeste y la más al este) más
   el margen, y quedan bloqueados (al pasar a manual se copian como punto de
