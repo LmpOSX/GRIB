@@ -124,7 +124,10 @@ cuando la app está instalada (ver «Instaladores»).
 El visor obtiene datos de **fuentes** intercambiables. La fuente se elige en
 el selector `Fuente` de la barra de acciones (sólo aparecen las habilitadas;
 `✓ FL` marca las que publican los niveles isobáricos OACI por nivel de
-vuelo) y `Obtener datos…` (⌘⇧D) abre el diálogo de descarga de esa fuente:
+vuelo) y `Obtener datos…` (⌘⇧D) abre el diálogo de descarga de esa fuente,
+con los campos en cuatro recuadros con título: **Corrida y plazos**,
+**Variables y niveles**, **Grilla y resolución** (área y opciones de la
+fuente) y **Descarga y archivo**:
 
 * **Corrida y plazos**: el combo de corrida lista las últimas doce que la
   fuente debería tener publicadas; los plazos se validan contra los que la
@@ -150,9 +153,11 @@ vuelo) y `Obtener datos…` (⌘⇧D) abre el diálogo de descarga de esa fuente
     rige el de Preferencias si se convierte). Una línea debajo dice qué se
     baja y qué sale: cantidad y rango de niveles, FL a interpolar o «sin
     convertir», y los FL que quedaron sin nivel.
-* **Opciones de la fuente**: formulario generado a partir de sus parámetros
-  (para el GFS: resolución, "bajar siempre 0,25° y regrillar", suavizado y
-  niveles intermedios).
+* **Opciones de la fuente** (en «Grilla y resolución», después del área):
+  formulario generado a partir de sus parámetros (para el GFS: resolución,
+  "bajar siempre 0,25° y regrillar" y suavizado; «Incluir niveles
+  intermedios cada 25 hPa» va con los niveles, debajo de los botones de
+  modo).
 * **Área**: dos modos excluyentes. *Manual*: lat N/S y lon W/E (grados
   decimales con signo o grados-minutos con hemisferio, p. ej. `34°02'S`),
   todo el globo, o "Dominio del archivo abierto". *Por FIR*: una casilla
@@ -164,8 +169,8 @@ vuelo) y `Obtener datos…` (⌘⇧D) abre el diálogo de descarga de esa fuente
   resultante: grados, puntos de grilla a la resolución elegida y tamaño
   estimado. Se recuerdan el último modo y las casillas marcadas. Ver
   «Áreas de descarga por FIR».
-* **Destino**: carpeta y nombre; un archivo por plazo o uno con todos;
-  abrir al terminar.
+* **Descarga y archivo**: carpeta y nombre; un archivo por plazo o uno con
+  todos; abrir al terminar.
 * **Convertir a WAFS** (en el bloque de niveles): FL cada 1000 ft con el
   rango y la extrapolación de Preferencias ▸ WAFS y el modo del botón
   elegido; el botón `Preferencias WAFS…` de al lado abre Preferencias

@@ -15,6 +15,14 @@
   debajo dice qué se baja y qué sale, con los FL que quedan sin nivel. La
   casilla «Convertir a WAFS» y «Preferencias WAFS…» pasan del bloque
   Destino al de niveles. Desaparece «Los del visor».
+- El diálogo de descarga agrupa sus campos en cuatro recuadros con título:
+  Corrida y plazos; Variables y niveles (variables, grilla de niveles,
+  botones de modo, «Incluir niveles intermedios», «Convertir a WAFS» y la
+  línea descriptiva); Grilla y resolución (área y después las opciones de
+  la fuente: resolución, regrillado, suavizado); Descarga y archivo. Los
+  parámetros de cada fuente declaran a qué grupo van. Si el diálogo no
+  entra en la pantalla, el cuerpo se desplaza con scroll en vez de aplastar
+  las grillas.
 
 ## 0.3.4 — 2026-10-19
 

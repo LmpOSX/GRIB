@@ -46,10 +46,12 @@ class Param:
     """Parámetro propio de una fuente; el formulario se arma a partir de esto.
     kind: 'choice' (choices = [(valor, texto)]), 'bool', 'int', 'float', 'text'."""
 
-    def __init__(self, key, label, kind, default, choices=None, lo=None, hi=None, help=""):
+    def __init__(self, key, label, kind, default, choices=None, lo=None, hi=None, help="",
+                 group="fuente"):
         self.key, self.label, self.kind, self.default = key, label, kind, default
         self.choices = choices or []
         self.lo, self.hi, self.help = lo, hi, help
+        self.group = group       # dónde va en el diálogo de descarga: 'fuente' o 'niveles'
 
 
 class Request:

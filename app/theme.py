@@ -344,6 +344,23 @@ QLabel#TotalLabel {{
     border: 1px solid {brd};
 }}
 
+/* ── Recuadros del diálogo de descarga (borde real, título adentro) ── */
+#DownloadGroup {{
+    background: transparent;
+    border: 1px solid {brd};
+    border-radius: 8px;
+}}
+QLabel#GroupTitle {{
+    color: {txd};
+    font-size: {h2}px;
+    font-weight: 600;
+    padding-bottom: 2px;
+}}
+QScrollArea#DownloadScroll, QScrollArea#DownloadScroll > QWidget > QWidget {{
+    background: transparent;
+    border: none;
+}}
+
 /* ── Group box ── */
 QGroupBox {{
     background: {bg1};

@@ -33,7 +33,7 @@ class GFSSource(Source):
                    "gruesa. Sólo actúa al regrillar a 0,50° o 1,00°."),
         Param("niveles_intermedios", "Incluir niveles intermedios cada 25 hPa (pgrb2b)", "bool",
               False, help="A 0,25° se piden al producto pgrb2b; a 0,50° vienen en pgrb2full; "
-                          "a 1,00° NOMADS no los filtra."),
+                          "a 1,00° NOMADS no los filtra.", group="niveles"),
     ]
     variables = gfs.VARIABLES
     default_variables = ["UGRD", "VGRD", "TMP"]

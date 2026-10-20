@@ -21,11 +21,11 @@ para interpolar cada FL entre dos capas. Lo tildado a mano se suma; «Todos»
 y «Ninguno» salen del modo."""
 import os
 
-from PyQt6.QtCore import Qt, QThread, pyqtSignal
+from PyQt6.QtCore import Qt, QThread, QObject, QSize, pyqtSignal
 from PyQt6.QtWidgets import (
     QVBoxLayout, QHBoxLayout, QGridLayout, QLabel, QPushButton, QFrame,
     QComboBox, QSpinBox, QDoubleSpinBox, QCheckBox, QLineEdit, QRadioButton,
-    QButtonGroup, QProgressBar, QFileDialog, QMessageBox, QWidget,
+    QButtonGroup, QProgressBar, QFileDialog, QMessageBox, QWidget, QScrollArea,
 )
 
 from .glass_dialog import GlassDialog, add_shadow as _add_shadow
@@ -68,8 +68,52 @@ class _Worker(QThread):
             self.done.emit([], f"{type(exc).__name__}: {exc}")
 
 
+class _FitScrollArea(QScrollArea):
+    """Scroll que pide el tamaño de su contenido: el diálogo toma su alto
+    natural y, sólo si la pantalla es más baja, el cuerpo se desplaza en vez
+    de aplastar las grillas."""
+
+    def sizeHint(self):
+        w = self.widget()
+        if w is None:
+            return super().sizeHint()
+        h = w.sizeHint()
+        return QSize(h.width() + self.verticalScrollBar().sizeHint().width() + 2, h.height() + 2)
+
+
+class _Forms(QObject):
+    """Varios ParamsForm (los parámetros de la fuente repartidos entre los
+    grupos del diálogo) vistos como uno solo."""
+    changed = pyqtSignal()
+
+    def __init__(self, forms, parent=None):
+        super().__init__(parent)
+        self._forms = list(forms)
+        for f in self._forms:
+            f.changed.connect(self.changed)
+
+    def values(self):
+        out = {}
+        for f in self._forms:
+            out.update(f.values())
+        return out
+
+    def set_values(self, values):
+        for f in self._forms:
+            f.set_values(values)
+
+    def widget(self, key):
+        for f in self._forms:
+            w = f.widget(key)
+            if w is not None:
+                return w
+        return None
+
+
 class DownloadDialog(GlassDialog):
-    """Devuelve en `downloaded_paths` las rutas bajadas si se aceptó."""
+    """Devuelve en `downloaded_paths` las rutas bajadas si se aceptó. Los
+    campos van en cuatro recuadros con título: Corrida y plazos, Variables
+    y niveles, Grilla y resolución, y Descarga y archivo."""
 
     def __init__(self, parent=None, cfg=None, dest_dir=".", region=None, source_key=None,
                  regions_fn=None):
@@ -107,6 +151,21 @@ class DownloadDialog(GlassDialog):
         lay.addWidget(lbl)
         return lbl
 
+    @staticmethod
+    def _group(parent_lay, title):
+        """Recuadro con borde y título (#DownloadGroup del tema); devuelve
+        su layout."""
+        box = QFrame()
+        box.setObjectName("DownloadGroup")
+        parent_lay.addWidget(box)
+        lay = QVBoxLayout(box)
+        lay.setContentsMargins(12, 6, 12, 8)
+        lay.setSpacing(4)
+        lbl = QLabel(title)
+        lbl.setObjectName("GroupTitle")
+        lay.addWidget(lbl)
+        return lay
+
     def _build_ui(self):
         outer = QVBoxLayout(self)
         outer.setContentsMargins(20, 20, 20, 20)
@@ -114,9 +173,10 @@ class DownloadDialog(GlassDialog):
         panel.setObjectName("GlassPanel")
         _add_shadow(panel)
         outer.addWidget(panel)
-        lay = QVBoxLayout(panel)
-        lay.setContentsMargins(24, 20, 24, 20)
-        lay.setSpacing(8)
+        plan = QVBoxLayout(panel)
+        plan.setContentsMargins(24, 20, 24, 20)
+        plan.setSpacing(8)
+        lay = plan
 
         # ── Fuente ──
         row = QHBoxLayout()
@@ -137,8 +197,24 @@ class DownloadDialog(GlassDialog):
         self.lbl_model.setWordWrap(True)
         lay.addWidget(self.lbl_model)
 
+        # Cuerpo con scroll: los cuatro recuadros; si la pantalla es más baja
+        # que el diálogo, se desplaza en vez de aplastar las grillas
+        self._body = QWidget()
+        body = QVBoxLayout(self._body)
+        body.setContentsMargins(0, 0, 0, 0)
+        body.setSpacing(8)
+        self._scroll = _FitScrollArea()
+        self._scroll.setObjectName("DownloadScroll")
+        self._scroll.setWidgetResizable(True)
+        self._scroll.setFrameShape(QFrame.Shape.NoFrame)
+        self._scroll.setHorizontalScrollBarPolicy(Qt.ScrollBarPolicy.ScrollBarAlwaysOff)
+        self._scroll.viewport().setAutoFillBackground(False)
+        self._body.setAutoFillBackground(False)
+        self._scroll.setWidget(self._body)
+        plan.addWidget(self._scroll, 1)
+
         # ── Corrida y plazos ──
-        self._section(lay, "Corrida y plazos (los que ofrece la fuente)")
+        lay = self._group(body, "Corrida y plazos (los que ofrece la fuente)")
         g = QGridLayout()
         g.setHorizontalSpacing(8)
         g.addWidget(QLabel("Corrida (UTC)"), 0, 0)
@@ -168,7 +244,8 @@ class DownloadDialog(GlassDialog):
         for w in (self.h_from, self.h_to, self.h_step):
             w.valueChanged.connect(lambda _v: self._refresh_steps_hint())
 
-        # ── Variables ──
+        # ── Variables y niveles ──
+        lay = self._group(body, "Variables y niveles")
         self._section(lay, "Variables")
         self.var_box = QWidget()
         self.var_grid = QGridLayout(self.var_box)
@@ -178,13 +255,7 @@ class DownloadDialog(GlassDialog):
         self.var_checks = {}
         lay.addWidget(self.var_box)
 
-        # ── Parámetros de la fuente ──
-        self.lbl_params = self._section(lay, "Opciones de la fuente")
-        self.params_box = QWidget()
-        self.params_lay = QVBoxLayout(self.params_box)
-        self.params_lay.setContentsMargins(0, 0, 0, 0)
         self.form = None
-        lay.addWidget(self.params_box)
 
         # ── Niveles ──
         self.lbl_levels = self._section(lay, "Niveles de presión (hPa)")
@@ -221,13 +292,11 @@ class DownloadDialog(GlassDialog):
             row.addWidget(b)
         row.addStretch()
         lv_lay.addWidget(self.mode_row_w)
-        self.lbl_levels_hint = QLabel("")
-        self.lbl_levels_hint.setObjectName("Hint")
-        self.lbl_levels_hint.setWordWrap(True)
-        # Reserva dos renglones: el texto cambia de largo según el modo y lo
-        # de abajo no tiene que moverse
-        self.lbl_levels_hint.setMinimumHeight(2 * self.lbl_levels_hint.fontMetrics().lineSpacing() + 4)
-        lv_lay.addWidget(self.lbl_levels_hint)
+        # Parámetros de la fuente sobre niveles (GFS: intermedios cada 25 hPa)
+        self.params_levels_box = QWidget()
+        self.params_levels_lay = QVBoxLayout(self.params_levels_box)
+        self.params_levels_lay.setContentsMargins(0, 0, 0, 0)
+        lv_lay.addWidget(self.params_levels_box)
         lay.addWidget(self.levels_box)
         # Conversión a WAFS: va con los niveles porque decide cuáles se piden
         self.chk_wafs = QCheckBox(WAFS_CHECK_TEXT)
@@ -242,8 +311,16 @@ class DownloadDialog(GlassDialog):
         self.btn_wafs_prefs.clicked.connect(self._open_wafs_prefs)
         wrow.addWidget(self.btn_wafs_prefs)
         lay.addLayout(wrow)
+        self.lbl_levels_hint = QLabel("")
+        self.lbl_levels_hint.setObjectName("Hint")
+        self.lbl_levels_hint.setWordWrap(True)
+        # Reserva dos renglones: el texto cambia de largo según el modo y lo
+        # de abajo no tiene que moverse
+        self.lbl_levels_hint.setMinimumHeight(2 * self.lbl_levels_hint.fontMetrics().lineSpacing() + 4)
+        lay.addWidget(self.lbl_levels_hint)
 
-        # ── Área ──
+        # ── Grilla y resolución ──
+        lay = self._group(body, "Grilla y resolución")
         self.lbl_zone = self._section(lay, "Área (grados; longitudes −180…180)")
         self.zone_box = QWidget()
         zl = QVBoxLayout(self.zone_box)
@@ -332,9 +409,15 @@ class DownloadDialog(GlassDialog):
         self.lbl_size.setWordWrap(True)
         zl.addWidget(self.lbl_size)
         lay.addWidget(self.zone_box)
+        # Opciones de la fuente (resolución, regrillado, suavizado, servidor…)
+        self.lbl_params = self._section(lay, "Opciones de la fuente")
+        self.params_box = QWidget()
+        self.params_lay = QVBoxLayout(self.params_box)
+        self.params_lay.setContentsMargins(0, 0, 0, 0)
+        lay.addWidget(self.params_box)
 
-        # ── Destino ──
-        self._section(lay, "Destino")
+        # ── Descarga y archivo ──
+        lay = self._group(body, "Descarga y archivo")
         g = QGridLayout()
         g.setHorizontalSpacing(8)
         g.addWidget(QLabel("Carpeta"), 0, 0)
@@ -356,6 +439,7 @@ class DownloadDialog(GlassDialog):
         lay.addLayout(g)
 
         # ── Progreso y botones ──
+        lay = plan
         self.progress = QProgressBar()
         self.progress.setRange(0, 1000)
         self.progress.setValue(0)
@@ -537,6 +621,7 @@ class DownloadDialog(GlassDialog):
             item = lay.takeAt(0)
             w = item.widget()
             if w is not None:
+                w.hide()          # no se pinta mientras espera el deleteLater
                 w.deleteLater()
 
     # ── Fuente ───────────────────────────────────────────────────────────────
@@ -573,15 +658,25 @@ class DownloadDialog(GlassDialog):
             self.var_checks[vk] = c
             self.var_grid.addWidget(c, k // 5, k % 5)
         self.var_box.setVisible(bool(src.variables))
-        # Parámetros propios
+        # Parámetros propios: los de niveles van con los niveles; el resto, en
+        # «Grilla y resolución»
         self._clear_layout(self.params_lay)
+        self._clear_layout(self.params_levels_lay)
         self.form = None
-        if src.params:
-            self.form = ParamsForm(src.params, stored["params"])
+        p_lev = [p for p in src.params if getattr(p, "group", "fuente") == "niveles"]
+        p_rest = [p for p in src.params if p not in p_lev]
+        forms = []
+        for plist, target in ((p_lev, self.params_levels_lay), (p_rest, self.params_lay)):
+            if plist:
+                f = ParamsForm(plist, stored["params"])
+                target.addWidget(f)
+                forms.append(f)
+        if forms:
+            self.form = _Forms(forms, self)
             self.form.changed.connect(self._refresh_levels)
-            self.params_lay.addWidget(self.form)
-        self.lbl_params.setVisible(bool(src.params))
-        self.params_box.setVisible(bool(src.params))
+        self.lbl_params.setVisible(bool(p_rest))
+        self.params_box.setVisible(bool(p_rest))
+        self.params_levels_box.setVisible(bool(p_lev))
         # Niveles
         self._clear_layout(self.level_grid)
         self.level_checks = {}
@@ -596,6 +691,7 @@ class DownloadDialog(GlassDialog):
         self.mode_row_w.setVisible(is_alt and not src.flight_levels)
         self.lbl_levels.setVisible(is_alt)
         self.levels_box.setVisible(is_alt)
+        self.lbl_levels_hint.setVisible(is_alt)
         self._mode = flt.normalize_mode(self._cfg.get("wafs_mode", flt.DEFAULT_MODE))
         self._apply_mode()
         self._refresh_levels()
