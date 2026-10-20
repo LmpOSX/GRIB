@@ -46,8 +46,12 @@ class TestFuenteGFS(unittest.TestCase):
         self.assertEqual(steps[-1], 384)
 
     def test_corridas(self):
-        now = dt.datetime(2026, 10, 14, 10, 0, tzinfo=dt.timezone.utc)   # 10:00Z → 06Z ya está (lag 4,5 h)
+        now = dt.datetime(2026, 10, 14, 9, 0, tzinfo=dt.timezone.utc)    # 09:00Z → 06Z todavía no (lag 3,5 h)
         self.assertEqual(self.src.latest_run(now), (dt.date(2026, 10, 14), 0))
+        now = dt.datetime(2026, 10, 14, 9, 30, tzinfo=dt.timezone.utc)   # 09:30Z → 06Z ya empezó
+        self.assertEqual(self.src.latest_run(now), (dt.date(2026, 10, 14), 6))
+        now = dt.datetime(2026, 10, 14, 15, 33, tzinfo=dt.timezone.utc)  # 15:33Z → 12Z (el caso del usuario)
+        self.assertEqual(self.src.latest_run(now), (dt.date(2026, 10, 14), 12))
         now = dt.datetime(2026, 10, 14, 11, 0, tzinfo=dt.timezone.utc)
         self.assertEqual(self.src.latest_run(now), (dt.date(2026, 10, 14), 6))
         runs = self.src.available_runs(now, count=5)

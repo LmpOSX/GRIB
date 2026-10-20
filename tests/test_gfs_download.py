@@ -121,6 +121,8 @@ class TestSpec(unittest.TestCase):
     def test_ultima_corrida(self):
         now = dt.datetime(2026, 10, 13, 15, 0, tzinfo=dt.timezone.utc)
         self.assertEqual(gfs.latest_cycle(now), (dt.date(2026, 10, 13), 6))
+        now = dt.datetime(2026, 10, 13, 15, 30, tzinfo=dt.timezone.utc)
+        self.assertEqual(gfs.latest_cycle(now), (dt.date(2026, 10, 13), 12))
         now = dt.datetime(2026, 10, 13, 2, 0, tzinfo=dt.timezone.utc)
         self.assertEqual(gfs.latest_cycle(now), (dt.date(2026, 10, 12), 18))
 

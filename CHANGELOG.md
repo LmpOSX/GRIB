@@ -1,5 +1,12 @@
 # Cambios
 
+## Sin publicar
+
+- GFS: la última corrida se calcula con 3,5 h de demora en vez de 4,5 (NOMADS
+  publica los primeros plazos a esa hora): a las 15:33Z el diálogo ofrece la
+  12Z, no la 06Z. Un plazo largo pedido demasiado temprano sigue avisando
+  «todavía no publicado» y sugiere la corrida anterior.
+
 ## 0.3.6 — 2026-10-20
 
 - Preferencias ▸ Descarga: «Directorio de trabajo por defecto» (vacío =

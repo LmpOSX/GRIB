@@ -77,7 +77,9 @@ def extra_levels_available(resolution):
 
 CYCLES = [0, 6, 12, 18]
 MAX_HOUR = 384
-AVAILABILITY_LAG_H = 4.5       # una corrida suele estar completa ~4–5 h después
+AVAILABILITY_LAG_H = 3.5       # NOMADS publica los primeros plazos ~3,5 h después del ciclo;
+                               # la corrida completa (+384) tarda ~5 h: un plazo largo pedido
+                               # muy temprano da «todavía no publicado» y sugiere la anterior
 
 
 class DownloadSpec:

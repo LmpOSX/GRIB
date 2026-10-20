@@ -130,8 +130,12 @@ con los campos en cuatro recuadros con título: **Corrida y plazos**,
 fuente) y **Descarga y archivo**:
 
 * **Corrida y plazos**: el combo de corrida lista las últimas doce que la
-  fuente debería tener publicadas; los plazos se validan contra los que la
-  fuente ofrece (el GFS: cada hora hasta +120, cada 3 h hasta +384).
+  fuente debería tener publicadas (el GFS aparece 3,5 h después del ciclo,
+  cuando NOMADS empieza a publicar sus primeros plazos: la 12Z, desde las
+  15:30Z; los plazos largos tardan hasta ~1,5 h más, y si se pide uno que
+  todavía no está, el error lo dice y sugiere la corrida anterior); los
+  plazos se validan contra los que la fuente ofrece (el GFS: cada hora
+  hasta +120, cada 3 h hasta +384).
 * **Variables** y **niveles** de la fuente (sin selector de nivel en las
   fuentes de superficie). Debajo de la grilla de niveles hay cuatro
   botones excluyentes, **INDRA (14)**, **OACI (17)**, **OACI (56)** y **WAFS
