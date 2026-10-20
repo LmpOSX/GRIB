@@ -15,6 +15,10 @@
   publica los primeros plazos a esa hora): a las 15:33Z el diálogo ofrece la
   12Z, no la 06Z. Un plazo largo pedido demasiado temprano sigue avisando
   «todavía no publicado» y sugiere la corrida anterior.
+- Build de macOS: el instalador ya no deja registradas en Launch Services las
+  copias de `dist/` ni del DMG temporal, que el Finder listaba en «Abrir con»
+  como versiones distintas de la app; el README pide expulsar el DMG tras
+  instalar por el mismo motivo.
 
 ## 0.3.6 — 2026-10-20
 
