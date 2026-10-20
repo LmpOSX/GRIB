@@ -1,6 +1,6 @@
 # Cambios
 
-## Sin publicar
+## 0.3.6 — 2026-10-20
 
 - Preferencias ▸ Descarga: «Directorio de trabajo por defecto» (vacío =
   Documentos), con botón para elegirlo y aviso si la carpeta no existe. Es la
