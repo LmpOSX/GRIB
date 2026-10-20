@@ -181,6 +181,7 @@ class DownloadDialog(GlassDialog):
         self.last_provenance = None
         self._worker = None
         self._progress_dlg = None
+        self._extra_prev = None       # último estado del parámetro de niveles extra (intermedios)
         self._dest_dir = dest_dir
         self._region = region
         self._domain_region = None
@@ -806,6 +807,17 @@ class DownloadDialog(GlassDialog):
             c.setEnabled(ok)
             if not ok:
                 c.setChecked(False)
+        key = getattr(self.source, "extra_levels_param", None)
+        extra_on = bool(p.get(key)) if key else None
+        if (key and extra_on and not self._extra_prev and self._mode is not None
+                and not self._applying):
+            # Se volvieron a pedir los intermedios a mano: se tildan los que el
+            # modo necesita (sin destildar lo que ya estaba)
+            for lv in self._wanted_levels()["levels"]:
+                c = self.level_checks.get(lv)
+                if c is not None and c.isEnabled():
+                    c.setChecked(True)
+        self._extra_prev = extra_on
         self._refresh_area()
         self._refresh_levels_hint()
 
@@ -818,9 +830,7 @@ class DownloadDialog(GlassDialog):
         if bad:
             self.lbl_steps.setText(f"La fuente no ofrece los plazos: {', '.join(str(b) for b in bad)}")
         else:
-            self.lbl_steps.setText(f"{len(chosen)} plazo(s): "
-                                   + ", ".join(f"+{h}" for h in chosen[:12])
-                                   + (" …" if len(chosen) > 12 else ""))
+            self.lbl_steps.setText(f"{len(chosen)} plazo(s)")
         self._refresh_area()
 
     def _set_viewer_levels(self):

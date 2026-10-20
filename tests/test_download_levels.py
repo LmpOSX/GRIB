@@ -90,6 +90,15 @@ class TestBotonesDeModo(unittest.TestCase):
         self.assertIn("sin convertir", d.lbl_levels_hint.text())
         self.assertEqual(d.job().suffix, "")
         self.assertIsNone(d._wafs_options())
+        # Sin intermedios a mano: 275/225/175 se destildan y deshabilitan;
+        # al volver a tildar la casilla se vuelven a pedir
+        d.form.widget("niveles_intermedios").setChecked(False)
+        self.assertFalse(d.level_checks[275].isEnabled())
+        self.assertEqual(len(self._on()), 11)
+        d.form.widget("niveles_intermedios").setChecked(True)
+        self.assertTrue(d.level_checks[275].isEnabled())
+        self.assertEqual(self._on(), [flt.nominal_hpa(fl) for fl in flt.INDRA14])
+        self.assertEqual(d.lbl_steps.text(), "3 plazo(s)")
 
     def test_convertir_cambia_los_niveles_y_el_modo_va_en_las_opciones(self):
         d = self._dialog(wafs_mode="OACI", wafs_convert=False)
