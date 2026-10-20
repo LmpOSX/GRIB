@@ -131,8 +131,8 @@ vuelo) y `Obtener datos…` (⌘⇧D) abre el diálogo de descarga de esa fuente
   fuente ofrece (el GFS: cada hora hasta +120, cada 3 h hasta +384).
 * **Variables** y **niveles** de la fuente (sin selector de nivel en las
   fuentes de superficie). Debajo de la grilla de niveles hay cuatro
-  botones excluyentes, **INDRA (14)**, **OACI (17)**, **OACI56** y **WAFS
-  (ISA)**, que tildan los niveles que ese modo necesita y fijan el modo de
+  botones excluyentes, **INDRA (14)**, **OACI (17)**, **OACI (56)** y **WAFS
+  (56)**, que tildan los niveles que ese modo necesita y fijan el modo de
   conversión de esta descarga (arranca con el de Preferencias ▸ WAFS), y
   la casilla **Convertir a WAFS** con el botón `Preferencias WAFS…`:
   - INDRA u OACI **sin** convertir: se piden los nominales del Anexo 3 tal

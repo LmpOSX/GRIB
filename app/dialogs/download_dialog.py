@@ -37,7 +37,8 @@ from ..widgets.areas_editor import CoordEdit
 from .. import areas as A
 from .. import fl_table as flt
 
-MODE_BUTTONS = {"INDRA": "INDRA (14)", "OACI": "OACI (17)", "OACI56": "OACI56", "WAFS": "WAFS (ISA)"}
+MODE_BUTTONS = {"INDRA": "INDRA (14)", "OACI": "OACI (17)", "OACI56": "OACI (56)", "WAFS": "WAFS (56)"}
+WAFS_CHECK_TEXT = "Convertir a WAFS (FL cada 1000 ft, interpolado a presiones reales)"
 
 
 class _Worker(QThread):
@@ -223,14 +224,14 @@ class DownloadDialog(GlassDialog):
         self.lbl_levels_hint = QLabel("")
         self.lbl_levels_hint.setObjectName("Hint")
         self.lbl_levels_hint.setWordWrap(True)
+        # Reserva dos renglones: el texto cambia de largo según el modo y lo
+        # de abajo no tiene que moverse
+        self.lbl_levels_hint.setMinimumHeight(2 * self.lbl_levels_hint.fontMetrics().lineSpacing() + 4)
         lv_lay.addWidget(self.lbl_levels_hint)
         lay.addWidget(self.levels_box)
         # Conversión a WAFS: va con los niveles porque decide cuáles se piden
-        self.chk_wafs = QCheckBox("Convertir a WAFS (FL cada 1000 ft)")
+        self.chk_wafs = QCheckBox(WAFS_CHECK_TEXT)
         self.chk_wafs.setChecked(bool(self._cfg.get("wafs_convert", True)))
-        self.chk_wafs.setToolTip("El valor inicial es «Convertir a WAFS por defecto» de "
-                                 "Preferencias ▸ WAFS. Sin marcar, el archivo queda en los "
-                                 "niveles de presión de la fuente, sin interpolar.")
         self.chk_wafs.toggled.connect(self._on_wafs_toggled)
         wrow = QHBoxLayout()
         wrow.addWidget(self.chk_wafs, 1)
@@ -738,7 +739,7 @@ class DownloadDialog(GlassDialog):
         want = self._wanted_levels()
         fls = flt.mode_fls(self._mode)
         if want["interpolated"]:
-            txt = (f"Modo {self._mode}: {n} nivel(es){rng} para interpolar {len(fls)} FL a su "
+            txt = (f"Modo {MODE_BUTTONS[self._mode]}: {n} nivel(es){rng} para interpolar {len(fls)} FL a su "
                    f"presión ISA" + (" (etiqueta nominal)" if self._mode != "WAFS"
                                      else " (etiqueta = ISA en Pa)"))
             faltan = [lv for lv in want["levels"] if lv not in on]
@@ -746,7 +747,7 @@ class DownloadDialog(GlassDialog):
                 txt += (f" · faltan {len(faltan)} de los {len(want['levels'])} niveles: "
                         f"los FL afectados se interpolan entre capas más separadas")
         else:
-            txt = (f"Modo {self._mode} sin convertir: {n} nivel(es) nominales{rng} tal cual, "
+            txt = (f"Modo {MODE_BUTTONS[self._mode]} sin convertir: {n} nivel(es) nominales{rng} tal cual, "
                    f"sin interpolar; el archivo queda en la presión del modelo")
             miss = list(want["missing"]) + [fl for fl in fls if flt.nominal_hpa(fl) in want["levels"]
                                             and flt.nominal_hpa(fl) not in on]
@@ -838,20 +839,24 @@ class DownloadDialog(GlassDialog):
         """La casilla «Convertir a WAFS» sólo tiene sentido en fuentes de altura
         en niveles de presión; lo que ya viene por FL no se toca."""
         src = self.source
+        self.chk_wafs.setText(WAFS_CHECK_TEXT)
         if src.kind != "altura":
             self.chk_wafs.setEnabled(False)
-            self.chk_wafs.setText("Convertir a WAFS (no aplica: fuente de superficie)")
+            self.chk_wafs.setToolTip("No aplica: fuente de superficie.")
         elif src.flight_levels:
             self.chk_wafs.setEnabled(False)
-            self.chk_wafs.setText("Convertir a WAFS (ya viene por FL: no se toca)")
+            self.chk_wafs.setToolTip("Ya viene por FL: no se toca.")
         elif self._mode in ("OACI56", "WAFS"):
             # 56 FL que ningún modelo tiene: sin conversión no existen
-            self.chk_wafs.setText("Convertir a WAFS (FL cada 1000 ft; OACI56 y WAFS siempre convierten)")
             self.chk_wafs.setChecked(True)
             self.chk_wafs.setEnabled(False)
+            self.chk_wafs.setToolTip("OACI (56) y WAFS (56) son 56 FL que ningún modelo publica: "
+                                     "siempre se interpolan.")
         else:
             self.chk_wafs.setEnabled(True)
-            self.chk_wafs.setText("Convertir a WAFS (FL cada 1000 ft)")
+            self.chk_wafs.setToolTip("El valor inicial es «Convertir a WAFS por defecto» de "
+                                     "Preferencias ▸ WAFS. Sin marcar, el archivo queda en los "
+                                     "niveles de presión de la fuente, sin interpolar.")
 
     def wafs_enabled(self):
         """True si esta descarga se convierte a WAFS: la casilla del diálogo

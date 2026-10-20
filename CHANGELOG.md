@@ -3,7 +3,7 @@
 ## Sin publicar
 
 - Diálogo de descarga: debajo de la grilla de niveles hay cuatro botones
-  excluyentes, INDRA (14), OACI (17), OACI56 y WAFS (ISA), que tildan los
+  excluyentes, INDRA (14), OACI (17), OACI (56) y WAFS (56), que tildan los
   niveles que ese modo necesita y fijan el modo de conversión de esta
   descarga (arranca con el de Preferencias ▸ WAFS). INDRA y OACI sin
   «Convertir a WAFS» bajan los nominales del Anexo 3 tal cual, sin

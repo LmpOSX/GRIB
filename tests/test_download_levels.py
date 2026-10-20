@@ -110,7 +110,8 @@ class TestBotonesDeModo(unittest.TestCase):
             d.mode_buttons[mode].click()
             self.assertTrue(d.chk_wafs.isChecked(), mode)
             self.assertFalse(d.chk_wafs.isEnabled(), mode)
-            self.assertIn("siempre convierten", d.chk_wafs.text())
+            self.assertIn("interpolado a presiones reales", d.chk_wafs.text())
+            self.assertIn("siempre se interpolan", d.chk_wafs.toolTip())
             self.assertEqual(len(self._on()), 32, mode)
             self.assertEqual(d._wafs_options()["mode"], mode)
             self.assertEqual(d.job().suffix, "_wafs")
@@ -131,6 +132,11 @@ class TestBotonesDeModo(unittest.TestCase):
         self.assertIn("sin nivel para FL080", d.lbl_levels_hint.text())
         todos = [b for b in d.mode_row_w.findChildren(type(d.mode_buttons["OACI"])) if b.text() == "Todos"][0]
         todos.click()
+        # La línea de ayuda reserva dos renglones aunque el texto tenga uno
+        self.assertGreaterEqual(d.lbl_levels_hint.minimumHeight(),
+                                2 * d.lbl_levels_hint.fontMetrics().lineSpacing())
+        self.assertEqual(d.mode_buttons["OACI56"].text(), "OACI (56)")
+        self.assertEqual(d.mode_buttons["WAFS"].text(), "WAFS (56)")
         self.assertIsNone(d._mode)
         self.assertFalse(any(b.isChecked() for b in d.mode_buttons.values()))
         self.assertEqual(len(self._on()), len(ALL_LEVELS))
