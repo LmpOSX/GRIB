@@ -1,6 +1,6 @@
 # Cambios
 
-## Sin publicar
+## 0.4.1 — 2026-10-21
 
 - Generar GRIB: botón en la barra (junto a «Obtener datos…») y en la pantalla
   de inicio (junto a «Abrir GRIB…»); «Viento en el archivo» pasa al recuadro

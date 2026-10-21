@@ -1,4 +1,4 @@
-# Plan de pruebas manual – Visor GRIB 0.4.0 (PyQt6)
+# Plan de pruebas manual – Visor GRIB 0.4.1 (PyQt6)
 
 Entorno: pyenv `Grib` (Python 3.14.3), macOS. Antes de empezar:
 
