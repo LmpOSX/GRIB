@@ -1,6 +1,6 @@
 # Cambios
 
-## Sin publicar
+## 0.4.0 — 2026-10-21
 
 - Viento como dirección y velocidad (WDIR/WIND) además de U/V: el diálogo de
   descarga tiene «Viento en el archivo» (componentes U y V, o dirección y
