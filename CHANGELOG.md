@@ -14,7 +14,10 @@
   la celda, centrado y con el valor preseleccionado (una tecla lo reemplaza,
   las flechas sueltan la selección), la celda actual lleva un marco de acento,
   Enter aplica, Esc sale sin cambiar, Tab recorre celdas y filas salteando
-  Presión.
+  Presión. El editor es un campo normal: opaco y ocupando la celda entera (el
+  valor de la celda no se dibuja debajo), alineado a la derecha con lugar a la
+  izquierda, cursor a la derecha del valor preseleccionado; ← suelta la
+  selección para insertar y Backspace / Supr borran de a un carácter.
 
 ## 0.4.0 — 2026-10-21
 

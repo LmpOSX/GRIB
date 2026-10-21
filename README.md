@@ -947,9 +947,12 @@ corregirlo), la T ISA y el viento de la elegida, que sigue elegida;
 nueva última; sin filas no queda nada, y Agregar vuelve a poner FL050);
 `Temperatura ISA` y `Copiar hacia abajo` (T, viento y dirección de la
 elegida a todas las de abajo). Edición a la vista: un clic, Tab o las
-flechas ponen la celda en edición (el editor tapa la celda, centrado, con el
-valor preseleccionado: una tecla lo reemplaza y las flechas sueltan la
-selección para corregirlo; la celda actual lleva un marco de acento), Enter
+flechas ponen la celda en edición como un campo normal que ocupa la celda
+entera, opaco (el valor de la celda no se dibuja debajo), alineado a la
+derecha con lugar libre a la izquierda para hasta cuatro cifras, con el
+valor preseleccionado y el cursor a su derecha: una tecla lo reemplaza; ←
+suelta la selección y mueve el cursor para insertar, y Backspace / Supr
+borran de a un carácter; la celda actual lleva un marco de acento. Enter
 aplica, Esc sale sin cambiar y deja la fila elegida, Tab recorre celdas y
 filas salteando Presión; la tabla tiene scroll y puede salirse del
 modo (los botones se destildan, el etiquetado sigue siendo el del último

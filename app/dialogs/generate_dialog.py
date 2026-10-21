@@ -35,25 +35,39 @@ EDITABLE_COLS = (COL_FL, COL_T, COL_SPD, COL_DIR)
 
 
 class _CellDelegate(QStyledItemDelegate):
-    """Edición visible: el editor tapa la celda con el mismo valor, centrado,
-    con el texto preseleccionado (una tecla lo reemplaza; las flechas sueltan
-    la selección para corregirlo); la celda actual lleva un marco del color
-    de acento para que se vea cuál se edita."""
+    """Edición visible: un campo normal que ocupa la celda entera, opaco (el
+    valor de la celda no se dibuja mientras se edita), alineado a la derecha
+    con lugar libre a la izquierda, con el valor preseleccionado y el cursor a
+    la derecha: una tecla reemplaza todo; ← suelta la selección y mueve el
+    cursor para insertar o borrar con Backspace / Supr. La celda actual lleva
+    un marco del color de acento para que se vea cuál se edita."""
 
     def __init__(self, accent, parent=None):
         super().__init__(parent)
         self._accent = QColor(accent)
 
+    def _editing(self, index):
+        view = self.parent()
+        return (view is not None and view.state() == QAbstractItemView.State.EditingState
+                and index == view.currentIndex())
+
+    def initStyleOption(self, option, index):
+        super().initStyleOption(option, index)
+        if self._editing(index):
+            option.text = ""                       # el editor tapa la celda: nada por debajo
+
     def createEditor(self, parent, option, index):
         ed = QLineEdit(parent)
         ed.setObjectName("TableCellEditor")
-        ed.setAlignment(Qt.AlignmentFlag.AlignCenter)
+        ed.setAlignment(Qt.AlignmentFlag.AlignRight | Qt.AlignmentFlag.AlignVCenter)
         ed.setFrame(True)
+        ed.setAutoFillBackground(True)
         return ed
 
     def setEditorData(self, editor, index):
         editor.setText(str(index.data() or ""))
-        editor.selectAll()
+        editor.end(False)                          # cursor a la derecha del valor…
+        editor.selectAll()                         # …y todo el valor preseleccionado
         QTimer.singleShot(0, editor.selectAll)     # por si el foco vuelve a mover el cursor
 
     def setModelData(self, editor, model, index):

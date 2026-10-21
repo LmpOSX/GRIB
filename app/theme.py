@@ -107,6 +107,7 @@ def build_stylesheet(accent_hex: str, font_size: int = 13,
     txt   = _hex(p["text_bright"])
     txd   = _hex(p["text_dim"])
     acc_solid = _rgba(p["accent"], 230)
+    mid_solid = _rgba(p["mid"], 255)         # opaco: editor de celda (nada se ve por debajo)
     sel   = _rgba(p["accent"], 90)
     dis   = _rgba(p["text_dim"], 120)        # texto de controles deshabilitados
     brd_dis = _rgba(p["text_dim"], 90)       # su borde (punteado)
@@ -514,14 +515,15 @@ QTableWidget::item:selected {{
     background: {sel};
     color: {txt};
 }}
-/* Editor de una celda (Generar GRIB): tapa la celda y se ve que se está editando */
-QTableWidget QLineEdit#TableCellEditor {{
-    background: {mid};
+/* Editor de una celda (Generar GRIB): opaco, tapa la celda entera y se ve que se está editando */
+QTableWidget QLineEdit#TableCellEditor, QTableWidget QLineEdit#TableCellEditor:focus {{
+    background: {mid_solid};
     color: {txt};
     border: 2px solid {acc};
     border-radius: 3px;
-    padding: 0 4px;
-    selection-background-color: {sel};
+    padding: 0 6px;
+    selection-background-color: {acc_solid};
+    selection-color: {txt};
 }}
 QTableWidget QHeaderView::section {{
     background: {mid};

@@ -252,8 +252,20 @@ class TestDialogoGenerar(unittest.TestCase):
         self.assertIsNotNone(ed)
         self.assertEqual(ed.text(), d.table.item(2, COL_T).text())
         self.assertEqual(ed.selectedText(), ed.text())              # preseleccionado
-        self.assertEqual(ed.alignment() & _Qt.AlignmentFlag.AlignHCenter, _Qt.AlignmentFlag.AlignHCenter)
+        self.assertEqual(ed.cursorPosition(), len(ed.text()))       # cursor a la derecha
+        self.assertEqual(ed.alignment() & _Qt.AlignmentFlag.AlignRight, _Qt.AlignmentFlag.AlignRight)
         self.assertEqual(ed.geometry(), d.table.visualRect(d.table.model().index(2, COL_T)))
+        self.assertTrue(ed.autoFillBackground())
+        # ← suelta la selección y deja el cursor para insertar; Backspace borra un carácter
+        QTest.keyClick(ed, _Qt.Key.Key_Left)
+        self.assertEqual(ed.selectedText(), "")
+        cur = d.table.item(2, COL_T).text()                         # p. ej. «-56.5»
+        self.assertEqual(ed.cursorPosition(), len(cur) - 1)         # un lugar a la izquierda del final
+        QTest.keyClick(ed, _Qt.Key.Key_Backspace)                   # borra el carácter anterior
+        self.assertEqual(ed.text(), cur[:-2] + cur[-1])
+        QTest.keyClicks(ed, "9")                                    # inserta donde está el cursor
+        self.assertEqual(ed.text(), cur[:-2] + "9" + cur[-1])
+        ed.setText(cur); ed.selectAll()
         # Una tecla reemplaza; Enter aplica
         QTest.keyClicks(ed, "-41.5")
         QTest.keyClick(ed, _Qt.Key.Key_Return)
