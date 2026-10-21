@@ -1,5 +1,11 @@
 # Cambios
 
+## Sin publicar
+
+- Generar GRIB: los campos (constantes) se graban con factor decimal 0; con 2,
+  wgrib2 avisaba «simple encode/decode may differ from WMO standard» en cada
+  mensaje. El valor decodificado es el mismo.
+
 ## 0.4.1 — 2026-10-21
 
 - Generar GRIB: botón en la barra (junto a «Obtener datos…») y en la pantalla

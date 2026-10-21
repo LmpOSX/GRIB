@@ -142,6 +142,31 @@ class TestGenerador(unittest.TestCase):
                         self.assertIn(300.0, r.levels)
 
     @unittest.skipIf(ec is None, "sin eccodes")
+    def test_campos_constantes_sin_aviso_de_wgrib2(self):
+        """Los campos son constantes: 0 bits por punto, referencia = el dato y
+        factor decimal 0, así wgrib2 no avisa de la codificación simple."""
+        import shutil
+        import subprocess
+        data, _info = gg.generate_grib([{"fl": 300, "t_c": -44.3, "spd_kt": 57, "dir_deg": 242}],
+                                       (-30, -40, -70, -60), 1.0, mode="WAFS", run=RUN, step_h=6)
+        gid = ec.codes_new_from_message(data)
+        try:
+            self.assertEqual(ec.codes_get(gid, "bitsPerValue"), 0)
+            self.assertEqual(ec.codes_get(gid, "decimalScaleFactor"), 0)
+            self.assertAlmostEqual(float(ec.codes_get_values(gid)[0]), -44.3 + 273.15, places=4)
+        finally:
+            ec.codes_release(gid)
+        exe = shutil.which("wgrib2")
+        if not exe:
+            self.skipTest("sin wgrib2")
+        with tempfile.TemporaryDirectory() as tmp:
+            p = os.path.join(tmp, "c.grib2")
+            open(p, "wb").write(data)
+            r = subprocess.run([exe, "-s", p], capture_output=True, text=True)
+            self.assertNotIn("may differ from WMO standard", r.stderr)
+            self.assertIn("TMP:300.9 mb", r.stdout)
+
+    @unittest.skipIf(ec is None, "sin eccodes")
     def test_errores(self):
         with self.assertRaises(ValueError):
             gg.generate_grib([{"fl": 305, "t_c": 0, "spd_kt": 0, "dir_deg": 0}], ZONE, 1.0)

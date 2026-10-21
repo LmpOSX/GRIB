@@ -116,7 +116,11 @@ def _new_message(var, lats, lons, pa, run, step_h, values, centre):
         ec.codes_set(gid, "iDirectionIncrementInDegrees", res)
         ec.codes_set(gid, "jDirectionIncrementInDegrees", res)
         ec.codes_set(gid, "jScansPositively", 0)
-        ec.codes_set(gid, "decimalScaleFactor", 2)      # centésimas, como el GFS
+        # Campo constante: ecCodes lo graba con 0 bits por punto y sólo el valor
+        # de referencia (float32). Con factor decimal 0 ese valor es el dato tal
+        # cual; con otro factor wgrib2 avisa «simple encode/decode may differ
+        # from WMO standard» en cada mensaje.
+        ec.codes_set(gid, "decimalScaleFactor", 0)
         ec.codes_set_values(gid, np.asarray(values, dtype=float).ravel())
         return ec.codes_get_message(gid)
     finally:

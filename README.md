@@ -962,8 +962,9 @@ modo); y **Archivo** (carpeta, nombre automático
 `generado_<corrida>_<plazo>_<res>_<área>_<modo>[_dirvel]` y abrir al
 terminar). Escribe TMP
 en K y UGRD/VGRD en m/s (o WDIR/WIND), los plazos pedidos, grilla regular
-lat/lon con latitudes descendentes, `decimalScaleFactor 2` y centro 255
-(sin modelo), más el `.idx` y un `.json` de procedencia con `fuente:
+lat/lon con latitudes descendentes, centro 255 (sin modelo) y, como los
+campos son constantes, 0 bits por punto con el dato en el valor de
+referencia y factor decimal 0 (así `wgrib2` no avisa de la codificación), más el `.idx` y un `.json` de procedencia con `fuente:
 generado`, el área y la tabla usada; en el visor abre ya etiquetado por FL
 (no se convierte) y FUENTE dice `Generado a mano (perfil uniforme)`. Al
 entrar, y después de Agregar, Quitar o un botón de modo, la fila queda
