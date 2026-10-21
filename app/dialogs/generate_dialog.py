@@ -100,6 +100,7 @@ class GenerateGribDialog(GlassDialog):
         self._area_checks = {}
         self._area_updating = False
         self._mode = flt.normalize_mode(self._cfg.get("wafs_mode", flt.DEFAULT_MODE))
+        self._auto_edit = True        # False mientras la selección la hace el programa
         self.generated_path = None
         self.open_after = True
         self._build_ui()
@@ -159,22 +160,38 @@ class GenerateGribDialog(GlassDialog):
         self.cb_cycle.setCurrentIndex(max(0, self.cb_cycle.findData((now.hour // 6) * 6)))
         row.addWidget(self.cb_cycle)
         row.addSpacing(16)
-        row.addWidget(QLabel("Plazo"))
-        self.sp_step = QSpinBox()
-        self.sp_step.setRange(0, 384)
-        self.sp_step.setSuffix(" h")
-        self.sp_step.setValue(int(self._cfg.get("download_h_from", 6)))
-        self.sp_step.setMaximumWidth(90)
-        row.addWidget(self.sp_step)
-        row.addSpacing(16)
+        row.addWidget(QLabel("Plazos: desde"))
+        self.h_from = QSpinBox()
+        self.h_from.setRange(0, 384)
+        self.h_from.setValue(int(self._cfg.get("download_h_from", 6)))
+        self.h_from.setMaximumWidth(72)
+        row.addWidget(self.h_from)
+        row.addWidget(QLabel("hasta"))
+        self.h_to = QSpinBox()
+        self.h_to.setRange(0, 384)
+        self.h_to.setValue(int(self._cfg.get("download_h_to", 12)))
+        self.h_to.setMaximumWidth(72)
+        row.addWidget(self.h_to)
+        row.addWidget(QLabel("cada"))
+        self.h_step = QSpinBox()
+        self.h_step.setRange(1, 24)
+        self.h_step.setSuffix(" h")
+        self.h_step.setValue(int(self._cfg.get("download_h_step", 3)))
+        self.h_step.setMaximumWidth(80)
+        row.addWidget(self.h_step)
+        row.addSpacing(12)
         self.lbl_valid = QLabel("")
         self.lbl_valid.setObjectName("Hint")
+        # Que el texto de la validez no ensanche el diálogo: se ajusta al ancho que quede
+        self.lbl_valid.setSizePolicy(QSizePolicy.Policy.Ignored, QSizePolicy.Policy.Preferred)
+        self.lbl_valid.setWordWrap(True)
+        self.lbl_valid.setMinimumHeight(2 * self.lbl_valid.fontMetrics().lineSpacing() + 2)
         row.addWidget(self.lbl_valid, 1)
         lay.addLayout(row)
-        for w in (self.ed_date, self.cb_cycle, self.sp_step):
-            sig = getattr(w, "dateChanged", None) or getattr(w, "currentIndexChanged", None) \
-                or getattr(w, "valueChanged", None)
-            sig.connect(lambda *_a: self._refresh_valid())
+        self.ed_date.dateChanged.connect(lambda *_a: self._refresh_valid())
+        self.cb_cycle.currentIndexChanged.connect(lambda *_a: self._refresh_valid())
+        for w in (self.h_from, self.h_to, self.h_step):
+            w.valueChanged.connect(lambda *_a: self._refresh_valid())
         self._refresh_valid()
 
         # ── Área y grilla ──
@@ -374,12 +391,22 @@ class GenerateGribDialog(GlassDialog):
         return dt.datetime(d.year(), d.month(), d.day(), int(self.cb_cycle.currentData() or 0),
                            tzinfo=dt.timezone.utc)
 
+    def hours(self):
+        """Plazos (h) desde / hasta / cada, como en la descarga."""
+        return gg.steps_from(self.h_from.value(), self.h_to.value(), self.h_step.value())
+
     def step_h(self):
-        return int(self.sp_step.value())
+        return self.hours()[0]
 
     def _refresh_valid(self):
-        valid = self.run() + dt.timedelta(hours=self.step_h())
-        self.lbl_valid.setText(f"validez {valid:%d/%m %H:%M} UTC")
+        hs = self.hours()
+        run = self.run()
+        v0 = run + dt.timedelta(hours=hs[0])
+        v1 = run + dt.timedelta(hours=hs[-1])
+        txt = f"{len(hs)} plazo(s)  ·  validez {v0:%d/%m %H:%M}"
+        if len(hs) > 1:
+            txt += f" – {v1:%d/%m %H:%M}"
+        self.lbl_valid.setText(txt + " UTC")
 
     # ── Área ─────────────────────────────────────────────────────────────────
 
@@ -501,8 +528,13 @@ class GenerateGribDialog(GlassDialog):
             self.table.clearSelection()
             return
         i = max(0, min(int(i), n - 1))
-        self.table.setCurrentCell(i, COL_FL)
-        self.table.selectRow(i)
+        self._auto_edit = False
+        try:
+            self._close_cell_editor()
+            self.table.setCurrentCell(i, COL_FL)
+            self.table.selectRow(i)
+        finally:
+            self._auto_edit = True
         self.table.scrollToItem(self.table.item(i, COL_FL))
         self.table.setFocus()
 
@@ -550,16 +582,44 @@ class GenerateGribDialog(GlassDialog):
 
     def _on_current_cell_changed(self, row, col, prev_row, prev_col):
         """La columna Presión no se edita: al caer en ella (Tab, flechas) se
-        sigue de largo en el sentido del movimiento, y se abre el editor."""
+        sigue de largo en el sentido del movimiento, y se abre el editor. Si
+        la celda la eligió el programa (al entrar, Agregar, Quitar, modo) no
+        se abre: queda la fila elegida sin edición."""
         if row < 0:
             return
         if col == COL_P:
             nxt = COL_T if prev_col < COL_P or prev_row != row else COL_FL
             QTimer.singleShot(0, lambda: self.table.setCurrentCell(row, nxt))
             return
+        if not self._auto_edit:
+            return
         idx = self.table.model().index(row, col)
         if idx.isValid() and self.table.state() != QAbstractItemView.State.EditingState:
             QTimer.singleShot(0, lambda: self.table.edit(idx))
+
+    def _close_cell_editor(self):
+        """Cierra el editor de la celda (si lo hay) sin aplicar el valor."""
+        if self.table.state() != QAbstractItemView.State.EditingState:
+            return False
+        for ed in self.table.findChildren(QLineEdit, "TableCellEditor"):
+            if ed.isVisible():
+                self.table.itemDelegate().closeEditor.emit(ed, QStyledItemDelegate.EndEditHint.RevertModelCache)
+        self.table.setFocus()
+        return True
+
+    def keyPressEvent(self, event):
+        """Esc: si se está editando una celda sale de la edición (queda la
+        fila elegida); con el foco en la tabla no hace nada más. Sólo cierra
+        el diálogo desde fuera de la tabla (o con Cerrar)."""
+        if event.key() == Qt.Key.Key_Escape:
+            if self._close_cell_editor():
+                event.accept()
+                return
+            fw = self.focusWidget()
+            if fw is not None and (fw is self.table or self.table.isAncestorOf(fw)):
+                event.accept()
+                return
+        super().keyPressEvent(event)
 
     def _on_item_changed(self, item):
         if item.column() == COL_FL:
@@ -693,7 +753,8 @@ class GenerateGribDialog(GlassDialog):
         run, step = self.run(), self.step_h()
         tag = A.area_tag(self.selected_codes() if self.area_mode() == "fir" else [], self.area_mode())
         base = self.name.text().strip() or gg.default_basename(run, step, self.resolution(), tag,
-                                                                 self.wind_format(), self._mode)
+                                                                 self.wind_format(), self._mode,
+                                                                 steps=self.hours())
         if not base.lower().endswith(".grib2"):
             base += ".grib2"
         return os.path.join(self.dest.text().strip() or ".", base)
@@ -723,7 +784,7 @@ class GenerateGribDialog(GlassDialog):
                 return
         try:
             data, info = gg.generate_grib(rows, region, self.resolution(), mode=self._mode,
-                                          run=self.run(), step_h=self.step_h(),
+                                          run=self.run(), steps=self.hours(),
                                           wind_format=self.wind_format())
             prov = gg.provenance(rows, info, self.area_mode(),
                                  self.selected_codes() if self.area_mode() == "fir" else [],
@@ -735,6 +796,9 @@ class GenerateGribDialog(GlassDialog):
         self.generated_path = path
         self.open_after = self.chk_open.isChecked()
         self._cfg["generate_res_deg"] = self.resolution()
+        self._cfg["download_h_from"] = int(self.h_from.value())
+        self._cfg["download_h_to"] = int(self.h_to.value())
+        self._cfg["download_h_step"] = int(self.h_step.value())
         self._cfg["download_wind_format"] = self.wind_format()
         self._cfg["download_area_mode"] = self.area_mode()
         if self.area_mode() == "fir":

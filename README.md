@@ -927,8 +927,9 @@ junto con los avisos del validador.
 fabrica un GRIB2 a mano, sin modelo: un
 perfil vertical uniforme en toda la grilla, para pruebas, simulaciones o
 para alimentar otro sistema con un viento conocido. El formulario tiene
-cuatro recuadros: **Corrida y plazo** (fecha, ciclo 00/06/12/18 y plazo en
-horas, con la validez resultante); **Área y grilla** (`Manual` con Lat N /
+cuatro recuadros: **Corrida y plazo** (fecha, ciclo 00/06/12/18 y plazos
+desde / hasta / cada como en la descarga, con la cantidad y la validez
+resultantes; el mismo perfil se escribe en cada plazo); **Área y grilla** (`Manual` con Lat N /
 Lat S / Lon W / Lon E, o `Por FIR` con las casillas de las áreas
 configuradas, Todas / Ninguna y Margen; resolución 0,25°, 0,50° o 1,00°; la
 zona se redondea hacia afuera a la resolución y se muestra la grilla
@@ -953,17 +954,21 @@ derecha con lugar libre a la izquierda para hasta cuatro cifras, con el
 valor preseleccionado y el cursor a su derecha: una tecla lo reemplaza; ←
 suelta la selección y mueve el cursor para insertar, y Backspace / Supr
 borran de a un carácter; la celda actual lleva un marco de acento. Enter
-aplica, Esc sale sin cambiar y deja la fila elegida, Tab recorre celdas y
+aplica, Esc sale sin cambiar y deja la fila elegida (con el foco en la tabla
+Esc nunca cierra el diálogo: para eso está `Cerrar`), Tab recorre celdas y
 filas salteando Presión; la tabla tiene scroll y puede salirse del
 modo (los botones se destildan, el etiquetado sigue siendo el del último
 modo); y **Archivo** (carpeta, nombre automático
 `generado_<corrida>_<plazo>_<res>_<área>_<modo>[_dirvel]` y abrir al
 terminar). Escribe TMP
-en K y UGRD/VGRD en m/s (o WDIR/WIND), un solo plazo, grilla regular
+en K y UGRD/VGRD en m/s (o WDIR/WIND), los plazos pedidos, grilla regular
 lat/lon con latitudes descendentes, `decimalScaleFactor 2` y centro 255
 (sin modelo), más el `.idx` y un `.json` de procedencia con `fuente:
 generado`, el área y la tabla usada; en el visor abre ya etiquetado por FL
-(no se convierte) y FUENTE dice `Generado a mano (perfil uniforme)`.
+(no se convierte) y FUENTE dice `Generado a mano (perfil uniforme)`. Al
+entrar, y después de Agregar, Quitar o un botón de modo, la fila queda
+elegida pero sin edición; el nombre automático lleva `f006-f024` con varios
+plazos.
 
 **Validador** (`validate_wafs`, usado por la conversión, la exportación y
 `--validar`): niveles = presión ISA de FL enteros (tolerancia 10 Pa),

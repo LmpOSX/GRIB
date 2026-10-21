@@ -73,6 +73,27 @@ class TestGenerador(unittest.TestCase):
                          "generado_20261021_12z_f006_0p25_SAEF+SACF_OACI")
         self.assertEqual(gg.default_basename(RUN, 0, 1.0, "MANUAL", "dirspeed", "WAFS"),
                          "generado_20261021_12z_f000_1p00_MANUAL_WAFS_dirvel")
+        self.assertEqual(gg.default_basename(RUN, 6, 0.5, "SAEF", "uv", "INDRA", steps=[6, 9, 12]),
+                         "generado_20261021_12z_f006-f012_0p50_SAEF_INDRA")
+        self.assertEqual(gg.steps_from(6, 12, 3), [6, 9, 12])
+        self.assertEqual(gg.steps_from(12, 6, 3), [6, 9, 12])
+        self.assertEqual(gg.steps_from(6, 6, 3), [6])
+
+    @unittest.skipIf(ec is None, "sin eccodes")
+    def test_varios_plazos(self):
+        from app.grib_reader import GribReader
+        rows = _rows("INDRA")
+        data, info = gg.generate_grib(rows, ZONE, 1.0, mode="INDRA", run=RUN, steps=[6, 9, 12])
+        self.assertEqual(info["mensajes"], 3 * 14 * 3)
+        self.assertEqual(info["plazos_h"], [6, 9, 12])
+        with tempfile.TemporaryDirectory() as tmp:
+            p = os.path.join(tmp, "p.grib2")
+            gg.write_generated(p, data, gg.provenance(rows, info))
+            r = GribReader(p)
+            self.assertEqual([s.hours for s in r.steps], [6, 9, 12])
+            self.assertEqual(len(r.levels), 14)
+            from app.sources.base import read_provenance
+            self.assertEqual(read_provenance(p)["plazos_h"], [6, 9, 12])
 
     @unittest.skipIf(ec is None, "sin eccodes")
     def test_genera_y_el_visor_lo_lee(self):
@@ -239,6 +260,10 @@ class TestDialogoGenerar(unittest.TestCase):
         from app.dialogs.generate_dialog import _CellDelegate, COL_P, COL_T, COL_SPD, COL_FL
         d = self._dialog(wafs_mode="INDRA")
         self.assertIsInstance(d.table.itemDelegate(), _CellDelegate)
+        # Al entrar hay fila elegida pero sin edición (la eligió el programa)
+        _app.processEvents(); _app.processEvents()
+        self.assertEqual(d._selected_row(), 13)
+        self.assertNotEqual(d.table.state(), QAbstractItemView.State.EditingState)
 
         def editor():
             # el editor vivo (los anteriores quedan hasta el deleteLater)
@@ -285,6 +310,26 @@ class TestDialogoGenerar(unittest.TestCase):
         self.assertNotEqual(d.table.state(), QAbstractItemView.State.EditingState)
         self.assertEqual(d.table.item(2, COL_SPD).text(), "0")
         self.assertEqual(d._selected_row(), 2)
+        self.assertTrue(d.isVisible())                              # Esc no cierra el diálogo
+        # Esc llegando al diálogo mientras se edita: sale de la edición y nada más
+        d.table.setCurrentCell(2, COL_T)
+        _app.processEvents(); _app.processEvents()
+        self.assertEqual(d.table.state(), QAbstractItemView.State.EditingState)
+        QTest.keyClick(d, _Qt.Key.Key_Escape)
+        _app.processEvents()
+        self.assertTrue(d.isVisible())
+        self.assertNotEqual(d.table.state(), QAbstractItemView.State.EditingState)
+        self.assertEqual(d._selected_row(), 2)
+        # Esc con el foco en la tabla sin editar: tampoco cierra
+        d.table.setFocus()
+        QTest.keyClick(d.table, _Qt.Key.Key_Escape)
+        _app.processEvents()
+        self.assertTrue(d.isVisible())
+        # Quitar un nivel deja la fila elegida sin edición
+        d._remove_row()
+        _app.processEvents(); _app.processEvents()
+        self.assertEqual(d._selected_row(), 2)
+        self.assertNotEqual(d.table.state(), QAbstractItemView.State.EditingState)
         # La columna Presión se saltea en el sentido del movimiento
         d.table.setCurrentCell(2, COL_FL)
         _app.processEvents()
@@ -345,7 +390,10 @@ class TestDialogoGenerar(unittest.TestCase):
             _app.processEvents()
             self.assertIsNotNone(d.generated_path)
             self.assertTrue(os.path.exists(d.generated_path))
-            self.assertIn("51 mensajes", d.lbl_status.text())
+            self.assertIn("153 mensajes", d.lbl_status.text())      # 17 niveles × 3 campos × 3 plazos (6, 9, 12)
+            self.assertIn("_f006-f012_", d.generated_path)
+            self.assertEqual(d.hours(), [6, 9, 12])
+            self.assertIn("3 plazo(s)", d.lbl_valid.text())
             prov = read_provenance(d.generated_path)
             self.assertEqual(prov["fuente"], "generado")
             self.assertEqual(prov["area"]["codigos"], ["SAEF"])
@@ -358,6 +406,7 @@ class TestDialogoGenerar(unittest.TestCase):
             self.assertTrue(r.is_wafs)
             self.assertEqual(r.fl_mode, "OACI")
             self.assertEqual(len(r.levels), 17)
+            self.assertEqual([s.hours for s in r.steps], [6, 9, 12])
             self.assertIn("FUENTE: Generado a mano", win.panel.lbl_source.text())
             self.assertIn("área SAEF", win.panel.lbl_source.text())
             self.assertIn("1,00°", win.panel.lbl_source.text())

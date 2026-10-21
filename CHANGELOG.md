@@ -17,7 +17,11 @@
   Presión. El editor es un campo normal: opaco y ocupando la celda entera (el
   valor de la celda no se dibuja debajo), alineado a la derecha con lugar a la
   izquierda, cursor a la derecha del valor preseleccionado; ← suelta la
-  selección para insertar y Backspace / Supr borran de a un carácter.
+  selección para insertar y Backspace / Supr borran de a un carácter. Plazos
+  desde / hasta / cada en vez de uno solo (el mismo perfil en cada plazo; el
+  nombre lleva `f006-f024`). Esc en edición sólo sale de la edición y deja la
+  fila elegida; con el foco en la tabla no cierra el diálogo. Al entrar y tras
+  Agregar, Quitar o un botón de modo la fila queda elegida sin edición.
 
 ## 0.4.0 — 2026-10-21
 
