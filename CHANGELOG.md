@@ -1,6 +1,6 @@
 # Cambios
 
-## Sin publicar
+## 0.3.8 — 2026-10-20
 
 - Ficha del punto: después de tocar un punto sin datos (fuera de la grilla),
   la ficha del siguiente punto con datos salía con el perfil estirado y se
