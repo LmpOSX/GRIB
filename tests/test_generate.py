@@ -255,7 +255,8 @@ class TestDialogoGenerar(unittest.TestCase):
         self.assertEqual(ed.cursorPosition(), len(ed.text()))       # cursor a la derecha
         self.assertEqual(ed.alignment() & _Qt.AlignmentFlag.AlignRight, _Qt.AlignmentFlag.AlignRight)
         self.assertEqual(ed.geometry(), d.table.visualRect(d.table.model().index(2, COL_T)))
-        self.assertTrue(ed.autoFillBackground())
+        # (el fondo opaco lo pone la hoja de estilos, que en la suite completa
+        # desactiva autoFillBackground: no se comprueba ese atributo)
         # ← suelta la selección y deja el cursor para insertar; Backspace borra un carácter
         QTest.keyClick(ed, _Qt.Key.Key_Left)
         self.assertEqual(ed.selectedText(), "")
