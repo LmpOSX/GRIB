@@ -443,6 +443,8 @@ class MainWindow(QMainWindow):
         self._act_open = self._add_action(archivo, "Abrir GRIB…", self._file_open, "Ctrl+O")
         self._act_download = self._add_action(archivo, "Obtener datos…", self.get_data,
                                               "Ctrl+Shift+D")
+        self._act_generate = self._add_action(archivo, "Generar GRIB…", self.generate_grib,
+                                              "Ctrl+G")
         self._recent_menu = archivo.addMenu("Recientes")
         self._refresh_recent_menu()
         archivo.addSeparator()
@@ -858,6 +860,30 @@ class MainWindow(QMainWindow):
 
     download_gfs = get_data     # nombre anterior
 
+    def generate_grib(self):
+        """Diálogo «Generar GRIB…»: un perfil uniforme por FL sobre una
+        grilla regular; si se pide, el archivo generado se abre en el visor
+        (ya viene etiquetado por FL, no hace falta convertirlo)."""
+        from .dialogs.generate_dialog import GenerateGribDialog
+        region = None
+        if self._reader is not None:
+            r = self._reader
+            region = (float(r.lats.max()), float(r.lats.min()),
+                      float(r.lons.min()), float(r.lons.max()))
+        dlg = GenerateGribDialog(self, cfg=self._cfg, dest_dir=working_dir(self._cfg), region=None)
+        if region is not None:
+            dlg.set_region(*region) if self._cfg.get("download_area_mode") == "manual" else None
+        ok = dlg.exec()
+        save_config(self._cfg)
+        self._apply_area_layer()
+        if ok and dlg.generated_path:
+            self._cfg["last_directory"] = os.path.dirname(dlg.generated_path)
+            save_config(self._cfg)
+            if dlg.open_after:
+                self.open_file(dlg.generated_path)
+            else:
+                self.set_status("Generado: " + dlg.generated_path)
+
     def _accept_reader(self, reader) -> bool:
         """Valida el contenido: sin U/V se puede seguir sólo con temperatura;
         sin nada útil no se abre."""
@@ -1083,6 +1109,8 @@ class MainWindow(QMainWindow):
             lines.append(f"  niveles {prov['niveles']}")
         if fmt_line:
             lines.append(fmt_line)
+        if getattr(self._reader, "wind_format", "uv") == "dirspeed":
+            lines.append("  viento: dirección y velocidad (WDIR/WIND)")
         return "\n".join(lines)
 
     def _format_line(self) -> str:

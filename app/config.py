@@ -106,6 +106,8 @@ DEFAULTS = {
     "download_area_codes": ["SARR", "SACF", "SAMF", "SAEF", "SAVF"],   # casillas marcadas
     "download_manual_region": [4.0, -64.0, -90.0, -22.0],              # última zona manual (N, S, W, E)
     "download_area_draw": False,        # dibujar los rectángulos del área en el mapa
+    "download_wind_format": "uv",       # viento en el archivo bajado: 'uv' (UGRD/VGRD) | 'dirspeed' (WDIR/WIND)
+    "generate_res_deg": 0.25,           # última resolución de «Generar GRIB…»
     # Formato WAFS (formato interno único del visor)
     "wafs_convert": True,               # valor inicial de «Convertir a WAFS» en el diálogo de descarga
     "wafs_convert_local": True,         # convertir también los archivos locales al abrirlos

@@ -159,12 +159,29 @@ class GribStep:
         return f"{hs}  {fmt_dt(self.valid)} UTC"
 
 
+class DerivedField:
+    """U o V que no está en el archivo: se calcula del par WDIR/WIND del
+    mismo plazo y nivel al leer (ver GribReader._read_values)."""
+
+    def __init__(self, var, wdir_msg, ws_msg):
+        self.var = var
+        self.wdir = wdir_msg
+        self.ws = ws_msg
+        self.level_hpa = wdir_msg.level_hpa
+        self.step_range = wdir_msg.step_range
+        self.valid = wdir_msg.valid
+        self.run = wdir_msg.run
+        self.index = wdir_msg.index
+        self.ni, self.nj = wdir_msg.ni, wdir_msg.nj
+
+
 class GribReader:
     """Lee un archivo GRIB2 con ecCodes, construye el inventario y entrega
     campos (u, v, t) en niveles de presión, con cache en memoria e
     interpolación vertical lineal en ln(p)."""
 
-    VAR_NAMES = {"u": "UGRD (u)", "v": "VGRD (v)", "t": "TMP (t)"}
+    VAR_NAMES = {"u": "UGRD (u)", "v": "VGRD (v)", "t": "TMP (t)",
+                 "wdir": "WDIR (dirección)", "ws": "WIND (velocidad)"}
 
     def __init__(self, path, engine="eccodes", wgrib2_path=""):
         """engine: 'eccodes' (biblioteca Python) o 'wgrib2' (programa externo,
@@ -226,7 +243,7 @@ class GribReader:
         levels = set()
         variables = set()
         for m in self.messages:
-            usable = (m.var in ("u", "v", "t") and m.level_hpa is not None
+            usable = (m.var in ("u", "v", "t", "wdir", "ws") and m.level_hpa is not None
                       and m.ni == self.grid["ni"] and m.nj == self.grid["nj"])
             if not usable:
                 self.other_messages.append(m)
@@ -240,6 +257,22 @@ class GribReader:
             self.index[key] = m
             levels.add(m.level_hpa)
             variables.add(m.var)
+        # Viento como dirección y velocidad (WDIR/WIND): donde no hay U/V se
+        # derivan de ese par al leer, así todo lo demás trabaja con U/V
+        self.wind_format = "uv"
+        derived = 0
+        for (s, var, lv) in list(self.index):
+            if var != "wdir" or (s, "ws", lv) not in self.index:
+                continue
+            if (s, "u", lv) in self.index or (s, "v", lv) in self.index:
+                continue
+            pair = (self.index[(s, "wdir", lv)], self.index[(s, "ws", lv)])
+            self.index[(s, "u", lv)] = DerivedField("u", *pair)
+            self.index[(s, "v", lv)] = DerivedField("v", *pair)
+            variables.update(("u", "v"))
+            derived += 1
+        if derived:
+            self.wind_format = "dirspeed" if not ({"u", "v"} & {m.var for m in self.messages}) else "mixto"
 
         # Niveles de presión descendentes; la superficie (SURFACE_LEVEL) aparte
         self.levels = sorted((lv for lv in levels if lv != SURFACE_LEVEL), reverse=True)
@@ -253,7 +286,7 @@ class GribReader:
         # nivel exacto, sin interpolar. Si no, es crudo y se interpola.
         self._classify_fl_levels()
         self.variables = [v for v in ("u", "v", "t") if v in variables]
-        if not self.index:
+        if not any(k[1] in ("u", "v", "t") for k in self.index):
             raise ValueError(
                 "El archivo no contiene campos U/V/T en niveles de presión "
                 "(typeOfLevel isobaricInhPa) ni de superficie (10 m / 2 m) sobre la "
@@ -302,7 +335,15 @@ class GribReader:
     # ------------------------------------------------------------- lectura
     def _read_values(self, msg):
         """Lee los valores de un mensaje con el motor y los devuelve como
-        array (nj, ni) orientado con latitudes y longitudes ascendentes."""
+        array (nj, ni) orientado con latitudes y longitudes ascendentes.
+        Un DerivedField (U o V a partir de WDIR/WIND) se calcula de sus dos
+        mensajes."""
+        if isinstance(msg, DerivedField):
+            from .wind_format import dirspeed_to_uv
+            direc = self._read_values(msg.wdir)
+            spd = self._read_values(msg.ws)
+            u, v = dirspeed_to_uv(direc, spd)
+            return u if msg.var == "u" else v
         values = self.backend.read(self.path, msg)
         return orient_values(values, self.grid["nj"], self.grid["ni"],
                              self._flip_lat, self._lon_order)
@@ -619,6 +660,11 @@ class GribReader:
                          f"ventana [{fmt_dt(s.window_start, False)}–{fmt_dt(s.window_end, False)}]")
         lines.append("")
         lines.append("VARIABLES: " + ", ".join(self.VAR_NAMES[v] for v in self.variables))
+        wf = getattr(self, "wind_format", "uv")
+        if wf == "dirspeed":
+            lines.append("VIENTO: dirección y velocidad (WDIR/WIND); se combinan en U/V al leer")
+        elif wf == "mixto":
+            lines.append("VIENTO: U/V en algunos niveles y WDIR/WIND en otros (se combinan en U/V)")
         lines.append("NIVELES (hPa): " + ", ".join(f"{lv:g}" for lv in self.levels)
                      + ("  + superficie (viento 10 m / T 2 m)"
                         if getattr(self, "has_surface", False) else ""))

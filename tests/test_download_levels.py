@@ -183,7 +183,8 @@ class TestBotonesDeModo(unittest.TestCase):
         # de 800 px y el tope de GlassDialog es pantalla − 40)
         cap = d.screen().availableGeometry().height() - 40
         want = min(d.sizeHint().height(), cap)
-        self.assertGreater(d.height(), h_smn + 100)
+        # (si el GFS ya toca el tope de pantalla, el SMN también puede estar cerca)
+        self.assertGreater(d.height(), min(h_smn + 100, cap - 1))
         self.assertGreaterEqual(d.height(), want - 2)
         if d.sizeHint().height() <= cap:                                       # no aplastado
             self.assertEqual(d.level_grid_w.height(), d.level_grid_w.sizeHint().height())
@@ -206,6 +207,29 @@ class TestBotonesDeModo(unittest.TestCase):
             self.assertFalse(d.mode_row_w.isVisibleTo(d))
             self.assertFalse(d.chk_wafs.isEnabled())
             self.assertEqual(d.lbl_levels_hint.text(), "")
+
+    def test_viento_en_el_archivo(self):
+        """El combo «Viento en el archivo» va al trabajo (wind_format), al
+        sufijo del nombre y a la configuración; arranca con lo guardado."""
+        from app import wind_format as wfm
+        dlg = self._dialog()
+        self.assertEqual(dlg.wind_format(), "uv")
+        self.assertEqual(dlg.job().wind_format, "uv")
+        self.assertTrue(dlg.job().suffix.endswith("_wafs") or dlg.job().suffix == "")
+        dlg.cb_wind.setCurrentIndex(dlg.cb_wind.findData("dirspeed"))
+        self.assertEqual(dlg.wind_format(), "dirspeed")
+        job = dlg.job()
+        self.assertEqual(job.wind_format, "dirspeed")
+        self.assertTrue(job.suffix.startswith("_dirvel"), job.suffix)
+        self.assertEqual(dlg._cfg["download_wind_format"], "dirspeed")
+        self.assertIn("WDIR", dlg.cb_wind.currentText())
+        self.assertEqual([k for k, _t in wfm.FORMATS], ["uv", "dirspeed"])
+        dlg.close()
+        dlg2 = self._dialog(download_wind_format="dirspeed")     # lo guardado
+        self.assertEqual(dlg2.wind_format(), "dirspeed")
+        self.assertTrue(dlg2.job().suffix.startswith("_dirvel"))
+        dlg2.close()
+
 
 
 if __name__ == "__main__":

@@ -137,7 +137,15 @@ fuente) y **Descarga y archivo**:
   plazos se validan contra los que la fuente ofrece (el GFS: cada hora
   hasta +120, cada 3 h hasta +384).
 * **Variables** y **niveles** de la fuente (sin selector de nivel en las
-  fuentes de superficie). Debajo de la grilla de niveles hay cuatro
+  fuentes de superficie). Debajo de las variables, **Viento en el archivo**:
+  `Componentes U y V (UGRD/VGRD)`, como lo publica el modelo, o `Dirección y
+  velocidad (WDIR/WIND)`: al terminar la descarga (después de interpolar a
+  los FL, porque la dirección no se interpola) cada par U/V se reemplaza por
+  WDIR (grados verdaderos, de dónde sopla) y WIND (m/s), conservando grilla,
+  nivel, plazo y empaquetado; el nombre lleva `_dirvel` y la procedencia
+  `viento: dirspeed`. El visor lee los dos formatos (de un WDIR/WIND deriva
+  U/V al leer, y el inventario y FUENTE lo dicen); el WAFS operativo lleva
+  U/V y el validador lo avisa sin bloquear. Debajo de la grilla de niveles hay cuatro
   botones excluyentes, **INDRA (14)**, **OACI (17)**, **OACI (56)** y **WAFS
   (56)**, que tildan los niveles que ese modo necesita y fijan el modo de
   conversión de esta descarga (arranca con el de Preferencias ▸ WAFS), y
@@ -700,6 +708,7 @@ licencias en `docs/FUENTES_FIR.md`.
 |---|---|---|
 | Abrir GRIB… | ⌘ O | Ctrl O |
 | Obtener datos… | ⌘ ⇧ D | Ctrl Shift D |
+| Generar GRIB… | ⌘ G | Ctrl G |
 | Exportar PNG… | ⌘ E | Ctrl E |
 | Exportar CSV… | ⌘ ⇧ E | Ctrl Shift E |
 | Exportar a WAFS… | ⌘ ⇧ W | Ctrl Shift W |
@@ -913,11 +922,37 @@ de mensajes, niveles y que los valores coincidan con lo que había en
 memoria dentro de la precisión del empaquetado; el resultado se muestra
 junto con los avisos del validador.
 
+**Generar GRIB…** (Archivo, ⌘G) fabrica un GRIB2 a mano, sin modelo: un
+perfil vertical uniforme en toda la grilla, para pruebas, simulaciones o
+para alimentar otro sistema con un viento conocido. El formulario tiene
+cuatro recuadros: **Corrida y plazo** (fecha, ciclo 00/06/12/18 y plazo en
+horas, con la validez resultante); **Área y grilla** (`Manual` con Lat N /
+Lat S / Lon W / Lon E, o `Por FIR` con las casillas de las áreas
+configuradas, Todas / Ninguna y Margen; resolución 0,25°, 0,50° o 1,00°; la
+zona se redondea hacia afuera a la resolución y se muestra la grilla
+resultante); **Niveles y valores**, con los botones **INDRA (14)**, **OACI
+(17)**, **OACI (56)** y **WAFS (56)** que llenan la tabla con los FL de ese
+modo y fijan cómo se etiquetan los niveles (nominal hPa×100, o la ISA en Pa
+en WAFS), y una tabla con una fila por FL: presión (etiqueta), temperatura
+en °C (arranca en la ISA del FL), velocidad en kt y dirección verdadera en
+grados, de dónde sopla; los botones `Temperatura ISA`, `Copiar hacia abajo`
+(T, viento y dirección de la fila elegida a todas las de abajo), `Agregar
+FL` y `Quitar FL` (la tabla puede salirse del modo: los botones se
+destildan, el etiquetado sigue siendo el del último modo); y **Archivo**
+(carpeta, nombre automático `generado_<corrida>_<plazo>_<res>_<área>_<modo>[_dirvel]`,
+viento como U/V o dirección y velocidad, y abrir al terminar). Escribe TMP
+en K y UGRD/VGRD en m/s (o WDIR/WIND), un solo plazo, grilla regular
+lat/lon con latitudes descendentes, `decimalScaleFactor 2` y centro 255
+(sin modelo), más el `.idx` y un `.json` de procedencia con `fuente:
+generado`, el área y la tabla usada; en el visor abre ya etiquetado por FL
+(no se convierte) y FUENTE dice `Generado a mano (perfil uniforme)`.
+
 **Validador** (`validate_wafs`, usado por la conversión, la exportación y
 `--validar`): niveles = presión ISA de FL enteros (tolerancia 10 Pa),
 variables y unidades esperadas, RH sólo hasta FL180, grilla regular lat/lon
 única, viento en componentes geográficas (`uvRelativeToGrid = 0`),
-UGRD/VGRD/TMP presentes en cada plazo. **Avisa, no bloquea.**
+UGRD/VGRD/TMP presentes en cada plazo (WDIR/WIND cuentan como viento, con
+el aviso de que el operativo lleva U/V). **Avisa, no bloquea.**
 
 **Qué reproduce y qué no respecto del producto oficial.** El WAFS operativo
 sale de los niveles del modelo (híbridos) vía UPP, con interpolación

@@ -93,7 +93,9 @@ def wafs_filename(cycle, step, model="gfs", res="0p25"):
 WAFS_SHORTNAMES = {"u": "UGRD", "v": "VGRD", "t": "TMP", "gh": "HGT", "r": "RH",
                    "z": "HGT", "icaht": "ICAHT"}
 WAFS_UNITS = {"u": ("m s**-1",), "v": ("m s**-1",), "t": ("K",), "gh": ("gpm",),
-              "r": ("%",), "icaht": ("m",)}
+              "r": ("%",), "icaht": ("m",), "wdir": ("Degree true",), "ws": ("m s**-1",)}
+# Viento como dirección y velocidad: el visor lo lee, pero el WAFS operativo lleva U/V
+WIND_DS_SHORTNAMES = {"wdir": "WDIR", "ws": "WIND"}
 WAFS_2D_LEVELS = ("maxWind", "tropopause")
 REQUIRED = ("u", "v", "t")
 
@@ -242,6 +244,13 @@ def convert_to_wafs(src, fl_min=DEFAULT_FL_MIN, fl_max=DEFAULT_FL_MAX, extend=Tr
         raise RuntimeError("la conversión requiere eccodes")
     data = _load(src)
     log = log or (lambda msg: None)
+    # Viento como dirección y velocidad: se interpola en U/V (la dirección no
+    # se puede interpolar) y al final se vuelve al formato del origen
+    from . import wind_format as wfm
+    wind_fmt = wfm.detect(data)
+    if wind_fmt in ("dirspeed", "mixto"):
+        data, _winfo = wfm.convert(data, "uv")
+        log("viento en dirección/velocidad: se interpola en U/V y se vuelve a dir/vel al final")
 
     # 1) leer todo, agrupado por (plazo, variable)
     fields, tmpl, order = {}, {}, []
@@ -335,7 +344,11 @@ def convert_to_wafs(src, fl_min=DEFAULT_FL_MIN, fl_max=DEFAULT_FL_MAX, extend=Tr
         "descartados_detalle": {f"{k[0]} @ {k[1]}": v for k, v in dropped.items()},
         "variables": sorted({var for _s, var in order}),
         "plazos": list(dict.fromkeys(step for step, _v in order)),
+        "viento": "dirspeed" if wind_fmt in ("dirspeed", "mixto") else ("uv" if wind_fmt else None),
     }
+    if n and wind_fmt in ("dirspeed", "mixto"):
+        out, _winfo = wfm.convert(bytes(out), "dirspeed")
+        out = bytearray(out)
     if omitted:
         log(f"FL omitidos por estar fuera de los niveles del origen: "
             + ", ".join(f"FL{fl:03d}" for fl in sorted(omitted)))
@@ -530,7 +543,14 @@ def validate_wafs(src, tol=LEVEL_TOL_PA):
                                       f"FL{RH_FL_MAX}")
             elif tol_name not in WAFS_2D_LEVELS:
                 avisos.append(f"mensaje {n}: {short} en nivel '{tol_name}' no pertenece al WAFS")
-            if short not in WAFS_SHORTNAMES:
+            if short in WIND_DS_SHORTNAMES:
+                if short == "wdir":
+                    avisos.append(f"mensaje {n}: viento como dirección y velocidad (WDIR/WIND); "
+                                  "el WAFS operativo lleva U/V (UGRD/VGRD)")
+                expected = WAFS_UNITS.get(short)
+                if expected and units not in expected:
+                    avisos.append(f"mensaje {n}: {short} en '{units}', se espera {expected[0]}")
+            elif short not in WAFS_SHORTNAMES:
                 avisos.append(f"mensaje {n}: variable '{short}' no es una variable WAFS "
                               "(UGRD, VGRD, TMP, HGT, RH, ICAHT)")
             else:
@@ -547,6 +567,13 @@ def validate_wafs(src, tol=LEVEL_TOL_PA):
             ec.codes_release(gid)
     if n == 0:
         avisos.append("el archivo no contiene mensajes GRIB")
+    if "wdir" in variables and "ws" in variables:
+        # dirección y velocidad cubren el viento (el lector deriva U/V)
+        variables.setdefault("u", variables["wdir"])
+        variables.setdefault("v", variables["ws"])
+        for vs in per_step_vars.values():
+            if "wdir" in vs and "ws" in vs:
+                vs.update(("u", "v"))
     for req in REQUIRED:
         if n and req not in variables:
             avisos.append(f"falta la variable obligatoria {WAFS_SHORTNAMES[req]}")

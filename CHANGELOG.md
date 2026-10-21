@@ -1,5 +1,24 @@
 # Cambios
 
+## Sin publicar
+
+- Viento como dirección y velocidad (WDIR/WIND) además de U/V: el diálogo de
+  descarga tiene «Viento en el archivo» (componentes U y V, o dirección y
+  velocidad); con la segunda, al terminar cada par U/V se reemplaza por WDIR
+  (grados verdaderos, de dónde sopla) y WIND (m/s), el nombre lleva `_dirvel` y
+  la procedencia `viento: dirspeed`. El visor lee los dos formatos: de un
+  WDIR/WIND deriva U/V al leer (motor ecCodes y wgrib2), la conversión a WAFS
+  interpola en U/V y devuelve el formato del origen, y el validador acepta
+  WDIR/WIND avisando que el WAFS operativo lleva U/V.
+- Archivo ▸ «Generar GRIB…» (⌘G): fabrica un GRIB2 a mano con un perfil
+  uniforme por FL. Corrida y plazo; área manual o por FIR con margen;
+  resolución 0,25 / 0,50 / 1,00°; botones INDRA (14), OACI (17), OACI (56) y
+  WAFS (56) que llenan la tabla de niveles y fijan el etiquetado; tabla con
+  temperatura (arranca en la ISA), velocidad en kt y dirección por FL, con
+  Temperatura ISA, Copiar hacia abajo, Agregar y Quitar FL; viento como U/V o
+  dirección y velocidad; escribe el `.grib2` con `.idx` y `.json` de
+  procedencia (`fuente: generado`) y lo abre en el visor.
+
 ## 0.3.8 — 2026-10-20
 
 - Ficha del punto: después de tocar un punto sin datos (fuera de la grilla),

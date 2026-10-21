@@ -35,6 +35,7 @@ detalle.
 | B6 | Archivo inválido | Abrir un archivo que no es GRIB | Diálogo "Error al abrir el archivo"; la app sigue en el estado anterior. |
 | B7 | Archivo sin U/V | Abrir un GRIB sólo con TMP | Aviso "Sin viento"; VARIABLE queda en Temperatura; el mapa muestra contornos. |
 | B8 | Doble clic en el Finder (app empaquetada) | `scripts/build.sh`, instalar, doble clic en un `.grib2` | La app abre con ese archivo. |
+| B9 | Viento como dirección y velocidad | Abrir un GRIB bajado con «Viento en el archivo: dirección y velocidad» (`…_dirvel.grib2`), con ecCodes y con wgrib2 | Abre igual que su gemelo en U/V: mismas barbas, STATUS y ficha del punto; el inventario dice `VARIABLES: UGRD (u), VGRD (v), TMP (t)` y `VIENTO: dirección y velocidad (WDIR/WIND); se combinan en U/V al leer`; FUENTE agrega `viento: dirección y velocidad (WDIR/WIND)`; `wgrib2 -s` lista `WDIR` y `WIND` en vez de `UGRD` y `VGRD`. |
 
 ## C. Inventario y STATUS
 
@@ -254,6 +255,17 @@ detalle.
 | L13 | Bajar 0,25° y regrillar | Resolución 1,00° + "Bajar siempre 0,25°" | El nombre lleva `_desde_0p25`; STATUS: `1,00° desde 0,25° (ninguno)`; grilla 1° idéntica al producto real de 1,00°. |
 | L14 | Suavizado | Resolución 1,00° + suavizado `Promedio de área` | Nombre `_desde_0p25_suav`; STATUS `(promedio)`; las barbas en bordes del chorro difieren del producto real. |
 | L15 | Sin red | Desconectar la red y descargar | Tras tres intentos, mensaje "no se pudo conectar"; nada a medias. |
+
+## R. Generar GRIB
+
+| # | Caso | Pasos | Resultado esperado |
+|---|---|---|---|
+| R1 | Abrir el diálogo | Archivo ▸ Generar GRIB… (⌘G) | Diálogo glass con cuatro recuadros: «Corrida y plazo» (fecha de hoy, ciclo actual, plazo 6 h y la validez), «Área y grilla» (Manual / Por FIR como en la descarga, resolución y la grilla resultante, p. ej. `grilla 264 × 279 puntos · zona 20.5S–90S, 74.75W–9E (redondeada hacia afuera a 0.25°) · margen 1° incluido`), «Niveles y valores» (botones INDRA (14) / OACI (17) / OACI (56) / WAFS (56) con el de Preferencias ▸ WAFS tildado, la tabla FL / Presión / T / Viento / Dir, y los botones Temperatura ISA, Copiar hacia abajo, Agregar FL, Quitar FL) y «Archivo» (carpeta, nombre, Abrir al terminar, Viento). La tabla arranca con los FL del modo, T en la ISA de cada FL y viento 0. |
+| R2 | Modos | Tocar cada botón de modo | 14 / 17 / 56 / 56 filas; la columna Presión dice `300 hPa (nominal)` en INDRA/OACI/OACI56 y `300.9 hPa` en WAFS; lo escrito en un FL se conserva al cambiar de modo si el FL sigue. |
+| R3 | Tabla | Elegir una fila, escribir T −40, viento 60, dir 250, `Copiar hacia abajo`; `Temperatura ISA`; `Agregar FL`; `Quitar FL` | Las filas de abajo copian los tres valores; ISA vuelve a poner la T de cada FL; Agregar inserta el siguiente FL libre por encima de la fila elegida y destilda los botones de modo (el rótulo sigue diciendo `modo OACI`); Quitar la saca y, si la tabla vuelve a coincidir con el modo, el botón se tilda. |
+| R4 | Generar y abrir | OACI (17), viento 30 kt / 270° en todas, Por FIR SAEF, 1,00°, `Generar` | Se escribe `generado_<fecha>_<HH>z_f006_1p00_SAEF_OACI.grib2` con `.idx` y `.json` (`fuente: generado`, `area.codigos: ["SAEF"]`, `tabla` con 17 filas) y se abre en el visor: 17 FL con botón, barbas uniformes de 30 kt del oeste, FUENTE `Generado a mano (perfil uniforme)`, `corrida … +6 h · 1,00° · área SAEF`, `WAFS FL050–FL530 · modo OACI`; `wgrib2 -s` lista 51 mensajes (TMP, UGRD, VGRD × 17) con `300 mb` etc. |
+| R5 | Dirección y velocidad | Igual que R4 con Viento = «Dirección y velocidad» | El nombre termina en `_OACI_dirvel.grib2`; `wgrib2 -s` lista `WDIR` y `WIND`; en el visor se ve igual que R4 y FUENTE agrega `viento: dirección y velocidad (WDIR/WIND)`. |
+| R6 | Validación | FL 305 en una celda, o dir 400, o una celda vacía, o Por FIR sin casillas, o zona manual invertida; `Generar` | Aviso claro con la fila y el motivo; no se escribe nada. Si el archivo ya existe pregunta si reemplazar. |
 
 ## M. Fuentes (Preferencias)
 

@@ -63,6 +63,10 @@ _VAR_INFO = {
     "UGRD": ("u", "U component of wind", "m s**-1"),
     "VGRD": ("v", "V component of wind", "m s**-1"),
     "TMP": ("t", "Temperature", "K"),
+    # Viento como dirección (de dónde sopla, grados verdaderos) y velocidad:
+    # el lector los combina en U/V al leer (ver GribReader)
+    "WDIR": ("wdir", "Wind direction", "Degree true"),
+    "WIND": ("ws", "Wind speed", "m s**-1"),
 }
 
 
@@ -178,7 +182,7 @@ class EccodesBackend:
         """Devuelve 'u', 'v', 't' o None según el parámetro del mensaje.
         Usa shortName y, como respaldo, discipline/category/number GRIB2."""
         short = cls._get(gid, "shortName", "", "str")
-        if short in ("u", "v", "t"):
+        if short in ("u", "v", "t", "wdir", "ws"):
             return short
         upper = short.upper()
         if upper in ("UGRD", "U"):
@@ -187,6 +191,10 @@ class EccodesBackend:
             return "v"
         if upper in ("TMP", "T"):
             return "t"
+        if upper == "WDIR":
+            return "wdir"
+        if upper in ("WIND", "WSPD"):
+            return "ws"
         disc = cls._get(gid, "discipline", -1, "long")
         cat = cls._get(gid, "parameterCategory", -1, "long")
         num = cls._get(gid, "parameterNumber", -1, "long")
@@ -196,6 +204,10 @@ class EccodesBackend:
             return "v"
         if (disc, cat, num) == (0, 0, 0):
             return "t"
+        if (disc, cat, num) == (0, 2, 0):
+            return "wdir"
+        if (disc, cat, num) == (0, 2, 1):
+            return "ws"
         return None
 
     def scan(self, path):

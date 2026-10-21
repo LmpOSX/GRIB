@@ -83,9 +83,12 @@ class DownloadJob:
 
     def __init__(self, run_date, cycle, steps, variables=None, levels=None, region=None,
                  dest_dir=".", basename=None, merge=True, params=None, suffix="",
-                 area_mode="manual", area_codes=None, area_margin=0.0):
+                 area_mode="manual", area_codes=None, area_margin=0.0, wind_format="uv"):
         self.run_date = run_date              # datetime.date UTC
         self.suffix = suffix                  # p. ej. '_wafs' cuando se convierte al bajar
+        # Viento en el archivo: 'uv' (UGRD/VGRD, como lo publica el modelo) o
+        # 'dirspeed' (WDIR/WIND: dirección y velocidad, convertido al bajar)
+        self.wind_format = wind_format if wind_format in ("uv", "dirspeed") else "uv"
         # Área de descarga (ver app/areas.py): 'manual' o 'fir' con los códigos
         # de las áreas marcadas; `region` ya es la envolvente con el margen.
         self.area_mode = area_mode if area_mode in ("manual", "fir") else "manual"
@@ -322,8 +325,8 @@ class Source:
         d = {"fuente": self.key, "nombre": self.name, "modelo": self.model, "tipo": self.kind,
              "corrida": job.run.strftime("%Y-%m-%dT%H:%MZ"), "plazos_h": job.steps,
              "variables": job.variables, "niveles_hpa": job.levels, "zona": job.region,
-             "parametros": self.merged_params(job.params), "descargado": dt.datetime.now(
-                 dt.timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")}
+             "parametros": self.merged_params(job.params), "viento": job.wind_format,
+             "descargado": dt.datetime.now(dt.timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")}
         if job.region is not None:
             from .. import areas
             d["area"] = areas.area_info(job.area_mode, job.area_codes, job.area_margin, job.region,
@@ -481,6 +484,16 @@ class Source:
                         progress_cb(i, n, f"{msg}: convirtiendo a WAFS…", (i + 1) / n)
                     data, winfo = self._to_wafs(data, wafs, step)
                     effective.setdefault("wafs", {}).update(winfo)
+                if job.wind_format == "dirspeed" and data[:4] == b"GRIB":
+                    # Viento como dirección y velocidad: se convierte al final,
+                    # después de interpolar (la dirección no se interpola)
+                    from .. import wind_format as wfm
+                    try:
+                        data, dinfo = wfm.convert(data, "dirspeed")
+                    except Exception as exc:
+                        raise DownloadError(f"{self.name}: no se pudo pasar el viento a dirección/"
+                                            f"velocidad en el plazo +{step} h: {exc}") from exc
+                    effective["viento"] = "dirspeed" if dinfo.get("pares") else "uv"
                 if job.merge:
                     out.write(data)
                 else:

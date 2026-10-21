@@ -36,6 +36,7 @@ from ..widgets.params_form import ParamsForm
 from ..widgets.areas_editor import CoordEdit
 from .. import areas as A
 from .. import fl_table as flt
+from .. import wind_format as wfm
 
 MODE_BUTTONS = {"INDRA": "INDRA (14)", "OACI": "OACI (17)", "OACI56": "OACI (56)", "WAFS": "WAFS (56)"}
 WAFS_CHECK_TEXT = "Convertir a WAFS (FL cada 1000 ft, interpolado a presiones reales)"
@@ -294,6 +295,26 @@ class DownloadDialog(GlassDialog):
         self.var_grid.setVerticalSpacing(2)
         self.var_checks = {}
         lay.addWidget(self.var_box)
+        # Viento en el archivo: U/V tal cual lo publica el modelo, o dirección
+        # y velocidad (se convierte al bajar, después de interpolar)
+        wrow = QHBoxLayout()
+        wrow.setContentsMargins(0, 0, 0, 0)
+        lbl = QLabel("Viento en el archivo")
+        lbl.setObjectName("SubHeading")
+        wrow.addWidget(lbl)
+        self.cb_wind = QComboBox()
+        for key, text in wfm.FORMATS:
+            self.cb_wind.addItem(text, key)
+        self.cb_wind.setCurrentIndex(max(0, self.cb_wind.findData(
+            wfm.normalize(self._cfg.get("download_wind_format", "uv")))))
+        self.cb_wind.setToolTip("Los modelos publican las componentes U (este) y V (norte). Con "
+                                "«Dirección y velocidad» cada par U/V se reemplaza por WDIR (grados "
+                                "verdaderos, de dónde sopla) y WIND (m/s) al terminar; el visor lee "
+                                "los dos formatos. El WAFS operativo lleva U/V.")
+        self.cb_wind.currentIndexChanged.connect(self._on_wind_changed)
+        wrow.addWidget(self.cb_wind)
+        wrow.addStretch()
+        lay.addLayout(wrow)
 
         self.form = None
 
@@ -866,6 +887,12 @@ class DownloadDialog(GlassDialog):
         self._refresh_area()
         self._refresh_levels_hint()
 
+    def wind_format(self):
+        return wfm.normalize(self.cb_wind.currentData())
+
+    def _on_wind_changed(self, _i):
+        self._cfg["download_wind_format"] = self.wind_format()
+
     def _on_wafs_toggled(self, _on):
         # Con o sin conversión cambian los niveles que necesita el modo
         if not self._applying and self._mode is not None and self.level_checks:
@@ -985,9 +1012,11 @@ class DownloadDialog(GlassDialog):
             region=region, dest_dir=self.dest.text().strip() or ".",
             basename=self.name.text().strip() or None, merge=self.chk_merge.isChecked(),
             params=self.params(),
-            suffix="_wafs" if self._wafs_options() is not None else "",
+            suffix=("_dirvel" if self.wind_format() == "dirspeed" else "")
+                   + ("_wafs" if self._wafs_options() is not None else ""),
             area_mode=mode, area_codes=self.selected_codes() if mode == "fir" else [],
             area_margin=self.margin() if mode == "fir" else 0.0,
+            wind_format=self.wind_format(),
         )
 
     # ── Descarga ─────────────────────────────────────────────────────────────
