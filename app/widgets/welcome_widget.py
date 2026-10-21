@@ -12,6 +12,7 @@ from PyQt6.QtCore import Qt, pyqtSignal
 
 class WelcomeWidget(QWidget):
     open_clicked = pyqtSignal()
+    generate_clicked = pyqtSignal()    # «Generar GRIB…»
     recent_clicked = pyqtSignal(str)   # emite la ruta absoluta
 
     def __init__(self, parent=None):
@@ -52,6 +53,16 @@ class WelcomeWidget(QWidget):
         self._open_btn.setCursor(Qt.CursorShape.PointingHandCursor)
         self._open_btn.clicked.connect(self.open_clicked.emit)
         btn_row.addWidget(self._open_btn)
+
+        self._generate_btn = QPushButton("Generar GRIB…")
+        self._generate_btn.setObjectName("WelcomeBtn")
+        self._generate_btn.setFixedHeight(42)
+        self._generate_btn.setMinimumWidth(200)
+        self._generate_btn.setCursor(Qt.CursorShape.PointingHandCursor)
+        self._generate_btn.setToolTip("Fabricar un GRIB2 a mano: un perfil de temperatura y viento "
+                                      "por FL sobre una grilla regular (Ctrl+G)")
+        self._generate_btn.clicked.connect(self.generate_clicked.emit)
+        btn_row.addWidget(self._generate_btn)
 
         btn_row.addStretch()
         root.addLayout(btn_row)

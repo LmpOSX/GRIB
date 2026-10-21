@@ -163,8 +163,10 @@ class TestDialogoGenerar(unittest.TestCase):
         row0 = d._rows()[0]
         self.assertAlmostEqual(row0["t_c"], round(gg.isa_temp_c(row0["fl"]), 1), delta=0.05)
         self.assertEqual(row0["spd_kt"], 0.0)
+        self.assertEqual(d._selected_row(), 13)                    # al entrar, elegida la última (abajo)
         d.mode_buttons["OACI"].click()
         self.assertEqual(len(self._fls()), 17)
+        self.assertEqual(d._selected_row(), 16)
         d.mode_buttons["WAFS"].click()
         self.assertEqual(len(self._fls()), 56)
         self.assertNotIn("nominal", d.table.item(0, 1).text())     # etiqueta ISA
@@ -188,18 +190,97 @@ class TestDialogoGenerar(unittest.TestCase):
         self.assertNotEqual(rows[0]["spd_kt"], 45.0)                # las de arriba no
         d._fill_isa()
         self.assertAlmostEqual(d._rows()[2]["t_c"], gg.isa_temp_c(rows[2]["fl"]), delta=0.05)
-        # Agregar / quitar sacan la tabla del modo (los botones se destildan)
+        # Agregar: FL+10 encima de la elegida (aunque exista), con su viento;
+        # la elegida sigue siéndolo; los botones de modo se destildan
         n = d.table.rowCount()
-        d.table.selectRow(0)
+        d._select_row(3)                                            # FL410 (60 kt / 250° tras copiar)
         d._add_row()
         self.assertEqual(d.table.rowCount(), n + 1)
+        self.assertEqual(self._fls()[3], 420)
+        self.assertEqual(d._rows(strict=False)[3]["spd_kt"], 45.0)
+        self.assertAlmostEqual(d._rows(strict=False)[3]["t_c"], gg.isa_temp_c(420), delta=0.05)
+        self.assertEqual(d._selected_row(), 4)                      # FL410 sigue elegida
         self.assertFalse(d.mode_buttons["OACI"].isChecked())
-        self.assertEqual(self._fls()[0], 540)                       # el siguiente libre por encima de FL530
         self.assertEqual(d._mode, "OACI")                           # el etiquetado sigue siendo del modo
-        d.table.selectRow(0)
+        d._select_row(4)
+        d._add_row()                                                # FL420 otra vez: repetido
+        self.assertEqual(self._fls()[4], 420)
+        self.assertEqual(d.table.item(4, 1).text(), "repetido")
+        self.assertEqual(d.table.item(3, 1).text(), "repetido")
+        self.assertEqual(d._selected_row(), 5)                      # FL410 sigue elegida
+        # Quitar: se va la elegida y pasa a la de abajo
+        d._select_row(4)                                            # el FL420 repetido
+        d._remove_row()
+        self.assertEqual(d._selected_row(), 4)
+        self.assertEqual(self._fls()[4], 410)
+        self.assertNotEqual(d.table.item(3, 1).text(), "repetido")
+        d._select_row(3)
         d._remove_row()
         self.assertEqual(d.table.rowCount(), n)
+        self.assertEqual(self._fls()[3], 410)
         self.assertTrue(d.mode_buttons["OACI"].isChecked())         # vuelve a coincidir
+        # Quitar la última de abajo elige la nueva última; sin filas, nada
+        d._select_row(d.table.rowCount() - 1)
+        d._remove_row()
+        self.assertEqual(d._selected_row(), d.table.rowCount() - 1)
+        while d.table.rowCount():
+            d._remove_row()
+        self.assertIsNone(d._selected_row())
+        d._add_row()                                                # sin filas: FL050 elegida
+        self.assertEqual(self._fls(), [50])
+        self.assertEqual(d._selected_row(), 0)
+
+    def test_edicion_de_celdas(self):
+        """Clic o Tab ponen la celda en edición con el valor preseleccionado;
+        Presión se saltea; Enter aplica y Esc deja la fila elegida sin editar."""
+        from PyQt6.QtCore import Qt as _Qt
+        from PyQt6.QtTest import QTest
+        from PyQt6.QtWidgets import QAbstractItemView, QLineEdit
+        from app.dialogs.generate_dialog import _CellDelegate, COL_P, COL_T, COL_SPD, COL_FL
+        d = self._dialog(wafs_mode="INDRA")
+        self.assertIsInstance(d.table.itemDelegate(), _CellDelegate)
+
+        def editor():
+            # el editor vivo (los anteriores quedan hasta el deleteLater)
+            _app.processEvents()
+            eds = [e for e in d.table.findChildren(QLineEdit, "TableCellEditor") if e.isVisible()]
+            return eds[-1] if eds else None
+        d.table.setCurrentCell(2, COL_T)
+        _app.processEvents(); _app.processEvents()
+        self.assertEqual(d.table.state(), QAbstractItemView.State.EditingState)
+        ed = editor()
+        self.assertIsNotNone(ed)
+        self.assertEqual(ed.text(), d.table.item(2, COL_T).text())
+        self.assertEqual(ed.selectedText(), ed.text())              # preseleccionado
+        self.assertEqual(ed.alignment() & _Qt.AlignmentFlag.AlignHCenter, _Qt.AlignmentFlag.AlignHCenter)
+        self.assertEqual(ed.geometry(), d.table.visualRect(d.table.model().index(2, COL_T)))
+        # Una tecla reemplaza; Enter aplica
+        QTest.keyClicks(ed, "-41.5")
+        QTest.keyClick(ed, _Qt.Key.Key_Return)
+        _app.processEvents()
+        self.assertEqual(d.table.item(2, COL_T).text(), "-41.5")
+        # Tab pasa a la celda siguiente y la abre en edición
+        QTest.keyClick(d.table, _Qt.Key.Key_Tab)
+        _app.processEvents(); _app.processEvents()
+        self.assertEqual((d.table.currentRow(), d.table.currentColumn()), (2, COL_SPD))
+        self.assertEqual(d.table.state(), QAbstractItemView.State.EditingState)
+        # Esc: sale de la edición sin cambiar, la fila sigue elegida
+        ed = editor()
+        QTest.keyClicks(ed, "99")
+        QTest.keyClick(ed, _Qt.Key.Key_Escape)
+        _app.processEvents()
+        self.assertNotEqual(d.table.state(), QAbstractItemView.State.EditingState)
+        self.assertEqual(d.table.item(2, COL_SPD).text(), "0")
+        self.assertEqual(d._selected_row(), 2)
+        # La columna Presión se saltea en el sentido del movimiento
+        d.table.setCurrentCell(2, COL_FL)
+        _app.processEvents()
+        d.table.setCurrentCell(2, COL_P)
+        _app.processEvents(); _app.processEvents()
+        self.assertEqual(d.table.currentColumn(), COL_T)
+        d.table.setCurrentCell(2, COL_P)
+        _app.processEvents(); _app.processEvents()
+        self.assertEqual(d.table.currentColumn(), COL_FL)
 
     def test_area_y_grilla(self):
         d = self._dialog(download_area_mode="manual", download_manual_region=[-20.3, -45.7, -75.2, -50.1])

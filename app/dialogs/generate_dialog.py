@@ -12,12 +12,13 @@ U/V o como dirección y velocidad.
 import datetime as dt
 import os
 
-from PyQt6.QtCore import Qt, QDate
+from PyQt6.QtCore import Qt, QDate, QTimer
+from PyQt6.QtGui import QColor, QPen
 from PyQt6.QtWidgets import (
     QVBoxLayout, QHBoxLayout, QGridLayout, QLabel, QPushButton, QFrame, QCheckBox,
     QComboBox, QLineEdit, QMessageBox, QRadioButton, QDoubleSpinBox, QSpinBox, QDateEdit,
     QFileDialog, QTableWidget, QTableWidgetItem, QHeaderView, QWidget, QAbstractItemView,
-    QButtonGroup, QSizePolicy,
+    QButtonGroup, QSizePolicy, QStyledItemDelegate, QStyle,
 )
 
 from .glass_dialog import GlassDialog, add_shadow as _add_shadow
@@ -30,6 +31,45 @@ from .download_dialog import MODE_BUTTONS
 
 COLS = ("FL", "Presión", "T (°C)", "Viento (kt)", "Dir (°)")
 COL_FL, COL_P, COL_T, COL_SPD, COL_DIR = range(5)
+EDITABLE_COLS = (COL_FL, COL_T, COL_SPD, COL_DIR)
+
+
+class _CellDelegate(QStyledItemDelegate):
+    """Edición visible: el editor tapa la celda con el mismo valor, centrado,
+    con el texto preseleccionado (una tecla lo reemplaza; las flechas sueltan
+    la selección para corregirlo); la celda actual lleva un marco del color
+    de acento para que se vea cuál se edita."""
+
+    def __init__(self, accent, parent=None):
+        super().__init__(parent)
+        self._accent = QColor(accent)
+
+    def createEditor(self, parent, option, index):
+        ed = QLineEdit(parent)
+        ed.setObjectName("TableCellEditor")
+        ed.setAlignment(Qt.AlignmentFlag.AlignCenter)
+        ed.setFrame(True)
+        return ed
+
+    def setEditorData(self, editor, index):
+        editor.setText(str(index.data() or ""))
+        editor.selectAll()
+        QTimer.singleShot(0, editor.selectAll)     # por si el foco vuelve a mover el cursor
+
+    def setModelData(self, editor, model, index):
+        model.setData(index, editor.text().strip(), Qt.ItemDataRole.EditRole)
+
+    def updateEditorGeometry(self, editor, option, index):
+        editor.setGeometry(option.rect)            # tapa la celda entera
+
+    def paint(self, painter, option, index):
+        super().paint(painter, option, index)
+        view = self.parent()
+        if view is not None and index == view.currentIndex() and index.column() in EDITABLE_COLS:
+            painter.save()
+            painter.setPen(QPen(self._accent, 2))
+            painter.drawRect(option.rect.adjusted(1, 1, -2, -2))
+            painter.restore()
 
 
 class GenerateGribDialog(GlassDialog):
@@ -215,6 +255,18 @@ class GenerateGribDialog(GlassDialog):
             b.clicked.connect(lambda _on, m=m: self._on_mode_clicked(m))
             self.mode_buttons[m] = b
             row.addWidget(b)
+        row.addSpacing(16)
+        row.addWidget(QLabel("Viento en el archivo"))
+        self.cb_wind = QComboBox()
+        for key, text in wfm.FORMATS:
+            self.cb_wind.addItem(text, key)
+        self.cb_wind.setCurrentIndex(max(0, self.cb_wind.findData(
+            wfm.normalize(self._cfg.get("download_wind_format", "uv")))))
+        self.cb_wind.setToolTip("La tabla se carga siempre en velocidad y dirección; el archivo se "
+                                "graba como U/V (UGRD/VGRD, como los modelos) o como dirección y "
+                                "velocidad (WDIR/WIND) según esta opción. El visor lee los dos; el "
+                                "WAFS operativo lleva U/V.")
+        row.addWidget(self.cb_wind)
         row.addStretch()
         lay.addLayout(row)
 
@@ -224,9 +276,24 @@ class GenerateGribDialog(GlassDialog):
         self.table.horizontalHeader().setSectionResizeMode(QHeaderView.ResizeMode.Stretch)
         self.table.setSelectionBehavior(QAbstractItemView.SelectionBehavior.SelectRows)
         self.table.setMinimumHeight(260)
+        self.table.setVerticalScrollBarPolicy(Qt.ScrollBarPolicy.ScrollBarAsNeeded)
+        self.table.setSelectionMode(QAbstractItemView.SelectionMode.SingleSelection)
+        # Edición: un clic (o Tab, o las flechas) pone la celda en edición con
+        # el valor preseleccionado; Enter aplica, Esc sale sin cambiar y deja
+        # la fila elegida; Tab recorre celdas y filas
+        self.table.setItemDelegate(_CellDelegate(self._cfg.get("accent_color", "#4A90D9"), self.table))
+        self.table.setEditTriggers(QAbstractItemView.EditTrigger.CurrentChanged
+                                   | QAbstractItemView.EditTrigger.SelectedClicked
+                                   | QAbstractItemView.EditTrigger.DoubleClicked
+                                   | QAbstractItemView.EditTrigger.EditKeyPressed
+                                   | QAbstractItemView.EditTrigger.AnyKeyPressed)
+        self.table.setTabKeyNavigation(True)
+        self.table.currentCellChanged.connect(self._on_current_cell_changed)
         self.table.setToolTip("FL (de a 10, FL050–FL600), temperatura en °C, velocidad en kt y "
                               "dirección verdadera en grados (de dónde sopla). La presión es la "
-                              "etiqueta con la que se graba el nivel en el modo elegido.")
+                              "etiqueta con la que se graba el nivel en el modo elegido. Siempre "
+                              "hay una fila elegida: Agregar inserta FL+10 encima de ella y "
+                              "Quitar la saca y pasa a la de abajo.")
         self.table.itemChanged.connect(self._on_item_changed)
         lay.addWidget(self.table)
         row = QHBoxLayout()
@@ -263,18 +330,6 @@ class GenerateGribDialog(GlassDialog):
         self.chk_open = QCheckBox("Abrir en el visor al terminar")
         self.chk_open.setChecked(bool(self._cfg.get("download_open", True)))
         g.addWidget(self.chk_open, 1, 2)
-        g.addWidget(QLabel("Viento"), 2, 0)
-        wrow = QHBoxLayout()
-        self.cb_wind = QComboBox()
-        for key, text in wfm.FORMATS:
-            self.cb_wind.addItem(text, key)
-        self.cb_wind.setCurrentIndex(max(0, self.cb_wind.findData(
-            wfm.normalize(self._cfg.get("download_wind_format", "uv")))))
-        self.cb_wind.setToolTip("U/V (UGRD/VGRD, como los modelos) o dirección y velocidad "
-                                "(WDIR/WIND). El visor lee los dos; el WAFS operativo lleva U/V.")
-        wrow.addWidget(self.cb_wind)
-        wrow.addStretch()
-        g.addLayout(wrow, 2, 1, 1, 2)
         lay.addLayout(g)
 
         row = QHBoxLayout()
@@ -413,7 +468,9 @@ class GenerateGribDialog(GlassDialog):
             rows.append(r)
         self._set_rows(rows)
 
-    def _set_rows(self, rows):
+    def _set_rows(self, rows, select=None):
+        """Rellena la tabla y deja elegida la fila `select` (por defecto la
+        última, abajo): siempre hay una fila elegida si hay filas."""
         self.table.blockSignals(True)
         try:
             self.table.setRowCount(0)
@@ -422,6 +479,18 @@ class GenerateGribDialog(GlassDialog):
         finally:
             self.table.blockSignals(False)
         self._refresh_pressures()
+        self._select_row(self.table.rowCount() - 1 if select is None else select)
+
+    def _select_row(self, i):
+        n = self.table.rowCount()
+        if n == 0:
+            self.table.clearSelection()
+            return
+        i = max(0, min(int(i), n - 1))
+        self.table.setCurrentCell(i, COL_FL)
+        self.table.selectRow(i)
+        self.table.scrollToItem(self.table.item(i, COL_FL))
+        self.table.setFocus()
 
     def _append_row(self, r):
         i = self.table.rowCount()
@@ -436,27 +505,47 @@ class GenerateGribDialog(GlassDialog):
             self.table.setItem(i, c, it)
 
     def _refresh_pressures(self):
-        """Columna «Presión»: la etiqueta del nivel en el modo vigente."""
+        """Columna «Presión»: la etiqueta del nivel en el modo vigente (y
+        «repetido» si el FL ya está en otra fila)."""
         self.table.blockSignals(True)
         try:
+            fls = []
             for i in range(self.table.rowCount()):
-                it_fl = self.table.item(i, COL_FL)
-                it_p = self.table.item(i, COL_P)
-                if it_fl is None or it_p is None:
-                    continue
                 try:
-                    fl = int(round(float(it_fl.text())))
-                    if fl in flt.FL_TABLE:
-                        pa = flt.label_pa(fl, self._mode)
-                        it_p.setText(f"{pa / 100.0:g} hPa" + ("" if self._mode == "WAFS" else " (nominal)"))
-                    else:
-                        it_p.setText("FL fuera de la tabla")
-                except ValueError:
+                    fls.append(int(round(float(self.table.item(i, COL_FL).text()))))
+                except (AttributeError, ValueError):
+                    fls.append(None)
+            for i in range(self.table.rowCount()):
+                it_p = self.table.item(i, COL_P)
+                if it_p is None:
+                    continue
+                fl = fls[i]
+                if fl is None:
                     it_p.setText("FL inválido")
+                elif fl not in flt.FL_TABLE:
+                    it_p.setText("FL fuera de la tabla")
+                elif fls.count(fl) > 1:
+                    it_p.setText("repetido")
+                else:
+                    pa = flt.label_pa(fl, self._mode)
+                    it_p.setText(f"{pa / 100.0:g} hPa" + ("" if self._mode == "WAFS" else " (nominal)"))
         finally:
             self.table.blockSignals(False)
         n = self.table.rowCount()
         self.lbl_levels.setText(f"{n} nivel(es) · modo {self._mode}")
+
+    def _on_current_cell_changed(self, row, col, prev_row, prev_col):
+        """La columna Presión no se edita: al caer en ella (Tab, flechas) se
+        sigue de largo en el sentido del movimiento, y se abre el editor."""
+        if row < 0:
+            return
+        if col == COL_P:
+            nxt = COL_T if prev_col < COL_P or prev_row != row else COL_FL
+            QTimer.singleShot(0, lambda: self.table.setCurrentCell(row, nxt))
+            return
+        idx = self.table.model().index(row, col)
+        if idx.isValid() and self.table.state() != QAbstractItemView.State.EditingState:
+            QTimer.singleShot(0, lambda: self.table.edit(idx))
 
     def _on_item_changed(self, item):
         if item.column() == COL_FL:
@@ -511,36 +600,62 @@ class GenerateGribDialog(GlassDialog):
             self.table.blockSignals(False)
         self.lbl_status.setText("")
 
+    def _row_dict(self, i):
+        """La fila `i` como dict, o None si no se puede leer."""
+        try:
+            return {"fl": int(round(float(self.table.item(i, COL_FL).text()))),
+                    "t_c": float(self.table.item(i, COL_T).text().replace(",", ".")),
+                    "spd_kt": float(self.table.item(i, COL_SPD).text().replace(",", ".")),
+                    "dir_deg": float(self.table.item(i, COL_DIR).text().replace(",", "."))}
+        except (AttributeError, ValueError):
+            return None
+
     def _add_row(self):
-        used = {r["fl"] for r in self._rows(strict=False)}
-        free = [fl for fl in flt.FLS if fl not in used]
-        if not free:
-            self.lbl_status.setText("Ya están todos los FL de la tabla.")
-            return
+        """Inserta una fila encima de la elegida con FL + 10 (aunque ese FL ya
+        esté: la columna Presión lo marca «repetido» para corregirlo), con la
+        T ISA y el viento de la fila elegida; la elegida sigue siéndolo. Sin
+        filas, agrega FL050 y la elige."""
         i = self._selected_row()
-        # El siguiente libre por encima de la fila elegida (o el más bajo libre)
-        if i is not None:
+        if i is None or self.table.rowCount() == 0:
+            fl = flt.FL_LOWEST
+            self.table.blockSignals(True)
             try:
-                cur = int(round(float(self.table.item(i, COL_FL).text())))
-                above = [fl for fl in free if fl > cur]
-                fl = min(above) if above else max(fl_ for fl_ in free if fl_ < cur)
-            except (AttributeError, ValueError):
-                fl = free[0]
-        else:
-            fl = free[0]
-        rows = self._rows(strict=False)
-        rows.append({"fl": fl, "t_c": round(gg.isa_temp_c(fl), 1), "spd_kt": 0.0, "dir_deg": 0.0})
-        rows.sort(key=lambda r: -r["fl"])
-        self._set_rows(rows)
+                self._append_row({"fl": fl, "t_c": round(gg.isa_temp_c(fl), 1), "spd_kt": 0.0, "dir_deg": 0.0})
+            finally:
+                self.table.blockSignals(False)
+            self._refresh_pressures()
+            self._select_row(self.table.rowCount() - 1)
+            self._uncheck_modes()
+            return
+        base = self._row_dict(i) or {"fl": flt.FL_LOWEST, "t_c": 0.0, "spd_kt": 0.0, "dir_deg": 0.0}
+        fl = min(flt.FL_HIGHEST, base["fl"] + flt.FL_STEP)
+        new = {"fl": fl, "t_c": round(gg.isa_temp_c(fl), 1), "spd_kt": base["spd_kt"], "dir_deg": base["dir_deg"]}
+        self.table.blockSignals(True)
+        try:
+            self.table.insertRow(i)
+            vals = (f"{new['fl']}", "", f"{new['t_c']:g}", f"{new['spd_kt']:g}", f"{new['dir_deg']:g}")
+            for c, v in enumerate(vals):
+                it = QTableWidgetItem(v)
+                it.setTextAlignment(Qt.AlignmentFlag.AlignCenter)
+                if c == COL_P:
+                    it.setFlags(it.flags() & ~Qt.ItemFlag.ItemIsEditable)
+                self.table.setItem(i, c, it)
+        finally:
+            self.table.blockSignals(False)
+        self._refresh_pressures()
+        self._select_row(i + 1)              # la que estaba elegida, ahora una más abajo
         self._uncheck_modes()
 
     def _remove_row(self):
+        """Quita la fila elegida y elige la de abajo; si era la última de
+        abajo, la nueva última; sin filas no queda nada elegido."""
         i = self._selected_row()
-        if i is None:
-            self.lbl_status.setText("Elegí la fila a quitar.")
+        if i is None or self.table.rowCount() == 0:
+            self.lbl_status.setText("No hay fila elegida.")
             return
         self.table.removeRow(i)
         self._refresh_pressures()
+        self._select_row(i if i < self.table.rowCount() else self.table.rowCount() - 1)
         self._uncheck_modes()
 
     def _uncheck_modes(self):

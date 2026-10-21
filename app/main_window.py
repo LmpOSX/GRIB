@@ -200,6 +200,7 @@ class MainWindow(QMainWindow):
         # ── Bienvenida ──
         self._welcome = WelcomeWidget()
         self._welcome.open_clicked.connect(self._file_open)
+        self._welcome.generate_clicked.connect(self.generate_grib)
         self._welcome.recent_clicked.connect(self._open_recent)
 
         content_lay.addWidget(self._main_area, 1)
@@ -347,6 +348,11 @@ class MainWindow(QMainWindow):
                           "y descargar (Ctrl+Shift+D)")
         dl_btn.clicked.connect(self.get_data)
         lay.addWidget(dl_btn)
+        self._btn_generate = QPushButton("Generar GRIB…")
+        self._btn_generate.setToolTip("Fabricar un GRIB2 a mano: un perfil de temperatura y viento "
+                                      "por FL sobre una grilla regular (Ctrl+G)")
+        self._btn_generate.clicked.connect(self.generate_grib)
+        lay.addWidget(self._btn_generate)
 
         # Acciones que dependen de un archivo abierto
         self._bar_file_area = QWidget()

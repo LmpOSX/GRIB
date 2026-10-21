@@ -922,7 +922,9 @@ de mensajes, niveles y que los valores coincidan con lo que había en
 memoria dentro de la precisión del empaquetado; el resultado se muestra
 junto con los avisos del validador.
 
-**Generar GRIB…** (Archivo, ⌘G) fabrica un GRIB2 a mano, sin modelo: un
+**Generar GRIB…** (Archivo, ⌘G; también el botón de la barra junto a
+`Obtener datos…` y el de la pantalla de inicio junto a `Abrir GRIB…`)
+fabrica un GRIB2 a mano, sin modelo: un
 perfil vertical uniforme en toda la grilla, para pruebas, simulaciones o
 para alimentar otro sistema con un viento conocido. El formulario tiene
 cuatro recuadros: **Corrida y plazo** (fecha, ciclo 00/06/12/18 y plazo en
@@ -935,12 +937,25 @@ resultante); **Niveles y valores**, con los botones **INDRA (14)**, **OACI
 modo y fijan cómo se etiquetan los niveles (nominal hPa×100, o la ISA en Pa
 en WAFS), y una tabla con una fila por FL: presión (etiqueta), temperatura
 en °C (arranca en la ISA del FL), velocidad en kt y dirección verdadera en
-grados, de dónde sopla; los botones `Temperatura ISA`, `Copiar hacia abajo`
-(T, viento y dirección de la fila elegida a todas las de abajo), `Agregar
-FL` y `Quitar FL` (la tabla puede salirse del modo: los botones se
-destildan, el etiquetado sigue siendo el del último modo); y **Archivo**
-(carpeta, nombre automático `generado_<corrida>_<plazo>_<res>_<área>_<modo>[_dirvel]`,
-viento como U/V o dirección y velocidad, y abrir al terminar). Escribe TMP
+grados, de dónde sopla (la tabla se carga siempre así; a la derecha de los
+botones de modo, **Viento en el archivo** decide si se graba como U/V o
+como dirección y velocidad). Siempre hay una fila elegida: al entrar, la
+última de abajo; `Agregar FL` inserta encima de la elegida una fila con FL
++ 10 (aunque ese FL ya exista: la columna Presión dice `repetido` hasta
+corregirlo), la T ISA y el viento de la elegida, que sigue elegida;
+`Quitar FL` saca la elegida y pasa a la de abajo (si era la última, a la
+nueva última; sin filas no queda nada, y Agregar vuelve a poner FL050);
+`Temperatura ISA` y `Copiar hacia abajo` (T, viento y dirección de la
+elegida a todas las de abajo). Edición a la vista: un clic, Tab o las
+flechas ponen la celda en edición (el editor tapa la celda, centrado, con el
+valor preseleccionado: una tecla lo reemplaza y las flechas sueltan la
+selección para corregirlo; la celda actual lleva un marco de acento), Enter
+aplica, Esc sale sin cambiar y deja la fila elegida, Tab recorre celdas y
+filas salteando Presión; la tabla tiene scroll y puede salirse del
+modo (los botones se destildan, el etiquetado sigue siendo el del último
+modo); y **Archivo** (carpeta, nombre automático
+`generado_<corrida>_<plazo>_<res>_<área>_<modo>[_dirvel]` y abrir al
+terminar). Escribe TMP
 en K y UGRD/VGRD en m/s (o WDIR/WIND), un solo plazo, grilla regular
 lat/lon con latitudes descendentes, `decimalScaleFactor 2` y centro 255
 (sin modelo), más el `.idx` y un `.json` de procedencia con `fuente:

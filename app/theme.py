@@ -514,6 +514,15 @@ QTableWidget::item:selected {{
     background: {sel};
     color: {txt};
 }}
+/* Editor de una celda (Generar GRIB): tapa la celda y se ve que se está editando */
+QTableWidget QLineEdit#TableCellEditor {{
+    background: {mid};
+    color: {txt};
+    border: 2px solid {acc};
+    border-radius: 3px;
+    padding: 0 4px;
+    selection-background-color: {sel};
+}}
 QTableWidget QHeaderView::section {{
     background: {mid};
     color: {txd};

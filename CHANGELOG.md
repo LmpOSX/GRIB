@@ -1,5 +1,21 @@
 # Cambios
 
+## Sin publicar
+
+- Generar GRIB: botón en la barra (junto a «Obtener datos…») y en la pantalla
+  de inicio (junto a «Abrir GRIB…»); «Viento en el archivo» pasa al recuadro
+  de niveles, a la derecha de los botones de modo (la tabla se carga siempre
+  en velocidad y dirección; el archivo se graba según esa opción). En la tabla
+  siempre hay una fila elegida: al entrar, la última; Agregar inserta FL + 10
+  encima de la elegida (con su viento y la T ISA; si el FL ya existe lo marca
+  «repetido») y mantiene la elección; Quitar saca la elegida y pasa a la de
+  abajo, o a la nueva última; sin filas, Agregar pone FL050. Edición a la
+  vista: clic, Tab o flechas abren la celda en edición con el editor tapando
+  la celda, centrado y con el valor preseleccionado (una tecla lo reemplaza,
+  las flechas sueltan la selección), la celda actual lleva un marco de acento,
+  Enter aplica, Esc sale sin cambiar, Tab recorre celdas y filas salteando
+  Presión.
+
 ## 0.4.0 — 2026-10-21
 
 - Viento como dirección y velocidad (WDIR/WIND) además de U/V: el diálogo de
