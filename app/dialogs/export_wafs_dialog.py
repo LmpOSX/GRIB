@@ -169,7 +169,7 @@ class ExportWafsDialog(GlassDialog):
         # Variables
         self._sub(lay, "Variables")
         row = QHBoxLayout()
-        self.rb_basic = QRadioButton("Sólo UGRD, VGRD y TMP")
+        self.rb_basic = QRadioButton("Sólo viento (UGRD/VGRD o WDIR/WIND) y TMP")
         self.rb_all_vars = QRadioButton("Todas las disponibles")
         self.rb_basic.setChecked(True)
         g3 = QButtonGroup(self)

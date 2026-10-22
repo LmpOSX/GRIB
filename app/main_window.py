@@ -804,14 +804,14 @@ class MainWindow(QMainWindow):
         dst = wf.converted_path_for(path)
         try:
             try:
-                _dst, info = wf.convert_file(path, dst, provenance=read_provenance(path) or {},
+                _dst, info = wf.convert_file(path, dst, provenance=read_provenance(path) or {}, force=True,
                                              **(wf.options_from_config(self._cfg) or {}))
             except PermissionError:
                 from .sources.cache import default_cache_dir
                 folder = os.path.join(default_cache_dir(), "..", "wafs")
                 os.makedirs(folder, exist_ok=True)
                 dst = os.path.join(folder, os.path.basename(dst))
-                _dst, info = wf.convert_file(path, dst, provenance=read_provenance(path) or {},
+                _dst, info = wf.convert_file(path, dst, provenance=read_provenance(path) or {}, force=True,
                                              **(wf.options_from_config(self._cfg) or {}))
         except Exception as exc:
             traceback.print_exc()

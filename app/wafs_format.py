@@ -663,7 +663,7 @@ def write_idx(path):
 
 # ── Exportación ──────────────────────────────────────────────────────────────
 
-BASIC_VARS = ("u", "v", "t")
+BASIC_VARS = ("u", "v", "t", "wdir", "ws")   # el viento, en U/V o en dirección y velocidad
 EXPORT_REGRID = [("ninguno", "Sin regrillar (grilla del archivo)"),
                  ("0.25", "0,25° bilineal (como el producto operativo)"),
                  ("1.0", "1,00° bilineal (para el FDP)")]
@@ -679,7 +679,7 @@ def export_wafs(src, dest_dir, steps=None, fls=None, variables="basicas", region
                WAFS se convierte primero (convert_opts).
     steps      plazos a incluir (horas, float/int) o None = todos.
     fls        FL a incluir (lista) o None = todos los del archivo.
-    variables  'basicas' (UGRD/VGRD/TMP) o 'todas'.
+    variables  'basicas' (UGRD/VGRD o WDIR/WIND, y TMP) o 'todas'.
     region     (top, bottom, left, right) para recortar, o None.
     regrid     'ninguno', '0.25' o '1.0' (bilineal).
     per_step   True: un archivo por plazo con nombre gfs.tHHz.wafs_0p25.fFFF.grib2;
@@ -699,7 +699,8 @@ def export_wafs(src, dest_dir, steps=None, fls=None, variables="basicas", region
     mode = normalize_mode(mode or convert_opts.get("mode") or DEFAULT_MODE)
     convert_opts["mode"] = mode
     det = detect_mode(data)
-    if not det["labeled"]:
+    crude = flt.labeled_by_provenance(provenance) is False
+    if crude or not det["labeled"]:
         progress_cb(0.05, f"Convirtiendo a WAFS (modo {mode})…")
         data = convert_to_wafs(data, **convert_opts).data
     elif det["mode"] != mode or (mode in ("INDRA", "OACI") and
@@ -776,6 +777,9 @@ def export_wafs(src, dest_dir, steps=None, fls=None, variables="basicas", region
             prov = dict(provenance)
             prov["exportado"] = dt.datetime.now(dt.timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
             prov["plazos_h"] = list(hs)
+            prov["wafs"] = dict(prov.get("wafs") or {}, formato="WAFS", modo=mode,
+                                convertido=bool(crude or not det["labeled"]
+                                                or (prov.get("wafs") or {}).get("convertido")))
             if region is not None:
                 prov["zona_exportada"] = list(region)
             with open(path + ".json", "w", encoding="utf-8") as fh:

@@ -153,6 +153,8 @@ class TestGenerador(unittest.TestCase):
         try:
             self.assertEqual(ec.codes_get(gid, "bitsPerValue"), 0)
             self.assertEqual(ec.codes_get(gid, "decimalScaleFactor"), 0)
+            self.assertEqual(ec.codes_get_long(gid, "centre"), 65535)       # «Missing value»
+            self.assertEqual(ec.codes_get(gid, "tablesVersion"), 25)
             self.assertAlmostEqual(float(ec.codes_get_values(gid)[0]), -44.3 + 273.15, places=4)
         finally:
             ec.codes_release(gid)

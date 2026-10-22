@@ -297,8 +297,17 @@ class GribReader:
         y deja fl_mode, fl_labeled, fl_column, fl_levels ({FL: hPa}) y
         unrecognized_levels. También lo usa el lector sintético de los tests."""
         det = flt.classify([lv * 100.0 for lv in self.levels])
+        said = flt.labeled_by_provenance(self._read_provenance())
         self.fl_mode = det["mode"]
-        self.fl_labeled = bool(det["labeled"])
+        if said is None:
+            self.fl_labeled = bool(det["labeled"])
+            self.fl_decided_by = "deducción" if self.levels else None
+        else:
+            # La procedencia manda: por Nivel si los niveles se explican con
+            # un modo (aunque sean pocos FL), crudo aunque coincidan con
+            # etiquetas nominales
+            self.fl_labeled = bool(said and det["mode"] and not det["unrecognized"])
+            self.fl_decided_by = "procedencia"
         self.fl_column = det["column"]
         self.unrecognized_levels = [pa / 100.0 for pa in det["unrecognized"]]
         self.fl_levels = {}
@@ -308,6 +317,18 @@ class GribReader:
                 if fl is not None and fl not in self.fl_levels:
                     self.fl_levels[fl] = lv
         self.is_wafs = self.fl_labeled
+
+    def _read_provenance(self):
+        """`archivo.json` de procedencia junto al archivo, o None."""
+        path = getattr(self, "path", None)
+        if not path or not os.path.isfile(path + ".json"):
+            return None
+        try:
+            import json
+            with open(path + ".json", encoding="utf-8") as fh:
+                return json.load(fh)
+        except Exception:
+            return None
 
     def _compute_windows(self):
         """Calcula la ventana de validez de cada paso. Si el stepRange es un
@@ -674,11 +695,15 @@ class GribReader:
                    else "etiqueta nominal en hPa")
             lines.append(f"FORMATO: etiquetado por FL, modo {self.fl_mode} ({col}): "
                          f"FL{fls[0]:03d}–FL{fls[-1]:03d}, {len(fls)} niveles; el dato está en la "
-                         f"presión ISA exacta de cada FL")
+                         f"presión ISA exacta de cada FL"
+                         + ("" if getattr(self, "fl_decided_by", None) != "deducción" else
+                            " (deducido de las capas: no hay .json de procedencia)"))
         elif self.levels:
             mode = getattr(self, "fl_mode", None)
             txt = "FORMATO: niveles de presión crudos (los FL se interpolan en ln(p) a la ISA exacta)"
-            if mode:
+            if mode and getattr(self, "fl_decided_by", None) == "procedencia":
+                txt += f"; según la procedencia son capas del modelo, aunque coinciden con etiquetas {mode}"
+            elif mode:
                 txt += f"; los niveles coinciden con etiquetas {mode} pero faltan FL de INDRA"
             if getattr(self, "unrecognized_levels", None):
                 txt += ("; no reconocidos como FL: "

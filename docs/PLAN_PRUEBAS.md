@@ -1,4 +1,4 @@
-# Plan de pruebas manual – Visor GRIB 0.4.1 (PyQt6)
+# Plan de pruebas manual – Visor GRIB 0.4.2 (PyQt6)
 
 Entorno: pyenv `Grib` (Python 3.14.3), macOS. Antes de empezar:
 
@@ -267,6 +267,9 @@ detalle.
 | R4 | Generar y abrir | OACI (17), viento 30 kt / 270° en todas, Por FIR SAEF, 1,00°, plazos 6–12 cada 3, `Generar` | Se escribe `generado_<fecha>_<HH>z_f006-f012_1p00_SAEF_OACI.grib2` con `.idx` y `.json` (`fuente: generado`, `plazos_h: [6, 9, 12]`, `area.codigos: ["SAEF"]`, `tabla` con 17 filas) y se abre en el visor: 3 pasos en TIME, 17 FL con botón, barbas uniformes de 30 kt del oeste iguales en cada paso, FUENTE `Generado a mano (perfil uniforme)`, `corrida … +6 h · 1,00° · área SAEF`, `WAFS FL050–FL530 · modo OACI`; `wgrib2 -s` lista 153 mensajes (TMP, UGRD, VGRD × 17 × 3) con `300 mb` etc. |
 | R5 | Dirección y velocidad | Igual que R4 con Viento = «Dirección y velocidad» | El nombre termina en `_OACI_dirvel.grib2`; `wgrib2 -s` lista `WDIR` y `WIND`; en el visor se ve igual que R4 y FUENTE agrega `viento: dirección y velocidad (WDIR/WIND)`. |
 | R6 | Validación | FL 305 en una celda, o dir 400, o una celda vacía, o Por FIR sin casillas, o zona manual invertida; `Generar` | Aviso claro con la fila y el motivo; no se escribe nada. Si el archivo ya existe pregunta si reemplazar. |
+| R7 | Centro y tablas | Generar un archivo y mirar `wgrib2 -center archivo` (o `grib_ls -p centre,tablesVersion`) | `center=65535` y tablas 25. |
+| R8 | Crudo con procedencia | Bajar GFS con las capas de INDRA **sin** convertir a WAFS y abrirlo (con la conversión al abrir apagada) | Inventario: «niveles de presión crudos… según la procedencia son capas del modelo»; FL050 se interpola. Borrando el `.json` y reabriendo: por Nivel, «deducido de las capas». |
+| R9 | Exportar viento dir/vel | Abrir un archivo con WDIR/WIND; Exportar a WAFS con «Sólo viento… y TMP» | La salida conserva WDIR y WIND además de TMP. |
 
 ## M. Fuentes (Preferencias)
 

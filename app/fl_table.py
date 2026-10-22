@@ -177,6 +177,35 @@ def classify(pas):
     return out
 
 
+def labeled_by_provenance(prov):
+    """Qué dice el `.json` de procedencia sobre las capas del archivo:
+    True = por Nivel (convertido a WAFS, generado o exportado por el visor),
+    False = capas crudas de un modelo (bajado sin convertir), None = no lo
+    dice (sin procedencia, fuente desconocida o fuente que ya publica por
+    Nivel): se deduce por el conjunto de capas (ver `classify`).
+
+    Hace falta porque las capas crudas de un modelo (850, 700, 500 hPa…)
+    graban lo mismo que las etiquetas nominales INDRA/OACI: con todas las
+    capas de INDRA, un archivo crudo se tomaría por uno ajustado."""
+    if not isinstance(prov, dict):
+        return None
+    w = prov.get("wafs")
+    if isinstance(w, dict) and (w.get("convertido") or w.get("generado")
+                                or w.get("formato") == "WAFS"):
+        return True
+    if prov.get("fuente") == "generado":
+        return True
+    key = prov.get("fuente")
+    try:
+        from .sources import get_source
+        src = get_source(key) if key else None
+    except Exception:
+        src = None
+    if src is None or getattr(src, "flight_levels", False):
+        return None
+    return False
+
+
 def table_rows(mode=DEFAULT_MODE):
     """[(fl, ISA_Pa, etiqueta_Pa, texto)] del modo, para «Ver tabla»."""
     mode = normalize_mode(mode)

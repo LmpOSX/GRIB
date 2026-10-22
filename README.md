@@ -826,6 +826,11 @@ niveles y, en los modos nominales, están al menos los 14 FL de INDRA: un
 GFS crudo con 850/700/500/250/100 hPa coincide con etiquetas nominales pero
 no se toma por FL, se interpola. Lo que baja de una fuente en niveles de
 presión se convierte siempre, aunque sus niveles coincidan con etiquetas.
+Antes de deducir, manda el `.json` de procedencia: lo bajado de un modelo sin
+convertir es crudo aunque tenga las 14 capas de INDRA, y lo convertido,
+generado o exportado por el visor es por FL aunque tenga pocos niveles. Sin
+`.json` se deduce como arriba y el inventario lo aclara («deducido de las
+capas»).
 Si el archivo viene en niveles de presión crudos, los FL se interpolan en
 ln(p) a `ISA_Pa`, como siempre, y sólo los FL cuya presión cae dentro de los
 niveles del archivo quedan disponibles (no se extrapola).

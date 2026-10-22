@@ -32,7 +32,8 @@ except Exception:  # pragma: no cover
 RESOLUTIONS = [(0.25, "0,25°"), (0.5, "0,50°"), (1.0, "1,00°")]
 KT_TO_MS = 0.514444
 KELVIN = 273.15
-CENTRE_MISSING = 255            # centro generador «desconocido»: el archivo no es de un modelo
+CENTRE_MISSING = 65535          # centro «Missing value» (tabla C-11): el archivo no es de un modelo
+TABLES_VERSION = 25             # tabla maestra, como la exportación WAFS (el sample trae la 4)
 
 # (disciplina, categoría, número) y unidad de cada campo que se escribe
 _PARAM = {"t": (0, 0, 0), "u": (0, 2, 2), "v": (0, 2, 3), "wdir": (0, 2, 0), "ws": (0, 2, 1)}
@@ -96,6 +97,7 @@ def _new_message(var, lats, lons, pa, run, step_h, values, centre):
     try:
         d, c, n = _PARAM[var]
         ec.codes_set(gid, "centre", int(centre))
+        ec.codes_set(gid, "tablesVersion", TABLES_VERSION)
         ec.codes_set(gid, "discipline", d)
         ec.codes_set(gid, "parameterCategory", c)
         ec.codes_set(gid, "parameterNumber", n)

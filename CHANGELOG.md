@@ -1,7 +1,21 @@
 # Cambios
 
-## Sin publicar
+## 0.4.2 — 2026-10-22
 
+- Crudo o por Nivel al abrir: el `.json` de procedencia decide. Un archivo
+  bajado de un modelo sin convertir (GFS, ICON, ECMWF, SMN…) se toma como
+  capas crudas y se interpola aunque sus capas coincidan con las etiquetas
+  nominales de INDRA/OACI (antes, con las 14 capas de INDRA, se mostraba como
+  «nivel exacto» sin interpolar); si la conversión al abrir está activada, se
+  convierte. Lo convertido, generado o exportado por el visor cuenta como por
+  Nivel aunque tenga pocos FL. Sin `.json` se deduce como siempre y el
+  inventario lo aclara («deducido de las capas»). Exportar a WAFS también
+  convierte (en vez de sólo reetiquetar) un crudo con procedencia, y anota en
+  el `.json` de salida que está por Nivel.
+- Exportar a WAFS con «variables básicas» conserva el viento en dirección y
+  velocidad (WDIR/WIND); antes lo descartaba y quedaba sólo la temperatura.
+- Generar GRIB: centro 65535 («Missing value» de la tabla C-11) en vez de 255
+  («no usar»), y tabla maestra 25 en vez de la 4 de la plantilla de ecCodes.
 - Generar GRIB: los campos (constantes) se graban con factor decimal 0; con 2,
   wgrib2 avisaba «simple encode/decode may differ from WMO standard» en cada
   mensaje. El valor decodificado es el mismo.
