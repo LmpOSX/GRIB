@@ -1,6 +1,6 @@
 # Cambios
 
-## Sin publicar
+## 0.5.1 — 2026-10-23
 
 - El mapa y el hexadecimal, subsecciones del bloque del mapa, llevan el
   mismo recuadro redondeado que el encabezado de información.
