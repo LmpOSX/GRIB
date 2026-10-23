@@ -1,6 +1,6 @@
 # Cambios
 
-## Sin publicar
+## 0.5.0 — 2026-10-23
 
 - Rectángulo del área de descarga y polígonos de FIR que llegan al polo
   (SAVF): el lado que baja al polo es un meridiano y ahora se densifica en
