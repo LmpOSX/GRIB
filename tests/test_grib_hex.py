@@ -127,7 +127,7 @@ class TestAnalisis(unittest.TestCase):
 
 
 @unittest.skipIf(ec is None, "sin eccodes")
-class TestDialogo(unittest.TestCase):
+class TestVisor(unittest.TestCase):
     def setUp(self):
         self._tmp = tempfile.TemporaryDirectory()
         self._old = config.CONFIG_PATH
@@ -136,17 +136,36 @@ class TestDialogo(unittest.TestCase):
         self.data = _grib([850, 500], steps=(6,))
         with open(self.path, "wb") as fh:
             fh.write(self.data)
-        from app.dialogs.hex_dialog import HexViewerDialog
-        self.w = HexViewerDialog(None, path=self.path, cfg=dict(config.DEFAULTS))
+        from app.widgets.hex_browser import HexBrowser
+        self.w = HexBrowser(cfg=dict(config.DEFAULTS))
+        self.w.load(self.path)
         self.w.show()
         _app.processEvents()
 
     def tearDown(self):
+        self.w.clear()
         self.w.close()
         self.w.deleteLater()
         _app.processEvents()
         config.CONFIG_PATH = self._old
         self._tmp.cleanup()
+
+    def test_cargar_y_vaciar(self):
+        w = self.w
+        self.assertEqual(w.path(), self.path)
+        self.assertIsNotNone(w._mm)                             # mapeado en memoria
+        w.clear()
+        self.assertEqual(w.tree.topLevelItemCount(), 0)
+        self.assertIsNone(w._mm)
+        self.assertIsNone(w.hex.selection())
+        self.assertEqual(w.path(), "")
+        w.load(self.path)
+        self.assertEqual(w.tree.topLevelItemCount(), 6)
+        # El ancho preferido es el del volcado entero, y crece con la fuente
+        w0 = w.preferred_width()
+        self.assertGreater(w0, 400)
+        w.apply_theme(dict(config.DEFAULTS, font_size=18))
+        self.assertGreater(w.preferred_width(), w0)
 
     def test_arbol_y_seleccion(self):
         w = self.w
@@ -223,12 +242,94 @@ class TestDialogo(unittest.TestCase):
         self.assertEqual(hv.byte_at(QPoint(a.center().x(), a.center().y())), 0x21)
         self.assertIsNone(hv.byte_at(QPoint(2, 2)))             # columna de la posición
 
+    def test_rectangulos_alineados_con_el_texto(self):
+        """Los rectángulos del resaltado salen de las mismas posiciones (en
+        punto flotante) en que se dibuja cada byte: no se corren a lo largo
+        de la fila ni invaden el espacio que sigue al último byte."""
+        from PyQt6.QtCore import QPoint
+        hv = self.w.hex
+        for pt in (9, 12, 15):
+            hv.set_font_size(pt)
+            rects = [hv._byte_rect(k, 0) for k in range(16)]
+            for a, b in zip(rects, rects[1:]):
+                self.assertLess(a.right(), b.left() + 1)        # no se pisan
+            # cada rectángulo es exactamente los dos dígitos más un píxel de aire
+            for k, r in enumerate(rects):
+                self.assertAlmostEqual(r.left() + 1, hv._hex_x(k), delta=0.5)
+                self.assertAlmostEqual(r.right(), hv._hex_x(k) + 2 * hv._char_w, delta=1.0)
+            # el último byte termina antes de la columna ASCII, y el ASCII dentro de sus barras
+            self.assertLess(rects[15].right(), hv._x_asc)
+            a15 = hv._ascii_rect(15, 0)
+            self.assertAlmostEqual(a15.right() + 1, hv._asc_x(16), delta=1.0)
+            # y el clic cae en el byte dibujado, también al final de la fila
+            for k in (0, 7, 8, 15):
+                r = hv._byte_rect(k, 0)
+                self.assertEqual(hv.byte_at(QPoint(r.center().x(), r.center().y())), k)
+                a = hv._ascii_rect(k, 0)
+                self.assertEqual(hv.byte_at(QPoint(a.center().x(), a.center().y())), k)
+
     def test_colores_del_tema(self):
         from app.theme import hex_colors
         c = hex_colors("#4a90d9")
         self.assertEqual(len(c["levels"]), 8)
         self.assertEqual(len({x.name() for x in c["levels"]}), 8)
         self.assertIsNotNone(self.w.hex._colors)
+
+
+class TestPanelEnLaVentana(unittest.TestCase):
+    """El visor es un panel fijo a la izquierda del mapa: botón `0x`, Vista ▸
+    Panel hexadecimal (Ctrl+Shift+H); carga el archivo abierto sólo mientras
+    está a la vista y recuerda la elección."""
+
+    def setUp(self):
+        self._tmp = tempfile.TemporaryDirectory()
+        self._old = config.CONFIG_PATH
+        config.CONFIG_PATH = os.path.join(self._tmp.name, "config.json")
+        self.path = os.path.join(self._tmp.name, "a.grib2")
+        with open(self.path, "wb") as fh:
+            fh.write(_grib([850, 500], steps=(6,)))
+        from app.main_window import MainWindow
+        self.w = MainWindow()
+        self.w.show()
+        _app.processEvents()
+
+    def tearDown(self):
+        self.w.close()
+        self.w.deleteLater()
+        _app.processEvents()
+        config.CONFIG_PATH = self._old
+        self._tmp.cleanup()
+
+    def test_boton_y_accion(self):
+        w = self.w
+        self.assertFalse(w._hex_frame.isVisibleTo(w))           # oculto por defecto
+        self.assertFalse(w._btn_hex.isEnabled())                # sin archivo no hay qué ver
+        from app.grib_reader import GribReader
+        w.load_reader(GribReader(self.path), self.path)
+        _app.processEvents()
+        self.assertTrue(w._btn_hex.isEnabled())
+        self.assertEqual(w._hex.path(), "")                     # oculto: no se carga
+        w._btn_hex.setChecked(True)
+        _app.processEvents()
+        self.assertTrue(w._hex_frame.isVisibleTo(w))
+        self.assertTrue(w._act_hex.isChecked())
+        self.assertEqual(w._hex.path(), self.path)
+        self.assertEqual(w._hex.tree.topLevelItemCount(), 6)
+        self.assertTrue(config.load_config().get("hex_visible"))
+        # Ocupa un ancho fijo (el del volcado) y el mapa cede el resto
+        self.assertEqual(w._hex_frame.width(), w._hex_frame.minimumWidth())
+        self.assertEqual(w._hex_frame.width(), w._hex.preferred_width() + 24)
+        # Cerrar el archivo lo vacía; al ocultar el panel se suelta el archivo
+        w._file_close()
+        self.assertEqual(w._hex.path(), "")
+        w.load_reader(GribReader(self.path), self.path)
+        self.assertEqual(w._hex.path(), self.path)
+        w._act_hex.trigger()
+        _app.processEvents()
+        self.assertFalse(w._hex_frame.isVisibleTo(w))
+        self.assertFalse(w._btn_hex.isChecked())
+        self.assertEqual(w._hex.path(), "")
+        self.assertFalse(config.load_config().get("hex_visible"))
 
 
 if __name__ == "__main__":

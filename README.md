@@ -374,7 +374,8 @@ entero), así que el panel nunca se corta ni necesita scroll horizontal.
 Tampoco tiene scroll: las secciones son fijas y sólo el INVENTARIO, que
 absorbe el alto que sobra, se desplaza por dentro (vertical y horizontal). El botón `▥` de la barra de acciones (o Vista ▸
 Panel lateral, ⌘⇧P) oculta el panel y el mapa ocupa todo el ancho; la
-elección se recuerda. La ventana arranca en 1600×1000 (o lo que entre en
+elección se recuerda. El botón `0x` abre a la izquierda del mapa el panel
+hexadecimal (ver más abajo). La ventana arranca en 1600×1000 (o lo que entre en
 la pantalla) y recuerda tamaño y posición.
 
 * **TIME**: `Current (+0)`, `Next (+1)`, `Advanced (+2)` eligen el 1.°, 2.° y
@@ -704,16 +705,21 @@ reemplaza a las demás fuentes para las FIR que contiene (el código OACI
 se toma de la propiedad `id`/`icao`/`code` o del nombre). Fuentes y
 licencias en `docs/FUENTES_FIR.md`.
 
-### Ver hexadecimal
+### Panel hexadecimal
 
-Vista ▸ Ver hexadecimal… (⌘ ⇧ H) muestra el archivo abierto (el convertido,
-si se convirtió al abrir) como un `hexdump -C`: a la derecha el volcado,
-posición · 16 bytes en hexadecimal · ASCII; a la izquierda su estructura en
-árbol, mensaje → sección → campo → subcampo, con el valor decodificado de
-cada campo (centro generador con su nombre de la tabla C-11, hora de
-referencia, Ni/Nj y esquinas de la grilla en grados, parámetro con su
-abreviatura, capa en Pa y hPa, plazo, R/E/D y bits por valor, y para el
-empaquetado simple o IEEE los primeros valores decodificados). Cada mensaje
+El botón `0x` de la barra de acciones (o Vista ▸ Panel hexadecimal, ⌘ ⇧ H)
+abre a la izquierda del mapa un panel fijo, del ancho del volcado, con el
+archivo abierto (el convertido, si se convirtió al abrir) como un `hexdump
+-C`: el mapa cede ese ancho y el panel lateral derecho no se mueve. Arriba
+va la estructura en árbol, mensaje → sección → campo → subcampo, con el
+valor decodificado de cada campo (centro generador con su nombre de la
+tabla C-11, hora de referencia, Ni/Nj y esquinas de la grilla en grados,
+parámetro con su abreviatura, capa en Pa y hPa, plazo, R/E/D y bits por
+valor, y para el empaquetado simple o IEEE los primeros valores
+decodificados); abajo el volcado, posición · 16 bytes en hexadecimal ·
+ASCII, con un separador entre los dos. La elección se recuerda; el panel
+carga el archivo sólo mientras está a la vista y lo suelta al ocultarlo o
+al cerrar el archivo. Cada mensaje
 va con un tinte alternado en el volcado. Cada nivel del árbol tiene su color
 (el cuadrito junto al nombre: uno para los mensajes, otro para las
 secciones, otro para los campos, otro para los subcampos); al elegir un nodo
@@ -722,7 +728,8 @@ encima, con un marco del acento: elegir «Primera superficie» pinta el
 mensaje, dentro la sección 4 y dentro el campo, y elegir su «Valor» agrega
 esos cuatro bytes con el color de los subcampos. Los nodos con hijos llevan
 un «+» que los abre (y pasa a «−»); abrir o cerrar no cambia lo pintado. Un
-clic sobre un byte del volcado abre el árbol hasta el campo que lo contiene; «Ir al byte»
+clic sobre un byte del volcado abre el árbol hasta el campo que lo contiene;
+«Ir al byte»
 acepta la posición en decimal o `0x…`. La línea de detalle muestra la ruta
 del nodo, su posición y tamaño, sus bytes en hexadecimal y su
 interpretación; «Copiar bytes» los pasa al portapapeles. Los mensajes se
@@ -750,7 +757,7 @@ comunes y el resto como bytes.
 | Capa de datos activada / desactivada | ⌘ D | Ctrl D |
 | Límites de FIR de Argentina | ⌘ ⇧ F | Ctrl Shift F |
 | Consultar punto… (la ficha, en el último punto o el centro) | ⌘ I | Ctrl I |
-| Ver hexadecimal… (el archivo byte a byte con su estructura) | ⌘ ⇧ H | Ctrl Shift H |
+| Panel hexadecimal (el archivo byte a byte con su estructura) | ⌘ ⇧ H | Ctrl Shift H |
 | Preferencias… | ⌘ , | Ctrl , |
 | Agrandar / achicar / restablecer fuente | ⌘ + / ⌘ − / ⌘ 0 | Ctrl + / Ctrl − / Ctrl 0 |
 | Desplazar el mapa | Arrastrar | Arrastrar |

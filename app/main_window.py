@@ -105,6 +105,10 @@ class MainWindow(QMainWindow):
         scale = self._cfg.get("font_size", 13) / 13.0
         self._side.setFixedWidth(max(int(PANEL_WIDTH * scale),
                                      self._side.minimumSizeHint().width()))
+        hexb = getattr(self, "_hex", None)
+        if hexb is not None:
+            hexb.apply_theme(self._cfg)
+            self._hex_frame.setFixedWidth(hexb.preferred_width() + 24)
         p = generate_palette(self._cfg["accent_color"])
         # Fuentes del mapa escaladas con el zoom de fuente (13 = tamaño base)
         plot.set_font_scale(self._cfg.get("font_size", 13) / 13.0)
@@ -215,9 +219,23 @@ class MainWindow(QMainWindow):
         self.set_status("Listo.")
 
     def _build_main_area(self):
-        """Mapa (izquierda) y panel de controles con inventario (derecha)."""
+        """Panel hexadecimal (izquierda, oculto por defecto), mapa (centro) y
+        panel de controles con inventario (derecha)."""
         from matplotlib.backends.backend_qtagg import NavigationToolbar2QT
         from .wind_plot import WindPlot
+        from .widgets.hex_browser import HexBrowser
+
+        # ── Panel hexadecimal, fijo: el ancho del volcado; el mapa cede el resto ──
+        hex_frame = QFrame()
+        hex_frame.setObjectName("GlassPanel")
+        hex_lay = QVBoxLayout(hex_frame)
+        hex_lay.setContentsMargins(12, 6, 12, 8)
+        self._hex = HexBrowser(cfg=self._cfg)
+        hex_lay.addWidget(self._hex)
+        self._hex_frame = hex_frame
+        self._hex_frame.setFixedWidth(self._hex.preferred_width() + 24)
+        self._hex_frame.setVisible(bool(self._cfg.get("hex_visible", False)))
+        self._main_lay.addWidget(hex_frame)
 
         # ── Mapa ──
         map_frame = QFrame()
@@ -366,6 +384,14 @@ class MainWindow(QMainWindow):
 
         lay.addStretch()
 
+        self._btn_hex = QPushButton("0x")
+        self._btn_hex.setCheckable(True)
+        self._btn_hex.setChecked(bool(self._cfg.get("hex_visible", False)))
+        self._btn_hex.setToolTip("Mostrar u ocultar el panel hexadecimal (Ctrl+Shift+H): el archivo "
+                                 "byte a byte con su estructura, a la izquierda del mapa")
+        self._btn_hex.setFixedWidth(32)
+        self._btn_hex.toggled.connect(self.set_hex_visible)
+        lay.addWidget(self._btn_hex)
         self._btn_panel = QPushButton("▥")
         self._btn_panel.setCheckable(True)
         self._btn_panel.setChecked(bool(self._cfg.get("panel_visible", True)))
@@ -481,7 +507,10 @@ class MainWindow(QMainWindow):
         self._act_update = self._add_action(vista, "Actualizar", self.redraw, "F5")
         self._act_point = self._add_action(vista, "Consultar punto…", self.open_point_popup,
                                            "Ctrl+I")
-        self._act_hex = self._add_action(vista, "Ver hexadecimal…", self.show_hex, "Ctrl+Shift+H")
+        self._act_hex = self._add_action(vista, "Panel hexadecimal", self.set_hex_visible,
+                                         "Ctrl+Shift+H")
+        self._act_hex.setCheckable(True)
+        self._act_hex.setChecked(bool(self._cfg.get("hex_visible", False)))
         self._act_layer = self._add_action(vista, "Capa de datos activada",
                                            self.toggle_layer, "Ctrl+D")
         self._act_layer.setCheckable(True)
@@ -594,6 +623,31 @@ class MainWindow(QMainWindow):
         if self._cfg.get("panel_visible", True) != visible:
             self._cfg["panel_visible"] = visible
             save_config(self._cfg)
+
+    def set_hex_visible(self, visible: bool):
+        """Muestra u oculta el panel hexadecimal a la izquierda del mapa; al
+        mostrarlo carga el archivo abierto (y lo suelta al ocultarlo). Se
+        guarda en la configuración."""
+        visible = bool(visible)
+        self._hex_frame.setVisible(visible)
+        for w in (self._btn_hex, self._act_hex):
+            w.blockSignals(True)
+            w.setChecked(visible)
+            w.blockSignals(False)
+        if self._cfg.get("hex_visible", False) != visible:
+            self._cfg["hex_visible"] = visible
+            save_config(self._cfg)
+        self._refresh_hex()
+
+    def _refresh_hex(self):
+        """El panel hexadecimal muestra el archivo abierto sólo mientras está
+        a la vista: así un archivo grande no se mapea ni se recorre de más."""
+        if not self._hex_frame.isVisibleTo(self):
+            self._hex.clear()
+            return
+        path = self._path if self._path and os.path.isfile(self._path) else ""
+        if path != self._hex.path():
+            self._hex.load(path)
 
     def _sync_view_menu(self):
         """Refleja en el menú Vista lo que muestra el panel."""
@@ -725,7 +779,7 @@ class MainWindow(QMainWindow):
         self._bar_file_area.setVisible(not empty)
         for act in (self._act_export_png, self._act_export_csv, self._act_export_wafs,
                     self._act_close, self._act_full, self._act_update, self._act_layer,
-                    self._act_hex, self._act_save_as):
+                    self._act_hex, self._act_save_as, self._btn_hex):
             act.setEnabled(not empty)
         if empty:
             self._welcome.set_recent_files(self._cfg.get("recent_files") or [])
@@ -931,6 +985,7 @@ class MainWindow(QMainWindow):
         self.panel.populate(reader)
         self._set_plot_projection(self.panel.projection(), reader.lons, reader.lats)
         self._apply_area_layer(redraw=False)     # el marco pasa a ser el de este archivo
+        self._refresh_hex()
         self.redraw(keep_extent=False)
         if self._info_popup is not None:
             self._info_popup.hide()
@@ -945,6 +1000,7 @@ class MainWindow(QMainWindow):
             self._info_popup.hide()
             self._info_popup.query.set_reader(None)
         self.inventory.set_text("Sin archivo abierto.")
+        self._hex.clear()
         self._apply_area_layer(redraw=False)     # vuelve el marco de la última selección
         self.plot.draw_empty()
         self._update_title()
@@ -1867,15 +1923,6 @@ class MainWindow(QMainWindow):
             self.set_status(f"Guardado: {dlg.saved_path}")
             if dlg.open_after:
                 self.open_file(dlg.saved_path, convert=False)
-
-    def show_hex(self):
-        """«Ver hexadecimal…»: el archivo abierto (el convertido, si se
-        convirtió) byte a byte, con su estructura en árbol."""
-        if not self._path or not os.path.isfile(self._path):
-            QMessageBox.information(self, "Ver hexadecimal", "No hay archivo abierto.")
-            return
-        from .dialogs.hex_dialog import HexViewerDialog
-        HexViewerDialog(self, path=self._path, cfg=self._cfg).exec()
 
     def export_wafs(self):
         """«Exportar a WAFS…»: lo cargado (todos los plazos y niveles, o una

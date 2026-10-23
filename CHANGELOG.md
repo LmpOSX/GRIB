@@ -2,12 +2,22 @@
 
 ## Sin publicar
 
-- Ver hexadecimal: los colores son por nivel del árbol (mensaje, sección,
+- El visor hexadecimal pasa a ser un panel fijo a la izquierda del mapa, del
+  ancho del volcado, con el árbol arriba y el volcado abajo: botón `0x` de la
+  barra de acciones o Vista ▸ Panel hexadecimal (⌘ ⇧ H), como el `▥` del
+  panel lateral; el mapa cede ese ancho y la elección se recuerda. Carga el
+  archivo sólo mientras está a la vista. Reemplaza al diálogo Ver hexadecimal….
+- Visor hexadecimal: los colores son por nivel del árbol (mensaje, sección,
   campo, subcampo), con un cuadrito del color junto a cada nombre; al elegir
   un nodo se pinta toda su ruta, cada tramo con el color de su nivel y el
   elegido encima con el marco del acento. Los nodos con hijos llevan «+»,
   que pasa a «−» al abrirlos; abrir o cerrar no cambia lo pintado. Antes el
   nodo elegido se pintaba con el acento y cada hijo con un color propio.
+- Visor hexadecimal: el resaltado coincidía mal con los bytes (empezaba en
+  el segundo dígito, abarcaba los espacios que siguen al último byte y en el
+  último byte de la fila pintaba parte del siguiente): las posiciones se
+  calculaban con el ancho entero del carácter y el texto se dibuja con
+  avances fraccionarios. Ahora cada byte se dibuja en su posición exacta.
 
 ## 0.5.0 — 2026-10-23
 

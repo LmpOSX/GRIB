@@ -26,7 +26,7 @@ SHORTCUTS = [
     ("Vista", "Límites de FIR de Argentina (mostrar / ocultar)", "Cmd Shift F"),
     ("Vista", "FIR vecinas, extremos y cobertura, configurar FIR", "Menú Vista ▸ FIR"),
     ("Vista", "Consultar punto: la ficha en el último punto (o el centro del mapa)", "Cmd I"),
-    ("Vista", "Ver hexadecimal: el archivo byte a byte con su estructura", "Cmd Shift H"),
+    ("Vista", "Panel hexadecimal (mostrar / ocultar): el archivo byte a byte con su estructura", "Cmd Shift H"),
     ("Vista", "Preferencias…", "Cmd ,"),
     ("Vista", "Agrandar fuente", "Cmd + (o Alt +)"),
     ("Vista", "Achicar fuente", "Cmd − (o Alt −)"),

@@ -4,8 +4,8 @@ ASCII) con tramos pintados: cada mensaje con un tinte alternado y, del nodo
 elegido, toda su ruta (mensaje → sección → campo → subcampo), cada tramo con
 el color de su nivel, el más profundo encima y con el marco del acento.
 Pinta sólo las filas visibles, así que sirve para archivos grandes."""
-from PyQt6.QtCore import Qt, QRect, pyqtSignal
-from PyQt6.QtGui import QPainter, QFont, QFontMetrics, QColor, QPen
+from PyQt6.QtCore import Qt, QRect, QPointF, pyqtSignal
+from PyQt6.QtGui import QPainter, QFont, QFontMetricsF, QColor, QPen
 from PyQt6.QtWidgets import QAbstractScrollArea
 
 BYTES_PER_ROW = 16
@@ -86,14 +86,25 @@ class HexView(QAbstractScrollArea):
     # ── Geometría ────────────────────────────────────────────────────────
 
     def _metrics(self):
-        fm = QFontMetrics(self._font)
+        # Métricas en punto flotante: el texto se dibuja con avances
+        # fraccionarios (macOS), y con el ancho redondeado a entero el error
+        # se acumula a lo largo de la fila y el resaltado se corre del byte.
+        # Cada byte y cada carácter ASCII se dibujan en su posición exacta.
+        fm = QFontMetricsF(self._font)
         self._char_w = fm.horizontalAdvance("0")
-        self._row_h = fm.height() + 4
-        self._ascent = fm.ascent() + 2
-        self._x_off = 8
+        self._row_h = int(fm.height()) + 4
+        self._ascent = int(fm.ascent()) + 2
+        self._x_off = 8.0
         self._x_hex = self._x_off + self._char_w * 9 + 8        # «00000000 »
         self._x_asc = self._x_hex + self._char_w * (BYTES_PER_ROW * 3 + 1) + 12
-        self._width = self._x_asc + self._char_w * (BYTES_PER_ROW + 2) + 8
+        self._width = int(self._x_asc + self._char_w * (BYTES_PER_ROW + 2) + 8)
+
+    def _hex_x(self, col):
+        """Borde izquierdo del byte `col` en la columna hexadecimal (float)."""
+        return self._x_hex + col * 3 * self._char_w + (self._char_w if col >= 8 else 0)
+
+    def _asc_x(self, col):
+        return self._x_asc + (col + 1) * self._char_w
 
     def _update_scrollbars(self):
         vb = self.verticalScrollBar()
@@ -110,21 +121,24 @@ class HexView(QAbstractScrollArea):
         self._update_scrollbars()
 
     def _byte_rect(self, pos, x0):
-        """Rectángulo del byte `pos` en la columna hexadecimal."""
+        """Rectángulo del byte `pos` en la columna hexadecimal (los dos
+        dígitos, con un píxel de aire a cada lado)."""
         row = pos // BYTES_PER_ROW
         col = pos % BYTES_PER_ROW
         first = self.verticalScrollBar().value()
-        x = self._x_hex + col * 3 * self._char_w + (self._char_w if col >= 8 else 0) - x0
+        x = self._hex_x(col) - x0
+        left, right = round(x), round(x + 2 * self._char_w)
         y = (row - first) * self._row_h
-        return QRect(x - 1, y, self._char_w * 2 + 2, self._row_h)
+        return QRect(left - 1, y, right - left + 2, self._row_h)
 
     def _ascii_rect(self, pos, x0):
         row = pos // BYTES_PER_ROW
         col = pos % BYTES_PER_ROW
         first = self.verticalScrollBar().value()
-        x = self._x_asc + (col + 1) * self._char_w - x0
+        x = self._asc_x(col) - x0
+        left, right = round(x), round(x + self._char_w)
         y = (row - first) * self._row_h
-        return QRect(x, y, self._char_w, self._row_h)
+        return QRect(left, y, right - left, self._row_h)
 
     def byte_at(self, point):
         """Posición del byte bajo el punto (columna hex o ASCII), o None."""
@@ -138,8 +152,8 @@ class HexView(QAbstractScrollArea):
             if rel >= 8 * 3 * self._char_w + self._char_w:
                 rel -= self._char_w
             col = int(rel // (3 * self._char_w))
-        elif self._x_asc + self._char_w <= x < self._x_asc + (BYTES_PER_ROW + 1) * self._char_w:
-            col = int((x - self._x_asc - self._char_w) // self._char_w)
+        elif self._asc_x(0) <= x < self._asc_x(BYTES_PER_ROW):
+            col = int((x - self._asc_x(0)) // self._char_w)
         if col is None or col < 0 or col >= BYTES_PER_ROW:
             return None
         pos = row * BYTES_PER_ROW + col
@@ -221,21 +235,20 @@ class HexView(QAbstractScrollArea):
                 r2 = self._byte_rect(row_end - 1, x0)
                 painter.drawRect(QRect(r1.left(), r1.top() + 1, r2.right() - r1.left(), r1.height() - 2))
                 pos = row_end
-        # Texto
+        # Texto: cada byte y cada carácter ASCII en su posición exacta, la
+        # misma que usan los rectángulos del resaltado
         for row in range(first, last + 1):
             y = (row - first) * self._row_h + self._ascent
             start = row * BYTES_PER_ROW
             chunk = bytes(self._data[start:start + BYTES_PER_ROW])
             painter.setPen(c["offset"])
-            painter.drawText(self._x_off - x0, y, f"{start:08x}")
+            painter.drawText(QPointF(self._x_off - x0, y), f"{start:08x}")
             painter.setPen(c["text"])
-            hex_parts = []
             for i, b in enumerate(chunk):
-                hex_parts.append(f"{b:02x}")
-                if i == 7:
-                    hex_parts.append("")
-            painter.drawText(self._x_hex - x0, y, " ".join(hex_parts))
-            asc = "".join(chr(b) if 32 <= b < 127 else "." for b in chunk)
+                painter.drawText(QPointF(self._hex_x(i) - x0, y), f"{b:02x}")
             painter.setPen(c["text_dim"])
-            painter.drawText(self._x_asc - x0, y, "|" + asc + "|")
+            painter.drawText(QPointF(self._x_asc - x0, y), "|")
+            for i, b in enumerate(chunk):
+                painter.drawText(QPointF(self._asc_x(i) - x0, y), chr(b) if 32 <= b < 127 else ".")
+            painter.drawText(QPointF(self._asc_x(len(chunk)) - x0, y), "|")
         painter.end()

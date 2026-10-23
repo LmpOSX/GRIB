@@ -1,12 +1,17 @@
 # -*- coding: utf-8 -*-
-"""«Ver hexadecimal…»: el archivo abierto como un `hexdump -C` a la derecha y
-su estructura en árbol a la izquierda (mensaje → sección → campo → subcampo).
+"""Visor hexadecimal: el archivo abierto como un `hexdump -C` y su estructura
+en árbol (mensaje → sección → campo → subcampo). Va como panel fijo a la
+izquierda del mapa (botón `0x` de la barra de acciones, Vista ▸ Panel
+hexadecimal, Ctrl+Shift+H): el árbol arriba y el volcado abajo, con un
+separador entre los dos.
+
 Cada nivel del árbol tiene un color (el cuadrito junto al nombre); al elegir
 un nodo se pinta en el volcado toda su ruta, cada tramo con el color de su
 nivel y el elegido encima, con el marco del acento. Abrir o cerrar un nodo
 con «+» / «−» no cambia lo pintado. Un clic sobre un byte del volcado abre
 el árbol hasta el campo que lo contiene. Los mensajes se desarrollan al
-abrirlos (los archivos grandes tienen miles)."""
+abrirlos (los archivos grandes tienen miles). El archivo se mapea en memoria
+y se suelta al cerrarlo o al cargar otro."""
 import bisect
 import mmap
 import os
@@ -14,40 +19,74 @@ import os
 from PyQt6.QtCore import Qt, QSize
 from PyQt6.QtGui import QGuiApplication, QIcon, QPixmap, QPainter, QColor
 from PyQt6.QtWidgets import (
-    QVBoxLayout, QHBoxLayout, QLabel, QPushButton, QFrame, QTreeWidget, QTreeWidgetItem,
+    QWidget, QVBoxLayout, QHBoxLayout, QLabel, QPushButton, QTreeWidget, QTreeWidgetItem,
     QSplitter, QLineEdit, QHeaderView, QAbstractItemView,
 )
 
-from .glass_dialog import GlassDialog, add_shadow as _add_shadow
-from ..widgets.hex_view import HexView
+from .hex_view import HexView
 from .. import grib_hex as gh
 from ..theme import hex_colors
 
 _ROLE_NODE = Qt.ItemDataRole.UserRole
 
 
-class HexViewerDialog(GlassDialog):
-    def __init__(self, parent=None, path="", cfg=None, data=None):
+class HexBrowser(QWidget):
+    def __init__(self, parent=None, cfg=None):
         super().__init__(parent)
-        self._cfg = cfg or {}
-        self._path = path
+        self.setObjectName("HexBrowser")
+        self._cfg = cfg if cfg is not None else {}
+        self._path = ""
         self._fh = None
         self._mm = None
-        if data is not None:
-            self._data = data
-        else:
-            self._data = self._open(path)
-        self._messages = gh.scan_messages(self._data)
-        self._starts = [o for o, _s in self._messages]
+        self._data = b""
+        self._messages = []
+        self._starts = []
         self._nodes = {}            # id(item) → Node
         self._items = {}            # id(node) → item
         self._trees = {}            # índice de mensaje → Node raíz
         self._level_icons = []      # cuadrito del color de cada nivel, para el árbol
-        self.setWindowTitle(f"Hexadecimal — {os.path.basename(path) or 'datos'}")
-        self.setMinimumSize(1400, 680)
         self._build_ui()
-        self._apply_colors()
+        self.apply_theme()
+
+    # ── Archivo ──────────────────────────────────────────────────────────
+
+    def load(self, path="", data=None):
+        """Carga `path` (mapeado en memoria) o `data` directamente; suelta lo
+        anterior. Con ninguno de los dos, queda vacío."""
+        self.clear()
+        self._path = path or ""
+        if data is not None:
+            self._data = data
+        elif path:
+            self._data = self._open(path)
+        self._messages = gh.scan_messages(self._data)
+        self._starts = [o for o, _s in self._messages]
         self._fill_messages()
+
+    def clear(self):
+        """Vacía el visor y suelta el archivo."""
+        self.hex.set_data(b"")
+        self.tree.clear()
+        self._nodes.clear()
+        self._items.clear()
+        self._trees.clear()
+        self._messages = []
+        self._starts = []
+        self._data = b""
+        self._path = ""
+        try:
+            if self._mm is not None:
+                self._mm.close()
+            if self._fh is not None:
+                self._fh.close()
+        except Exception:
+            pass
+        self._mm = self._fh = None
+        self.lbl_info.setText("")
+        self.lbl_detail.setText("Sin archivo.")
+
+    def path(self):
+        return self._path
 
     def _open(self, path):
         self._fh = open(path, "rb")
@@ -60,46 +99,23 @@ class HexViewerDialog(GlassDialog):
             self._fh.seek(0)
             return self._fh.read()
 
-    def closeEvent(self, event):
-        super().closeEvent(event)
-        self._release()
-
-    def _release(self):
-        self.hex.set_data(b"")
-        self._data = b""
-        try:
-            if self._mm is not None:
-                self._mm.close()
-            if self._fh is not None:
-                self._fh.close()
-        except Exception:
-            pass
-        self._mm = self._fh = None
-
     # ── Interfaz ─────────────────────────────────────────────────────────
 
     def _build_ui(self):
-        outer = QVBoxLayout(self)
-        outer.setContentsMargins(20, 20, 20, 20)
-        panel = QFrame()
-        panel.setObjectName("GlassPanel")
-        _add_shadow(panel)
-        outer.addWidget(panel)
-        lay = QVBoxLayout(panel)
-        lay.setContentsMargins(24, 20, 24, 20)
-        lay.setSpacing(10)
+        lay = QVBoxLayout(self)
+        lay.setContentsMargins(0, 0, 0, 0)
+        lay.setSpacing(6)
         head = QHBoxLayout()
-        title = QLabel("Volcado hexadecimal")
-        title.setObjectName("Heading")
+        title = QLabel("HEXADECIMAL")
+        title.setObjectName("PanelTitle")
         head.addWidget(title)
         head.addStretch()
-        n = len(self._data)
-        self.lbl_info = QLabel(f"{n:,} bytes · {len(self._messages)} mensajes".replace(",", "."))
+        self.lbl_info = QLabel("")
         self.lbl_info.setObjectName("Hint")
         head.addWidget(self.lbl_info)
         lay.addLayout(head)
 
-        self.split = QSplitter(Qt.Orientation.Horizontal)
+        self.split = QSplitter(Qt.Orientation.Vertical)
         self.tree = QTreeWidget()
         self.tree.setObjectName("HexTree")
         self.tree.setColumnCount(3)
@@ -107,7 +123,6 @@ class HexViewerDialog(GlassDialog):
         self.tree.setAlternatingRowColors(False)
         self.tree.setSelectionMode(QAbstractItemView.SelectionMode.SingleSelection)
         self.tree.setUniformRowHeights(True)
-        self.tree.setMinimumWidth(520)
         self.tree.setIconSize(QSize(12, 12))
         hh = self.tree.header()
         hh.setSectionResizeMode(0, QHeaderView.ResizeMode.ResizeToContents)
@@ -117,14 +132,13 @@ class HexViewerDialog(GlassDialog):
         self.tree.currentItemChanged.connect(self._on_current_changed)
         self.split.addWidget(self.tree)
         self.hex = HexView()
-        self.hex.set_font_size(max(9, int(self._cfg.get("font_size", 13)) - 1))
         self.hex.byte_clicked.connect(self.select_byte)
         self.split.addWidget(self.hex)
-        self.split.setStretchFactor(1, 0)
-        self.split.setStretchFactor(0, 1)       # el volcado tiene ancho fijo; el árbol toma el resto
+        self.split.setStretchFactor(0, 1)
+        self.split.setStretchFactor(1, 1)
         lay.addWidget(self.split, 1)
 
-        self.lbl_detail = QLabel("Elegí un mensaje, una sección o un campo; o hacé clic en un byte.")
+        self.lbl_detail = QLabel("Sin archivo.")
         self.lbl_detail.setObjectName("HexDetail")
         self.lbl_detail.setWordWrap(True)
         self.lbl_detail.setTextInteractionFlags(Qt.TextInteractionFlag.TextSelectableByMouse)
@@ -142,15 +156,29 @@ class HexViewerDialog(GlassDialog):
         self.btn_copy.setToolTip("Copia al portapapeles los bytes del tramo elegido, en hexadecimal")
         self.btn_copy.clicked.connect(self._copy)
         row.addWidget(self.btn_copy)
-        b = QPushButton("Cerrar")
-        b.clicked.connect(self.accept)
-        row.addWidget(b)
         lay.addLayout(row)
 
-    def _apply_colors(self):
+    def apply_theme(self, cfg=None):
+        """Colores del acento y tamaño de fuente del volcado; los cuadritos
+        del árbol se rehacen con los colores nuevos."""
+        if cfg is not None:
+            self._cfg = cfg
         colors = hex_colors(self._cfg.get("accent_color", "#4a90d9"))
         self.hex.set_colors(colors)
+        self.hex.set_font_size(max(9, int(self._cfg.get("font_size", 13)) - 1))
         self._level_icons = [self._swatch(c) for c in colors["levels"]]
+        for i in range(self.tree.topLevelItemCount()):
+            self._recolor(self.tree.topLevelItem(i), 0)
+        self.setMinimumWidth(self.hex.minimumSizeHint().width())
+
+    def preferred_width(self):
+        """Ancho del volcado (posición · 16 bytes · ASCII) sin cortar."""
+        return self.hex.minimumSizeHint().width()
+
+    def _recolor(self, item, level):
+        item.setIcon(0, self.level_icon(level))
+        for k in range(item.childCount()):
+            self._recolor(item.child(k), level + 1)
 
     @staticmethod
     def _swatch(color):
@@ -171,11 +199,9 @@ class HexViewerDialog(GlassDialog):
         return self._level_icons[level % len(self._level_icons)] if self._level_icons else QIcon()
 
     def _fill_messages(self):
-        self.tree.clear()
-        self._nodes.clear()
-        self._items.clear()
-        self._trees.clear()
         total = len(self._messages)
+        n = len(self._data)
+        self.lbl_info.setText(f"{n:,} bytes · {total} mensajes".replace(",", "."))
         for i, (off, size) in enumerate(self._messages):
             it = QTreeWidgetItem([gh._msg_name(i, total), "", f"{off} +{size}"])
             it.setData(0, _ROLE_NODE, i)
@@ -185,6 +211,8 @@ class HexViewerDialog(GlassDialog):
         self.hex.set_data(self._data, self._messages)
         if total:
             self.tree.setCurrentItem(self.tree.topLevelItem(0))
+        else:
+            self.lbl_detail.setText("El archivo no tiene mensajes GRIB." if n else "Archivo vacío.")
 
     # ── Árbol ────────────────────────────────────────────────────────────
 

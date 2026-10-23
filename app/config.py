@@ -49,6 +49,7 @@ DEFAULTS = {
     "window_w": 1600,
     "window_h": 1000,
     "panel_visible": True,   # panel lateral de controles visible
+    "hex_visible": False,    # panel hexadecimal a la izquierda del mapa
     "recent_files": [],      # list[str] — most-recent first
     "last_directory": "",    # directorio de trabajo de la sesión (el del último archivo abierto o exportado)
     "download_dir": "",      # directorio de trabajo por defecto (vacío = Documentos); ver working_dir()
