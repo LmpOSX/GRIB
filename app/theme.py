@@ -49,27 +49,28 @@ def generate_palette(accent_hex: str) -> dict:
 
 def hex_colors(accent_hex: str) -> dict:
     """Colores del visor hexadecimal, derivados de la paleta del acento:
-    fondo y texto; dos tintes alternados para los mensajes; el tramo elegido
-    (acento) y una serie de colores distintos, con el tono rotado, para los
-    hijos del nodo elegido (secciones, campos, subcampos)."""
+    fondo y texto; dos tintes alternados para los mensajes; el marco del
+    nodo elegido (acento) y un color por nivel del árbol (`levels`: 0 el
+    mensaje, 1 la sección, 2 el campo, 3 el subcampo…), con el tono rotado
+    para que cada nivel se distinga del anterior."""
     p = generate_palette(accent_hex)
     base = p["accent"]
     h, s, l, _a = base.getHsl()
     h = max(h, 0)
-    fields = []
+    levels = []
     for k in range(8):
         c = QColor.fromHsl((h + 40 + k * 43) % 360, max(120, min(s, 200)), 110)
         c.setAlpha(170)
-        fields.append(c)
+        levels.append(c)
     sel = QColor(base)
-    sel.setAlpha(210)
+    sel.setAlpha(230)
     msg_a = QColor(p["mid"])
     msg_a.setAlpha(90)
     msg_b = QColor(p["accent"])
     msg_b.setAlpha(70)
     return {"bg": QColor(p["bg_data"]), "text": QColor(p["text_bright"]),
             "text_dim": QColor(p["text_dim"]), "offset": QColor(p["accent_light"]),
-            "msg_a": msg_a, "msg_b": msg_b, "selected": sel, "fields": fields,
+            "msg_a": msg_a, "msg_b": msg_b, "selected": sel, "levels": levels,
             "border": QColor(p["border"])}
 
 
@@ -859,6 +860,14 @@ QAbstractScrollArea#HexView {{
 QTreeWidget#HexTree {{
     font-family: "Menlo", "Consolas", "DejaVu Sans Mono", monospace;
     font-size: {h3}px;
+}}
+/* En el árbol del hexadecimal los nodos con hijos llevan un «+» (cerrado)
+   que pasa a «−» al abrirlos */
+QTreeWidget#HexTree::branch:has-children:closed {{
+    image: url("{_RESOURCES}/tree_plus.svg");
+}}
+QTreeWidget#HexTree::branch:has-children:open {{
+    image: url("{_RESOURCES}/tree_minus.svg");
 }}
 QLabel#HexDetail {{
     color: {txt};

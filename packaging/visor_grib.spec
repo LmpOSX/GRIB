@@ -32,6 +32,8 @@ IS_WIN = sys.platform == "win32"
 datas = [
     (os.path.join(RES, "check.svg"), "resources"),
     (os.path.join(RES, "radio_dot.svg"), "resources"),
+    (os.path.join(RES, "tree_plus.svg"), "resources"),
+    (os.path.join(RES, "tree_minus.svg"), "resources"),
     (os.path.join(RES, "app_icon.png"), "resources"),
     (os.path.join(RES, "fir"), os.path.join("resources", "fir")),
 ]

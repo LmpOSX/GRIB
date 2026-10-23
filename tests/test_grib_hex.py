@@ -152,16 +152,18 @@ class TestDialogo(unittest.TestCase):
         w = self.w
         self.assertEqual(w.tree.topLevelItemCount(), 6)
         self.assertIn("6 mensajes", w.lbl_info.text())
-        # Al abrir queda elegido el primer mensaje, pintado entero
+        # Al abrir queda elegido el primer mensaje, pintado entero con el color del nivel 0
         self.assertEqual(w.hex.selection(), (0, w._messages[0][1]))
-        self.assertEqual(len(w.hex._children), 8)              # sus ocho secciones, cada una con color
-        # Desplegar el segundo mensaje lo desarrolla
+        self.assertEqual(w.hex.path(), [(0, w._messages[0][1], 0)])
+        # Desplegar el segundo mensaje («+») lo desarrolla pero no cambia lo pintado
         it = w.tree.topLevelItem(1)
         self.assertEqual(it.childCount(), 0)
         it.setExpanded(True)
         _app.processEvents()
         self.assertEqual(it.childCount(), 8)
         self.assertIn("UGRD", it.text(1))
+        self.assertEqual(w.hex.path(), [(0, w._messages[0][1], 0)])
+        self.assertIs(w.tree.currentItem(), w.tree.topLevelItem(0))
         sec4 = it.child(3)
         sup = next(sec4.child(k) for k in range(sec4.childCount()) if sec4.child(k).text(0) == "Primera superficie")
         w.tree.setCurrentItem(sup)
@@ -169,7 +171,24 @@ class TestDialogo(unittest.TestCase):
         node = w.current_node()
         self.assertEqual(node.name, "Primera superficie")
         self.assertEqual(w.hex.selection(), (node.offset, 6))
-        self.assertEqual([c[1] for c in w.hex._children], [1, 1, 4])
+        # Se pinta toda la ruta: mensaje (nivel 0), sección 4 (nivel 1) y el campo (nivel 2)
+        path = w.hex.path()
+        self.assertEqual([k for _o, _s, k in path], [0, 1, 2])
+        self.assertEqual(path[0][:2], tuple(w._messages[1]))
+        self.assertEqual(path[1][:2], (node.parent.offset, node.parent.size))
+        self.assertEqual(path[2][:2], (node.offset, 6))
+        # Los subcampos (tipo / factor / valor) no se pintan hasta elegirlos
+        self.assertEqual(sup.childCount(), 3)
+        w.tree.setCurrentItem(sup.child(2))
+        _app.processEvents()
+        self.assertEqual([k for _o, _s, k in w.hex.path()], [0, 1, 2, 3])
+        self.assertEqual(w.hex.selection(), (node.offset + 2, 4))
+        # Cada renglón lleva el cuadrito del color de su nivel
+        self.assertFalse(it.icon(0).isNull())
+        self.assertEqual(sec4.icon(0).cacheKey(), it.child(0).icon(0).cacheKey())
+        self.assertNotEqual(sec4.icon(0).cacheKey(), sup.icon(0).cacheKey())
+        w.tree.setCurrentItem(sup)
+        _app.processEvents()
         self.assertIn("64 00 00 00 c3 50", w.lbl_detail.text())    # el segundo mensaje es 500 hPa
         self.assertIn("capa 50000 Pa = 500 hPa", w.lbl_detail.text())
         self.assertIn("Mensaje 2 de 6 ▸ Sección 4", w.lbl_detail.text())
@@ -207,8 +226,8 @@ class TestDialogo(unittest.TestCase):
     def test_colores_del_tema(self):
         from app.theme import hex_colors
         c = hex_colors("#4a90d9")
-        self.assertEqual(len(c["fields"]), 8)
-        self.assertEqual(len({x.name() for x in c["fields"]}), 8)
+        self.assertEqual(len(c["levels"]), 8)
+        self.assertEqual(len({x.name() for x in c["levels"]}), 8)
         self.assertIsNotNone(self.w.hex._colors)
 
 

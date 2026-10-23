@@ -1,16 +1,18 @@
 # -*- coding: utf-8 -*-
 """«Ver hexadecimal…»: el archivo abierto como un `hexdump -C` a la derecha y
 su estructura en árbol a la izquierda (mensaje → sección → campo → subcampo).
-Al elegir un nodo se pinta su tramo con el acento y cada hijo con un color
-propio; un clic sobre un byte del volcado abre el árbol hasta el campo que
-lo contiene. Los mensajes se desarrollan al abrirlos (los archivos grandes
-tienen miles)."""
+Cada nivel del árbol tiene un color (el cuadrito junto al nombre); al elegir
+un nodo se pinta en el volcado toda su ruta, cada tramo con el color de su
+nivel y el elegido encima, con el marco del acento. Abrir o cerrar un nodo
+con «+» / «−» no cambia lo pintado. Un clic sobre un byte del volcado abre
+el árbol hasta el campo que lo contiene. Los mensajes se desarrollan al
+abrirlos (los archivos grandes tienen miles)."""
 import bisect
 import mmap
 import os
 
-from PyQt6.QtCore import Qt
-from PyQt6.QtGui import QGuiApplication
+from PyQt6.QtCore import Qt, QSize
+from PyQt6.QtGui import QGuiApplication, QIcon, QPixmap, QPainter, QColor
 from PyQt6.QtWidgets import (
     QVBoxLayout, QHBoxLayout, QLabel, QPushButton, QFrame, QTreeWidget, QTreeWidgetItem,
     QSplitter, QLineEdit, QHeaderView, QAbstractItemView,
@@ -40,6 +42,7 @@ class HexViewerDialog(GlassDialog):
         self._nodes = {}            # id(item) → Node
         self._items = {}            # id(node) → item
         self._trees = {}            # índice de mensaje → Node raíz
+        self._level_icons = []      # cuadrito del color de cada nivel, para el árbol
         self.setWindowTitle(f"Hexadecimal — {os.path.basename(path) or 'datos'}")
         self.setMinimumSize(1400, 680)
         self._build_ui()
@@ -105,6 +108,7 @@ class HexViewerDialog(GlassDialog):
         self.tree.setSelectionMode(QAbstractItemView.SelectionMode.SingleSelection)
         self.tree.setUniformRowHeights(True)
         self.tree.setMinimumWidth(520)
+        self.tree.setIconSize(QSize(12, 12))
         hh = self.tree.header()
         hh.setSectionResizeMode(0, QHeaderView.ResizeMode.ResizeToContents)
         hh.setSectionResizeMode(1, QHeaderView.ResizeMode.Stretch)
@@ -144,7 +148,27 @@ class HexViewerDialog(GlassDialog):
         lay.addLayout(row)
 
     def _apply_colors(self):
-        self.hex.set_colors(hex_colors(self._cfg.get("accent_color", "#4a90d9")))
+        colors = hex_colors(self._cfg.get("accent_color", "#4a90d9"))
+        self.hex.set_colors(colors)
+        self._level_icons = [self._swatch(c) for c in colors["levels"]]
+
+    @staticmethod
+    def _swatch(color):
+        """Cuadrito redondeado, opaco, con el color de un nivel."""
+        pm = QPixmap(12, 12)
+        pm.fill(Qt.GlobalColor.transparent)
+        c = QColor(color)
+        c.setAlpha(255)
+        pt = QPainter(pm)
+        pt.setRenderHint(QPainter.RenderHint.Antialiasing)
+        pt.setPen(Qt.PenStyle.NoPen)
+        pt.setBrush(c)
+        pt.drawRoundedRect(1, 1, 10, 10, 2.5, 2.5)
+        pt.end()
+        return QIcon(pm)
+
+    def level_icon(self, level):
+        return self._level_icons[level % len(self._level_icons)] if self._level_icons else QIcon()
 
     def _fill_messages(self):
         self.tree.clear()
@@ -155,6 +179,7 @@ class HexViewerDialog(GlassDialog):
         for i, (off, size) in enumerate(self._messages):
             it = QTreeWidgetItem([gh._msg_name(i, total), "", f"{off} +{size}"])
             it.setData(0, _ROLE_NODE, i)
+            it.setIcon(0, self.level_icon(0))
             it.setChildIndicatorPolicy(QTreeWidgetItem.ChildIndicatorPolicy.ShowIndicator)
             self.tree.addTopLevelItem(it)
         self.hex.set_data(self._data, self._messages)
@@ -180,15 +205,16 @@ class HexViewerDialog(GlassDialog):
         it.setText(1, root.text)
         it.setChildIndicatorPolicy(QTreeWidgetItem.ChildIndicatorPolicy.DontShowIndicatorWhenChildless)
         for c in root.children:
-            self._add_item(it, c)
+            self._add_item(it, c, 1)
         return root
 
-    def _add_item(self, parent_item, node):
+    def _add_item(self, parent_item, node, level):
         it = QTreeWidgetItem(parent_item, [node.name, node.text, f"{node.offset} +{node.size}"])
+        it.setIcon(0, self.level_icon(level))
         self._nodes[id(it)] = node
         self._items[id(node)] = it
         for c in node.children:
-            self._add_item(it, c)
+            self._add_item(it, c, level + 1)
         return it
 
     def _on_expanded(self, item):
@@ -207,9 +233,10 @@ class HexViewerDialog(GlassDialog):
         if node is None:
             self.hex.clear_selection()
             return
-        self.hex.set_selection(node.offset, node.size, [(c.offset, c.size) for c in node.children])
+        chain = gh.path_of(node)
+        self.hex.set_path([(n.offset, n.size) for n in chain])
         self.hex.scroll_to(node.offset)
-        path = " ▸ ".join(n.name for n in gh.path_of(node))
+        path = " ▸ ".join(n.name for n in chain)
         raw = gh.hex_bytes(self._data, node.offset, node.size)
         txt = f"{path}   [{node.offset}, {node.size} byte{'s' if node.size != 1 else ''}]"
         if raw:

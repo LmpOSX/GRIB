@@ -714,11 +714,15 @@ cada campo (centro generador con su nombre de la tabla C-11, hora de
 referencia, Ni/Nj y esquinas de la grilla en grados, parámetro con su
 abreviatura, capa en Pa y hPa, plazo, R/E/D y bits por valor, y para el
 empaquetado simple o IEEE los primeros valores decodificados). Cada mensaje
-va con un tinte alternado en el volcado; el nodo elegido se pinta con el
-acento y, si tiene hijos, cada uno con un color propio: así, al entrar en un
-mensaje se distinguen sus secciones, en una sección sus campos y en un campo
-sus bytes (por ejemplo tipo, factor y valor de la capa). Un clic sobre un
-byte del volcado abre el árbol hasta el campo que lo contiene; «Ir al byte»
+va con un tinte alternado en el volcado. Cada nivel del árbol tiene su color
+(el cuadrito junto al nombre: uno para los mensajes, otro para las
+secciones, otro para los campos, otro para los subcampos); al elegir un nodo
+se pinta toda su ruta, cada tramo con el color de su nivel y el elegido
+encima, con un marco del acento: elegir «Primera superficie» pinta el
+mensaje, dentro la sección 4 y dentro el campo, y elegir su «Valor» agrega
+esos cuatro bytes con el color de los subcampos. Los nodos con hijos llevan
+un «+» que los abre (y pasa a «−»); abrir o cerrar no cambia lo pintado. Un
+clic sobre un byte del volcado abre el árbol hasta el campo que lo contiene; «Ir al byte»
 acepta la posición en decimal o `0x…`. La línea de detalle muestra la ruta
 del nodo, su posición y tamaño, sus bytes en hexadecimal y su
 interpretación; «Copiar bytes» los pasa al portapapeles. Los mensajes se

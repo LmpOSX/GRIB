@@ -1,5 +1,14 @@
 # Cambios
 
+## Sin publicar
+
+- Ver hexadecimal: los colores son por nivel del árbol (mensaje, sección,
+  campo, subcampo), con un cuadrito del color junto a cada nombre; al elegir
+  un nodo se pinta toda su ruta, cada tramo con el color de su nivel y el
+  elegido encima con el marco del acento. Los nodos con hijos llevan «+»,
+  que pasa a «−» al abrirlos; abrir o cerrar no cambia lo pintado. Antes el
+  nodo elegido se pintaba con el acento y cada hijo con un color propio.
+
 ## 0.5.0 — 2026-10-23
 
 - Rectángulo del área de descarga y polígonos de FIR que llegan al polo

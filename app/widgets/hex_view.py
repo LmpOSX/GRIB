@@ -1,8 +1,9 @@
 # -*- coding: utf-8 -*-
 """Volcado hexadecimal estilo `hexdump -C` (posición · 16 bytes en hex ·
-ASCII) con tramos pintados: cada mensaje con un tinte alternado, el nodo
-elegido con el acento y sus hijos con colores propios. Pinta sólo las filas
-visibles, así que sirve para archivos grandes."""
+ASCII) con tramos pintados: cada mensaje con un tinte alternado y, del nodo
+elegido, toda su ruta (mensaje → sección → campo → subcampo), cada tramo con
+el color de su nivel, el más profundo encima y con el marco del acento.
+Pinta sólo las filas visibles, así que sirve para archivos grandes."""
 from PyQt6.QtCore import Qt, QRect, pyqtSignal
 from PyQt6.QtGui import QPainter, QFont, QFontMetrics, QColor, QPen
 from PyQt6.QtWidgets import QAbstractScrollArea
@@ -18,8 +19,7 @@ class HexView(QAbstractScrollArea):
         self.setObjectName("HexView")
         self._data = b""
         self._messages = []                 # [(offset, size)] para el tinte alternado
-        self._selected = None               # (offset, size) con el acento
-        self._children = []                 # [(offset, size, índice de color)]
+        self._path = []                     # [(offset, size, nivel)] de la raíz al nodo elegido
         self._colors = None
         self._font = QFont("Menlo")
         self._font.setStyleHint(QFont.StyleHint.Monospace)
@@ -43,20 +43,19 @@ class HexView(QAbstractScrollArea):
     def set_data(self, data, messages=None):
         self._data = data
         self._messages = list(messages or [])
-        self._selected = None
-        self._children = []
+        self._path = []
         self._update_scrollbars()
         self.viewport().update()
 
-    def set_selection(self, offset, size, children=None):
-        """Tramo elegido y, si se dan, (offset, size) de sus hijos para
-        pintarlos con colores distintos."""
-        self._selected = (int(offset), int(size)) if size else None
-        self._children = [(int(o), int(s), i % 8) for i, (o, s) in enumerate(children or []) if s]
+    def set_path(self, ranges):
+        """Ruta del nodo elegido, de la raíz (nivel 0) al nodo: una lista de
+        (offset, size). Cada tramo se pinta con el color de su nivel y el
+        último lleva además el marco del acento."""
+        self._path = [(int(o), int(s), k) for k, (o, s) in enumerate(ranges or []) if s]
         self.viewport().update()
 
     def clear_selection(self):
-        self.set_selection(0, 0)
+        self.set_path([])
 
     def scroll_to(self, offset, margin_rows=2):
         """Deja la fila del byte a la vista (con unas filas de margen arriba)."""
@@ -78,7 +77,11 @@ class HexView(QAbstractScrollArea):
         return (len(self._data) + BYTES_PER_ROW - 1) // BYTES_PER_ROW
 
     def selection(self):
-        return self._selected
+        """(offset, size) del nodo elegido (el último de la ruta), o None."""
+        return self._path[-1][:2] if self._path else None
+
+    def path(self):
+        return list(self._path)
 
     # ── Geometría ────────────────────────────────────────────────────────
 
@@ -203,14 +206,12 @@ class HexView(QAbstractScrollArea):
             if off >= hi_byte or off + size <= lo_byte:
                 continue
             self._fill_range(painter, off, size, c["msg_a"] if i % 2 == 0 else c["msg_b"], x0, rows)
-        # Hijos del nodo elegido, cada uno con su color
-        for off, size, k in self._children:
-            self._fill_range(painter, off, size, c["fields"][k], x0, rows)
-        # Tramo elegido: fondo del acento (debajo de los hijos si los hay) y marco
-        if self._selected:
-            off, size = self._selected
-            if not self._children:
-                self._fill_range(painter, off, size, c["selected"], x0, rows)
+        # Ruta del nodo elegido: cada nivel con su color, el más profundo encima
+        for off, size, k in self._path:
+            self._fill_range(painter, off, size, c["levels"][k % len(c["levels"])], x0, rows)
+        # Marco del acento alrededor del nodo elegido
+        if self._path:
+            off, size, _k = self._path[-1]
             painter.setPen(QPen(c["selected"], 2))
             end = off + size
             pos = max(off, lo_byte)
