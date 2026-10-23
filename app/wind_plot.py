@@ -520,6 +520,7 @@ class WindPlot:
         self.canvas.mpl_connect("resize_event", self._on_resize)
         self.canvas.mpl_connect("draw_event", self._on_drawn)
         self._measured = None       # (clave, izq px, abajo px) del último ajuste medido
+        self._view_box = None       # (ancho, alto) px de los ejes con la vista actual
         self._saving = False        # durante save_png no se reajustan los márgenes
         self._make_axes()
         self._style_axes()
@@ -677,6 +678,7 @@ class WindPlot:
             new_h = w / box_aspect
             cy = (y0 + y1) / 2.0
             ax.set_ylim(cy - new_h / 2.0, cy + new_h / 2.0)
+        self._view_box = (bw, bh)
 
     def _label_size_px(self, text):
         """Ancho y alto (px del lienzo) de un rótulo de la grilla con la fuente
@@ -800,7 +802,36 @@ class WindPlot:
         else:
             self._apply_margins()
         if self.has_data and not self._in_draw:
+            self._rescale_view_to_box()
+
+    def _rescale_view_to_box(self):
+        """Al cambiar el tamaño del área de los ejes (p. ej. al mostrar u
+        ocultar un panel) conserva la escala, unidades por píxel, alrededor
+        del centro: se ve más o menos región, pero el zoom no cambia. Antes
+        se ampliaba la vista para llenar la proporción nueva y cada ida y
+        vuelta alejaba un poco más. Sin una vista previa medida, ajusta."""
+        ax = self.ax
+        try:
+            bw, bh = float(ax.bbox.width), float(ax.bbox.height)
+        except Exception:
+            return
+        if bw <= 1 or bh <= 1:
+            return
+        prev = self._view_box
+        if prev is None:
             self._fit_view_to_box()
+            return
+        pbw, pbh = prev
+        if abs(bw - pbw) < 0.5 and abs(bh - pbh) < 0.5:
+            return
+        x0, x1 = ax.get_xlim()
+        y0, y1 = ax.get_ylim()
+        cx, cy = (x0 + x1) / 2.0, (y0 + y1) / 2.0
+        w = (x1 - x0) * bw / pbw
+        h = (y1 - y0) * bh / pbh
+        ax.set_xlim(cx - w / 2.0, cx + w / 2.0)
+        ax.set_ylim(cy - h / 2.0, cy + h / 2.0)
+        self._view_box = (bw, bh)
 
     def zoom_at(self, x, y, factor):
         """Acerca (factor < 1) o aleja (factor > 1) la vista alrededor del

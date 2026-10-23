@@ -374,8 +374,8 @@ entero), así que el panel nunca se corta ni necesita scroll horizontal.
 Tampoco tiene scroll: las secciones son fijas y sólo el INVENTARIO, que
 absorbe el alto que sobra, se desplaza por dentro (vertical y horizontal). El botón `▥` de la barra de acciones (o Vista ▸
 Panel lateral, ⌘⇧P) oculta el panel y el mapa ocupa todo el ancho; la
-elección se recuerda. El botón `0x` abre a la izquierda del mapa el panel
-hexadecimal (ver más abajo). La ventana arranca en 1600×1000 (o lo que entre en
+elección se recuerda. El botón `0x` abre el panel hexadecimal dentro del
+bloque del mapa (ver más abajo). La ventana arranca en 1600×1000 (o lo que entre en
 la pantalla) y recuerda tamaño y posición.
 
 * **TIME**: `Current (+0)`, `Next (+1)`, `Advanced (+2)` eligen el 1.°, 2.° y
@@ -708,18 +708,32 @@ licencias en `docs/FUENTES_FIR.md`.
 ### Panel hexadecimal
 
 El botón `0x` de la barra de acciones (o Vista ▸ Panel hexadecimal, ⌘ ⇧ H)
-abre a la izquierda del mapa un panel fijo, del ancho del volcado, con el
-archivo abierto (el convertido, si se convirtió al abrir) como un `hexdump
--C`: el mapa cede ese ancho y el panel lateral derecho no se mueve. Arriba
-va la estructura en árbol, mensaje → sección → campo → subcampo, con el
-valor decodificado de cada campo (centro generador con su nombre de la
-tabla C-11, hora de referencia, Ni/Nj y esquinas de la grilla en grados,
-parámetro con su abreviatura, capa en Pa y hPa, plazo, R/E/D y bits por
-valor, y para el empaquetado simple o IEEE los primeros valores
-decodificados); abajo el volcado, posición · 16 bytes en hexadecimal ·
-ASCII, con un separador entre los dos. La elección se recuerda; el panel
-carga el archivo sólo mientras está a la vista y lo suelta al ocultarlo o
-al cerrar el archivo. Cada mensaje
+muestra el archivo abierto (el convertido, si se convirtió al abrir) como un
+`hexdump -C`, con su estructura en árbol a la izquierda y el volcado,
+posición · 16 bytes en hexadecimal · ASCII, a la derecha. Es una subsección
+del bloque del mapa, debajo del encabezado de información: con el panel
+lateral a la vista va debajo del mapa y un separador reparte el alto (60 %
+para el mapa); con el panel lateral oculto va a la derecha del mapa, con el
+ancho del árbol más el volcado y nunca más que el mapa, y el separador deja
+cambiar el reparto. Mostrar u ocultar paneles no cambia el tamaño de la
+ventana ni la escala del mapa (se ve más o menos región, el zoom queda). La
+elección se recuerda; el panel carga el archivo sólo mientras está a la
+vista y lo suelta al ocultarlo o al cerrar el archivo.
+El árbol va mensaje → sección → campo → subcampo, con el valor decodificado
+de cada campo (centro generador con su nombre de la tabla C-11, hora de
+referencia, Ni/Nj y esquinas de la grilla en grados, parámetro con su
+abreviatura, capa en Pa y hPa, plazo, R/E/D y bits por valor). Los valores
+de la sección 7 no forman un árbol pero se listan por demanda: «Datos
+empaquetados» se abre en filas de la grilla (`Fila j=12 · lat 34.000°S`) y
+cada fila en una celda por valor, `[12, 7] 34.000°S 58.500°W`, con su tramo
+de bytes y su valor decodificado; con empaquetado simple (5.0) e IEEE (5.4)
+cada celda tiene sus bytes propios, con empaquetado complejo, JPEG o PNG los
+valores vienen en bloque, la celda abarca toda la sección y el valor sale de
+ecCodes. Un clic en el mapa, además de la ficha del punto, lleva el panel a
+la celda del archivo que muestra ese punto: el mensaje de la variable del
+panel (U del viento, T de la temperatura) en el paso y la capa que se ve
+(en un FL interpolado, la capa más cercana) y la celda más cercana al
+punto. Cada mensaje
 va con un tinte alternado en el volcado. Cada nivel del árbol tiene su color
 (el cuadrito junto al nombre: uno para los mensajes, otro para las
 secciones, otro para los campos, otro para los subcampos); al elegir un nodo

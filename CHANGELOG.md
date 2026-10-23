@@ -2,6 +2,31 @@
 
 ## Sin publicar
 
+- El mapa y el hexadecimal, subsecciones del bloque del mapa, llevan el
+  mismo recuadro redondeado que el encabezado de información.
+- Panel hexadecimal: el volcado deja ver la ventana translúcida con la
+  opacidad del tema (pintaba un fondo opaco); los colores de los niveles
+  salen de la paleta del acento (tono a lo sumo ±45°, luminosidad en
+  escalera) en vez de una rueda de tonos ajena; el separador con el mapa
+  baja hasta dejar el hexadecimal chico (antes se frenaba casi enseguida
+  por el alto mínimo).
+- Al mostrar u ocultar el panel lateral y el hexadecimal en cualquier orden
+  la ventana ya no se agranda sola (el mapa tiene un mínimo propio y el
+  hexadecimal cede antes de forzar la ventana) y el mapa conserva la escala:
+  al cambiar el tamaño del lienzo se ve más o menos región, pero el zoom no
+  cambia. Antes cada cambio ampliaba la vista para llenar la proporción
+  nueva y cada ida y vuelta alejaba un poco más.
+- Panel hexadecimal: subsección del bloque del mapa, debajo del encabezado
+  de información; con el panel lateral a la vista va debajo del mapa (un
+  separador reparte el alto), sin el panel lateral a la derecha del mapa, con
+  el ancho del árbol más el volcado y nunca más que el mapa. El árbol va a la
+  izquierda y el volcado a la derecha en los dos casos.
+- Panel hexadecimal: los valores de la sección 7 se listan por demanda,
+  en filas de la grilla y celda por celda (`[j, i] lat lon`, tramo de bytes y
+  valor decodificado; con empaquetado complejo, JPEG o PNG el valor sale de
+  ecCodes y la celda abarca toda la sección). Un clic en el mapa, además de
+  la ficha del punto, lleva el panel a la celda del archivo que muestra ese
+  punto.
 - El visor hexadecimal pasa a ser un panel fijo a la izquierda del mapa, del
   ancho del volcado, con el árbol arriba y el volcado abajo: botón `0x` de la
   barra de acciones o Vista ▸ Panel hexadecimal (⌘ ⇧ H), como el `▥` del

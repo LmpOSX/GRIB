@@ -47,28 +47,35 @@ def generate_palette(accent_hex: str) -> dict:
     )
 
 
-def hex_colors(accent_hex: str) -> dict:
-    """Colores del visor hexadecimal, derivados de la paleta del acento:
-    fondo y texto; dos tintes alternados para los mensajes; el marco del
-    nodo elegido (acento) y un color por nivel del árbol (`levels`: 0 el
-    mensaje, 1 la sección, 2 el campo, 3 el subcampo…), con el tono rotado
-    para que cada nivel se distinga del anterior."""
+def hex_colors(accent_hex: str, opacity: int = 255) -> dict:
+    """Colores del visor hexadecimal, todos de la paleta del acento: fondo
+    del área de datos con la opacidad del tema (como el resto de los
+    paneles), texto, dos tintes alternados para los mensajes, el marco del
+    nodo elegido (acento claro) y un color por nivel del árbol (`levels`: 0
+    el mensaje, 1 la sección, 2 el campo, 3 el subcampo…). Los niveles
+    conservan el tono del acento (a lo sumo ±45°) y se distinguen por la
+    luminosidad, en escalera, y un leve corrimiento del tono alternado, para
+    que dos niveles seguidos contrasten sin salirse de la paleta."""
     p = generate_palette(accent_hex)
     base = p["accent"]
     h, s, l, _a = base.getHsl()
     h = max(h, 0)
+    sat = max(150, min(s, 220))
     levels = []
-    for k in range(8):
-        c = QColor.fromHsl((h + 40 + k * 43) % 360, max(120, min(s, 200)), 110)
+    for dh, lum in ((0, 0.34), (-28, 0.47), (28, 0.59), (0, 0.69),
+                    (-45, 0.41), (45, 0.53), (-14, 0.63), (14, 0.30)):
+        c = QColor.fromHsl((h + dh) % 360, sat, int(255 * lum))
         c.setAlpha(170)
         levels.append(c)
-    sel = QColor(base)
-    sel.setAlpha(230)
+    sel = QColor(p["accent_light"])
+    sel.setAlpha(240)
     msg_a = QColor(p["mid"])
     msg_a.setAlpha(90)
     msg_b = QColor(p["accent"])
     msg_b.setAlpha(70)
-    return {"bg": QColor(p["bg_data"]), "text": QColor(p["text_bright"]),
+    bg = QColor(p["bg_data"])
+    bg.setAlpha(max(2, min(255, int(opacity)) - 20))        # como a_d en build_stylesheet
+    return {"bg": bg, "text": QColor(p["text_bright"]),
             "text_dim": QColor(p["text_dim"]), "offset": QColor(p["accent_light"]),
             "msg_a": msg_a, "msg_b": msg_b, "selected": sel, "levels": levels,
             "border": QColor(p["border"])}
@@ -689,6 +696,13 @@ QFrame#StatusStrip {{
     border: 1px solid {brd};
     border-radius: 10px;
 }}
+/* Subsecciones del bloque del mapa (el mapa y el hexadecimal): el mismo
+   recuadro redondeado que el encabezado de información */
+QFrame#SubPanel {{
+    background: {bg1};
+    border: 1px solid {brd};
+    border-radius: 10px;
+}}
 QFrame#StatusStrip QLabel#StatusMono {{
     font-size: {font_size}px;     /* sigue el zoom de fuente (⌘ +/−) */
 }}
@@ -853,7 +867,7 @@ QLabel#Hint {{
 /* Visor hexadecimal: el volcado se pinta a mano (ver hex_colors); el árbol y
    la línea de detalle van en monoespaciada */
 QAbstractScrollArea#HexView {{
-    background: {bg_d};
+    background: transparent;        /* el fondo lo pinta el widget, con la opacidad del tema */
     border: none;
     border-radius: 6px;
 }}

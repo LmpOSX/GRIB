@@ -13,11 +13,12 @@ import traceback
 import numpy as np
 
 from PyQt6.QtWidgets import (
+    QSplitter,
     QMainWindow, QWidget, QVBoxLayout, QHBoxLayout, QPushButton, QFrame,
     QApplication, QMessageBox, QMenuBar, QFileDialog, QStatusBar, QScrollArea,
     QLabel, QComboBox,
 )
-from PyQt6.QtCore import QPoint, Qt, QEvent
+from PyQt6.QtCore import QPoint, Qt, QEvent, QTimer
 from PyQt6.QtGui import QKeySequence, QShortcut, QAction, QActionGroup, QCursor
 
 from .config import (
@@ -43,6 +44,8 @@ from . import working_area as wamod
 APP_TITLE = "Visor GRIB"
 GRIB_FILTER = "GRIB (*.grib2 *.grb2 *.grib *.grb);;Todos los archivos (*)"
 PANEL_WIDTH = 390
+MAP_MIN_WIDTH = 480             # el mapa nunca cede más que esto a los paneles
+HEX_SUB_MARGINS = 20            # márgenes laterales del recuadro del hexadecimal
 
 
 class MainWindow(QMainWindow):
@@ -108,7 +111,7 @@ class MainWindow(QMainWindow):
         hexb = getattr(self, "_hex", None)
         if hexb is not None:
             hexb.apply_theme(self._cfg)
-            self._hex_frame.setFixedWidth(hexb.preferred_width() + 24)
+            self._place_hex()
         p = generate_palette(self._cfg["accent_color"])
         # Fuentes del mapa escaladas con el zoom de fuente (13 = tamaño base)
         plot.set_font_scale(self._cfg.get("font_size", 13) / 13.0)
@@ -219,25 +222,17 @@ class MainWindow(QMainWindow):
         self.set_status("Listo.")
 
     def _build_main_area(self):
-        """Panel hexadecimal (izquierda, oculto por defecto), mapa (centro) y
-        panel de controles con inventario (derecha)."""
+        """Mapa (centro), panel de controles con inventario (derecha) y panel
+        hexadecimal (oculto por defecto): debajo del mapa si el panel lateral
+        está a la vista, a la izquierda del mapa si no (ver _place_hex)."""
         from matplotlib.backends.backend_qtagg import NavigationToolbar2QT
         from .wind_plot import WindPlot
         from .widgets.hex_browser import HexBrowser
 
-        # ── Panel hexadecimal, fijo: el ancho del volcado; el mapa cede el resto ──
-        hex_frame = QFrame()
-        hex_frame.setObjectName("GlassPanel")
-        hex_lay = QVBoxLayout(hex_frame)
-        hex_lay.setContentsMargins(12, 6, 12, 8)
-        self._hex = HexBrowser(cfg=self._cfg)
-        hex_lay.addWidget(self._hex)
-        self._hex_frame = hex_frame
-        self._hex_frame.setFixedWidth(self._hex.preferred_width() + 24)
-        self._hex_frame.setVisible(bool(self._cfg.get("hex_visible", False)))
-        self._main_lay.addWidget(hex_frame)
-
-        # ── Mapa ──
+        # ── Bloque del mapa: encabezado de información arriba y, debajo, el
+        # mapa y el hexadecimal (subsección del mismo bloque) repartidos por un
+        # separador: el hexadecimal debajo del mapa si el panel lateral está a
+        # la vista, a la derecha del mapa si no (ver _place_hex) ──
         map_frame = QFrame()
         map_frame.setObjectName("GlassPanel")
         map_lay = QVBoxLayout(map_frame)
@@ -245,13 +240,32 @@ class MainWindow(QMainWindow):
         map_lay.setSpacing(6)
         # STATUS pegado al mapa: describe lo que se ve
         map_lay.addWidget(self.panel.status)
-        self.plot = WindPlot(map_frame)
+        self._center = QSplitter(Qt.Orientation.Vertical)
+        self._center.setChildrenCollapsible(False)
+        map_lay.addWidget(self._center, 1)
+        map_body = QFrame()
+        map_body.setObjectName("SubPanel")
+        body_lay = QVBoxLayout(map_body)
+        body_lay.setContentsMargins(6, 6, 6, 6)
+        self.plot = WindPlot(map_body)
         self.plot.canvas.setFocusPolicy(Qt.FocusPolicy.ClickFocus)
-        map_lay.addWidget(self.plot.canvas, 1)
+        body_lay.addWidget(self.plot.canvas, 1)
+        map_body.setMinimumSize(MAP_MIN_WIDTH, 300)
+        self._map_body = map_body
+        self._center.addWidget(map_body)
+        hex_frame = QFrame()
+        hex_frame.setObjectName("SubPanel")
+        hex_lay = QVBoxLayout(hex_frame)
+        hex_lay.setContentsMargins(10, 6, 10, 8)
+        self._hex = HexBrowser(cfg=self._cfg)
+        hex_lay.addWidget(self._hex)
+        self._hex_frame = hex_frame
+        self._hex_frame.setVisible(bool(self._cfg.get("hex_visible", False)))
+        self._center.addWidget(hex_frame)
         # La toolbar de matplotlib implementa zoom/pan pero sus íconos negros
         # no se ven sobre fondo oscuro: queda oculta y se maneja con botones
         # propios en la barra de acciones.
-        self._toolbar = NavigationToolbar2QT(self.plot.canvas, map_frame)
+        self._toolbar = NavigationToolbar2QT(self.plot.canvas, map_body)
         self._toolbar.hide()
         # Sólo se usa su historial de vistas (Inicio); su manejador de
         # movimiento cambiaría el cursor que fija el pan por arrastre.
@@ -260,7 +274,15 @@ class MainWindow(QMainWindow):
         except Exception:
             pass
         self.plot.on_view_push = self._toolbar.push_current
+        # Mínimo propio del bloque (lo fija _place_hex): los rótulos del
+        # encabezado no imponen el ancho del mapa; si no, al mostrar el
+        # hexadecimal la ventana se agrandaba sola
+        map_frame.setMinimumSize(MAP_MIN_WIDTH, 300)
+        self._map_frame = map_frame
         self._main_lay.addWidget(map_frame, 1)
+        self._hex_place = None
+        self._hex_sized = False
+        self._place_hex()
 
         # ── Panel derecho, fijo (sólo el inventario se desplaza) ──
         side = QWidget()
@@ -287,6 +309,7 @@ class MainWindow(QMainWindow):
 
         # ── Señales del panel: cualquier cambio redibuja solo ──
         self._side.setVisible(bool(self._cfg.get("panel_visible", True)))
+        self._place_hex()
         self.panel.step_changed.connect(lambda _i: self.redraw())
         self.panel.level_changed.connect(self.redraw)
         self.panel.variable_changed.connect(lambda _m: self.redraw())
@@ -615,7 +638,14 @@ class MainWindow(QMainWindow):
         """Muestra u oculta el panel lateral; el mapa ocupa el ancho que
         queda. Se guarda en la configuración."""
         visible = bool(visible)
+        # El hexadecimal se muda antes de mostrar el lateral y después de
+        # ocultarlo: así nunca conviven el lateral y el hexadecimal a la
+        # izquierda, un estado cuyo ancho mínimo agrandaría la ventana.
+        if visible:
+            self._place_hex(below=True)
         self._side.setVisible(visible)
+        if not visible:
+            self._place_hex(below=False)
         for w in (self._btn_panel, self._act_panel):
             w.blockSignals(True)
             w.setChecked(visible)
@@ -624,19 +654,71 @@ class MainWindow(QMainWindow):
             self._cfg["panel_visible"] = visible
             save_config(self._cfg)
 
+    def _place_hex(self, below=None):
+        """Ubica el hexadecimal dentro del bloque del mapa, bajo el encabezado
+        de información: con el panel lateral a la vista, debajo del mapa (el
+        separador reparte el alto, 60/40); sin el panel lateral, a la derecha
+        del mapa, con el ancho que pide (árbol más volcado) pero nunca más
+        que el mapa. `below` fuerza la ubicación (si no, sigue al lateral).
+        El bloque del mapa fija su propio mínimo según la disposición, así la
+        ventana no se agranda sola."""
+        hexf = getattr(self, "_hex_frame", None)
+        if hexf is None or not hasattr(self, "_map_frame") or not hasattr(self, "_side"):
+            return
+        if below is None:
+            below = not self._side.isHidden()  # el flag explícito: vale también antes de mostrar la ventana
+        place = "below" if below else "right"
+        shown = bool(self._cfg.get("hex_visible", False))
+        hexf.setVisible(shown)
+        handle = self._center.handleWidth()
+        if place == "below":
+            self._center.setOrientation(Qt.Orientation.Vertical)
+            hexf.setMinimumHeight(0)
+            self._map_frame.setMinimumSize(MAP_MIN_WIDTH + 12,
+                                           (300 + self._hex.minimumSizeHint().height() + handle if shown else 300) + 60)
+        else:
+            self._center.setOrientation(Qt.Orientation.Horizontal)
+            hexf.setMinimumHeight(0)
+            self._map_frame.setMinimumSize(MAP_MIN_WIDTH + (self._hex.minimumWidth() + HEX_SUB_MARGINS + handle
+                                                            if shown else 0) + 12, 300 + 60)
+        if place != self._hex_place or shown and not self._hex_sized:
+            self._hex_place = place
+            self._size_hex()
+        self._hex.fit_tree()
+
+    def _size_hex(self):
+        """Reparte el separador del bloque del mapa: debajo, 60 % del alto al
+        mapa; a la derecha, el hexadecimal con su ancho preferido y como
+        mucho la mitad, el mapa con el resto. Si el separador todavía no
+        tiene tamaño (al arrancar), lo intenta de nuevo al pintarse."""
+        total = self._center.height() if self._hex_place == "below" else self._center.width()
+        if total < 200:
+            self._hex_sized = False
+            QTimer.singleShot(0, self._size_hex)
+            return
+        handle = self._center.handleWidth()
+        if self._hex_place == "below":
+            hex_sz = int(total * 0.4)
+        else:
+            # como mucho algo menos de la mitad: el mapa nunca queda más chico que el hexa
+            hex_sz = min(self._hex.preferred_width() + HEX_SUB_MARGINS, int((total - handle) * 0.48))
+        self._center.setSizes([total - handle - hex_sz, hex_sz])
+        self._hex_sized = True
+
     def set_hex_visible(self, visible: bool):
         """Muestra u oculta el panel hexadecimal a la izquierda del mapa; al
         mostrarlo carga el archivo abierto (y lo suelta al ocultarlo). Se
         guarda en la configuración."""
         visible = bool(visible)
-        self._hex_frame.setVisible(visible)
+        if self._cfg.get("hex_visible", False) != visible:
+            self._cfg["hex_visible"] = visible
+            save_config(self._cfg)
+        self._hex_sized = False
+        self._place_hex()
         for w in (self._btn_hex, self._act_hex):
             w.blockSignals(True)
             w.setChecked(visible)
             w.blockSignals(False)
-        if self._cfg.get("hex_visible", False) != visible:
-            self._cfg["hex_visible"] = visible
-            save_config(self._cfg)
         self._refresh_hex()
 
     def _refresh_hex(self):
@@ -648,6 +730,13 @@ class MainWindow(QMainWindow):
         path = self._path if self._path and os.path.isfile(self._path) else ""
         if path != self._hex.path():
             self._hex.load(path)
+            r = self._reader
+            if r is not None and hasattr(r, "backend") and getattr(r, "path", None) == path:
+                by_off = {int(m.offset): m for m in getattr(r, "messages", []) if m.offset is not None}
+                self._hex.set_values_provider(
+                    lambda off, _r=r, _m=by_off: _r.backend.read(_r.path, _m[off]) if off in _m else None)
+            else:
+                self._hex.set_values_provider(None)
 
     def _sync_view_menu(self):
         """Refleja en el menú Vista lo que muestra el panel."""
@@ -1681,6 +1770,54 @@ class MainWindow(QMainWindow):
         if fir_txt:
             self.set_status(fir_txt.splitlines()[0])
         self._show_point_popup(lat, lon, fir_txt, self.plot.canvas.mapFromGlobal(QCursor.pos()))
+        if lat is not None:
+            self._hex_goto_point(lat, lon)
+
+    def hex_target(self, lat, lon):
+        """(mensaje, k) del valor del archivo que muestra el mapa en ese punto:
+        el mensaje de la variable del panel (U del viento, T de la
+        temperatura) en el paso y la capa que se ve (en un FL interpolado,
+        la capa más cercana en ln(p)) y el índice del valor de la celda más
+        cercana en el orden del archivo. None si no hay archivo, el punto
+        cae fuera de la grilla o el archivo es de superficie."""
+        r = self._reader
+        if r is None or not r.steps or not r.levels or self.panel.level_mode not in ("fl", "p"):
+            return None
+        step_idx = max(0, min(self.panel.step_index(), len(r.steps) - 1))
+        res = r.point_query(step_idx, self._popup_fl(), lat, lon)
+        if res is None:
+            return None
+        if res["mode"] == "exact":
+            layer = res["value"]
+        elif res["lower"] is None or res["upper"] is None:
+            layer = res["lower"] or res["upper"]
+        else:
+            layer = res["upper"] if (res["w"] or 0.0) >= 0.5 else res["lower"]
+        if layer is None or layer.get("label") is None:
+            return None
+        var = "t" if self.panel.mode() == "temperatura" else "u"
+        msg = r.index.get((step_idx, var, layer["label"]))
+        if msg is None:
+            msg = next((r.index.get((step_idx, v, layer["label"])) for v in ("u", "v", "t")
+                        if r.index.get((step_idx, v, layer["label"])) is not None), None)
+        if msg is None:
+            return None
+        if hasattr(msg, "wdir"):            # U/V derivados de WDIR/WIND: el mensaje de la dirección
+            msg = msg.wdir
+        if getattr(msg, "offset", None) is None:
+            return None
+        return msg, r.cell_index(res["j"], res["i"])
+
+    def _hex_goto_point(self, lat, lon):
+        """Si el panel hexadecimal está a la vista, lo lleva a la celda del
+        archivo que corresponde al punto del mapa."""
+        if not self._hex_frame.isVisibleTo(self) or not self._hex.path():
+            return False
+        target = self.hex_target(lat, lon)
+        if target is None:
+            return False
+        msg, k = target
+        return self._hex.goto_cell(int(msg.offset), int(k))
 
     def _show_point_popup(self, lat, lon, fir_txt="", pos=None):
         """Arma y muestra la ficha: PUNTO editable con el paso y el FL que

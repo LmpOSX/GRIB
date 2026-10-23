@@ -27,6 +27,10 @@ class HexView(QAbstractScrollArea):
         self._metrics()
         self.setFocusPolicy(Qt.FocusPolicy.StrongFocus)
         self.viewport().setCursor(Qt.CursorShape.IBeamCursor)
+        # El fondo se pinta a mano con la opacidad del tema: sin relleno opaco
+        # del viewport, así se ve la ventana translúcida como en los demás paneles
+        self.viewport().setAutoFillBackground(False)
+        self.setAutoFillBackground(False)
 
     # ── Configuración ────────────────────────────────────────────────────
 
@@ -70,8 +74,9 @@ class HexView(QAbstractScrollArea):
         return QSize(self._width + 24, 480)
 
     def minimumSizeHint(self):
+        # Angosto: tiene barra horizontal. El ancho completo es sizeHint.
         from PyQt6.QtCore import QSize
-        return QSize(self._width + 24, 200)
+        return QSize(min(self._width + 24, 260), 80)
 
     def row_count(self):
         return (len(self._data) + BYTES_PER_ROW - 1) // BYTES_PER_ROW

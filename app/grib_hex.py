@@ -126,17 +126,18 @@ class Node:
     """Un tramo del archivo con nombre: mensaje, sección, campo o subcampo.
     `value` es el valor crudo (entero, float, bytes o None) y `text` su
     interpretación para mostrar."""
-    __slots__ = ("name", "offset", "size", "value", "text", "kind", "children", "parent")
+    __slots__ = ("name", "offset", "size", "value", "text", "kind", "children", "parent", "meta")
 
-    def __init__(self, name, offset, size, value=None, text="", kind="field", children=None):
+    def __init__(self, name, offset, size, value=None, text="", kind="field", children=None, meta=None):
         self.name = name
         self.offset = int(offset)
         self.size = int(size)
         self.value = value
         self.text = text
-        self.kind = kind
+        self.kind = kind            # message · section · field · data · row · cell
         self.children = children or []
         self.parent = None
+        self.meta = meta            # 'data': cómo decodificar las celdas; 'row'/'cell': su índice
         for c in self.children:
             c.parent = self
 
@@ -405,7 +406,7 @@ def _grid_latlon(data, p, sec, ctx):
     scan.add(Node("bit 3: orden", p + 71, 1, (sm >> 5) & 1, "consecutivos en j" if sm & 0x20 else "consecutivos en i"))
     scan.add(Node("bit 4: filas alternadas", p + 71, 1, (sm >> 4) & 1, "sí (bustrofedón)" if sm & 0x10 else "no"))
     sec.add(scan)
-    ctx["sec3"].update({"ni": ni, "nj": nj})
+    ctx["sec3"].update({"ni": ni, "nj": nj, "la1": la1, "lo1": lo1, "di": di, "dj": dj, "scan": sm})
 
 
 def _scaled_pair(name, data, p, unit):
@@ -574,6 +575,7 @@ def _section5(data, pos, length, sec, ctx):
 def _section6(data, pos, length, sec, ctx):
     ind = data[pos + 5]
     sec.add(Node("Indicador del mapa de bits", pos + 5, 1, ind, f"{ind} = {BITMAP.get(ind, 'predefinido por el centro')}"))
+    ctx["sec6"] = {"bitmap": ind != 255}
     if length > 6:
         sec.add(Node("Mapa de bits", pos + 6, length - 6, None, f"{length - 6} bytes, un bit por punto"))
 
@@ -583,7 +585,16 @@ def _section7(data, pos, length, sec, ctx):
     s5 = ctx.get("sec5") or {}
     tmpl = s5.get("template")
     txt = f"{n} bytes"
-    node = Node("Datos empaquetados", pos + 5, n, None, txt)
+    s3 = ctx.get("sec3") or {}
+    meta = {"template": tmpl, "start": pos + 5, "size": n, "nvals": s5.get("nvals", 0),
+            "bitmap": bool((ctx.get("sec6") or {}).get("bitmap"))}
+    for k in ("R", "E", "D", "bits", "precision"):
+        if k in s5:
+            meta[k] = s5[k]
+    for k in ("ni", "nj", "la1", "lo1", "di", "dj", "scan"):
+        if k in s3:
+            meta[k] = s3[k]
+    node = Node("Datos empaquetados", pos + 5, n, None, txt, kind="data", meta=meta)
     if tmpl == 0 and "bits" in s5:
         vals = decode_simple(data[pos + 5:pos + length], s5["R"], s5["E"], s5["D"], s5["bits"],
                              min(s5.get("nvals", 0), 8))
@@ -632,6 +643,179 @@ def decode_ieee(buf, precision, count):
         return []
     n = min(count, len(buf) // size)
     return [struct.unpack(fmt, buf[i * size:(i + 1) * size])[0] for i in range(n)]
+
+
+# ── Celdas de la sección 7 ────────────────────────────────────────────────
+# Los valores no forman un árbol pero se listan por demanda: filas de la
+# grilla (o tandas de 1024 valores si no hay grilla regular o hay mapa de
+# bits) y, dentro de cada fila, una celda por valor con su tramo de bytes y
+# su valor decodificado. Con empaquetado simple (5.0) e IEEE (5.4) cada
+# celda tiene un tramo propio; con los demás (complejo, JPEG, PNG) los
+# valores vienen en bloque: la celda abarca toda la sección y su valor sólo
+# se conoce si el que llama lo aporta (decodificado con ecCodes).
+
+CHUNK = 1024
+
+
+def _grid_ok(meta):
+    ni, nj = meta.get("ni"), meta.get("nj")
+    return bool(ni and nj and ni * nj == meta.get("nvals") and not meta.get("bitmap"))
+
+
+def cell_count(meta):
+    return int(meta.get("nvals") or 0)
+
+
+def cell_range(meta, k):
+    """(offset, size) de los bytes del valor `k`; con empaquetado en bloque,
+    toda la sección; con campo constante (0 bits), un tramo vacío."""
+    start, size, tmpl = meta["start"], meta["size"], meta.get("template")
+    if tmpl == 0 and "bits" in meta:
+        bits = meta["bits"]
+        if bits == 0:
+            return start, 0
+        b0 = k * bits
+        b1 = b0 + bits - 1
+        lo, hi = b0 >> 3, b1 >> 3
+        if lo >= size:
+            return start + size, 0
+        return start + lo, min(hi, size - 1) - lo + 1
+    if tmpl == 4:
+        sz = 8 if meta.get("precision") == 2 else 4
+        return start + k * sz, sz
+    return start, size
+
+
+def cell_at(meta, pos):
+    """Índice del valor cuyos bytes contienen `pos`, o None si el
+    empaquetado no asigna bytes a cada valor."""
+    start, size, tmpl = meta["start"], meta["size"], meta.get("template")
+    if pos < start or pos >= start + size:
+        return None
+    if tmpl == 0 and meta.get("bits"):
+        return min(((pos - start) * 8) // meta["bits"], max(0, cell_count(meta) - 1))
+    if tmpl == 4:
+        sz = 8 if meta.get("precision") == 2 else 4
+        return min((pos - start) // sz, max(0, cell_count(meta) - 1))
+    return None
+
+
+def cell_value(data, meta, k):
+    """Valor decodificado del valor `k` (simple o IEEE), o None."""
+    tmpl = meta.get("template")
+    if tmpl == 0 and "bits" in meta:
+        R, E, D, bits = meta["R"], meta["E"], meta["D"], meta["bits"]
+        if bits == 0:
+            return R / (10.0 ** D)
+        off, size = cell_range(meta, k)
+        if size == 0:
+            return None
+        chunk = int.from_bytes(bytes(data[off:off + size]), "big")
+        shift = size * 8 - ((k * bits) & 7) - bits
+        x = (chunk >> shift) & ((1 << bits) - 1)
+        return (R + x * (2.0 ** E)) / (10.0 ** D)
+    if tmpl == 4:
+        off, size = cell_range(meta, k)
+        if off + size > meta["start"] + meta["size"]:
+            return None
+        return struct.unpack(">d" if size == 8 else ">f", bytes(data[off:off + size]))[0]
+    return None
+
+
+def cell_grid(meta, k):
+    """(j, i) del valor `k` en la grilla, o None si no hay grilla regular."""
+    if not _grid_ok(meta):
+        return None
+    return divmod(int(k), int(meta["ni"]))
+
+
+def cell_latlon(meta, j, i):
+    """(lat, lon) en grados de la celda (j, i), según La1/Lo1, Di/Dj y el
+    modo de barrido; lon en −180…180."""
+    scan = meta.get("scan", 0)
+    la1, lo1 = meta["la1"] / 1e6, meta["lo1"] / 1e6
+    dj, di = meta["dj"] / 1e6, meta["di"] / 1e6
+    lat = la1 + (j * dj if scan & 0x40 else -j * dj)
+    lon = lo1 + (-i * di if scan & 0x80 else i * di)
+    lon = ((lon + 180.0) % 360.0) - 180.0
+    return lat, lon
+
+
+def _fmt_latlon(lat, lon):
+    return (f"{abs(lat):.3f}°{'S' if lat < 0 else 'N'} "
+            f"{abs(lon):.3f}°{'W' if lon < 0 else 'E'}")
+
+
+def _span(meta, k0, k1):
+    """Tramo de bytes que cubre los valores k0…k1."""
+    o0, s0 = cell_range(meta, k0)
+    o1, s1 = cell_range(meta, k1)
+    return o0, max(o1 + s1, o0 + s0) - o0
+
+
+def data_rows(node):
+    """Filas del nodo de datos: una por fila de la grilla (j), o tandas de
+    CHUNK valores. No las cuelga del nodo: lo hace quien las muestra."""
+    meta = node.meta or {}
+    n = cell_count(meta)
+    rows = []
+    if _grid_ok(meta):
+        ni, nj = meta["ni"], meta["nj"]
+        for j in range(nj):
+            k0, k1 = j * ni, j * ni + ni - 1
+            off, size = _span(meta, k0, k1)
+            lat, _lon = cell_latlon(meta, j, 0)
+            rows.append(Node(f"Fila j={j} · lat {abs(lat):.3f}°{'S' if lat < 0 else 'N'}", off, size,
+                             None, f"{ni} valores, i=0…{ni - 1}", kind="row",
+                             meta={"row": j, "k0": k0, "count": ni}))
+    else:
+        for r, k0 in enumerate(range(0, n, CHUNK)):
+            k1 = min(n, k0 + CHUNK) - 1
+            off, size = _span(meta, k0, k1)
+            rows.append(Node(f"Valores {k0}…{k1}", off, size, None, f"{k1 - k0 + 1} valores", kind="row",
+                             meta={"row": r, "k0": k0, "count": k1 - k0 + 1}))
+    return rows
+
+
+def row_of(node, k):
+    """Índice de la fila (en data_rows) que contiene el valor `k`."""
+    meta = node.meta or {}
+    if _grid_ok(meta):
+        return int(k) // int(meta["ni"])
+    return int(k) // CHUNK
+
+
+def row_cells(data, node, row, values=None):
+    """Celdas de una fila: nombre con la celda ([j, i] y lat/lon, o el índice
+    del valor), tramo de bytes y valor decodificado. `values` (vector de
+    valores en el orden del archivo, p. ej. de ecCodes) suple el valor
+    cuando el empaquetado no se decodifica acá."""
+    meta = node.meta or {}
+    rm = row.meta or {}
+    k0, count = rm["k0"], rm["count"]
+    grid = _grid_ok(meta)
+    block = meta.get("template") not in (0, 4)
+    out = []
+    for k in range(k0, k0 + count):
+        off, size = cell_range(meta, k)
+        v = cell_value(data, meta, k)
+        if v is None and values is not None and k < len(values):
+            v = float(values[k])
+        if grid:
+            j, i = divmod(k, meta["ni"])
+            name = f"[{j}, {i}] {_fmt_latlon(*cell_latlon(meta, j, i))}"
+        else:
+            name = f"Valor {k}"
+        if v is None:
+            txt = "se decodifica con ecCodes"
+        else:
+            txt = _fmt_val(v)
+            if block:
+                txt += " (en bloque: sin tramo propio)"
+            elif size == 0:
+                txt += " (campo constante: = R)"
+        out.append(Node(name, off, size, v, txt, kind="cell", meta={"k": k}))
+    return out
 
 
 # ── Búsqueda ──────────────────────────────────────────────────────────────

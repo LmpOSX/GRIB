@@ -553,6 +553,16 @@ class GribReader:
             return None
         return j, i
 
+    def cell_index(self, j, i):
+        """Índice, en el vector de valores del mensaje (orden del archivo),
+        de la celda (j, i) de la grilla orientada (latitudes y longitudes
+        ascendentes): deshace la inversión de filas y el reordenamiento de
+        columnas de normalize_grid."""
+        nj, ni = int(self.grid["nj"]), int(self.grid["ni"])
+        jo = nj - 1 - int(j) if self._flip_lat else int(j)
+        io = int(self._lon_order[int(i)])
+        return jo * ni + io
+
     def _layer_at(self, step_idx, p_true, label, j, i):
         """Valores de un nivel del archivo en el punto (j, i)."""
         d = {"p": float(p_true), "label": float(label), "fl": self.fl_of_level(label),

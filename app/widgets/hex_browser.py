@@ -1,9 +1,14 @@
 # -*- coding: utf-8 -*-
 """Visor hexadecimal: el archivo abierto como un `hexdump -C` y su estructura
-en árbol (mensaje → sección → campo → subcampo). Va como panel fijo a la
-izquierda del mapa (botón `0x` de la barra de acciones, Vista ▸ Panel
-hexadecimal, Ctrl+Shift+H): el árbol arriba y el volcado abajo, con un
-separador entre los dos.
+en árbol (mensaje → sección → campo → subcampo), el árbol a la izquierda y
+el volcado a la derecha. Va como panel del mapa (botón `0x` de la barra de
+acciones, Vista ▸ Panel hexadecimal, Ctrl+Shift+H): debajo del mapa si el
+panel lateral está a la vista, a la izquierda del mapa si no.
+
+Los valores de la sección 7 no forman un árbol pero se listan por demanda:
+filas de la grilla y, dentro, una celda por valor con su tramo de bytes y
+su valor decodificado (ver grib_hex.data_rows / row_cells). `goto_cell`
+salta a la celda de un mensaje (el clic en el mapa lo usa).
 
 Cada nivel del árbol tiene un color (el cuadrito junto al nombre); al elegir
 un nodo se pinta en el volcado toda su ruta, cada tramo con el color de su
@@ -28,6 +33,8 @@ from .. import grib_hex as gh
 from ..theme import hex_colors
 
 _ROLE_NODE = Qt.ItemDataRole.UserRole
+TREE_MIN_WIDTH = 440        # ancho del árbol cuando el panel va a la izquierda del mapa
+TREE_FLOOR = 300            # mínimo del árbol: debajo del mapa cede antes que el volcado
 
 
 class HexBrowser(QWidget):
@@ -45,6 +52,7 @@ class HexBrowser(QWidget):
         self._items = {}            # id(node) → item
         self._trees = {}            # índice de mensaje → Node raíz
         self._level_icons = []      # cuadrito del color de cada nivel, para el árbol
+        self._values_provider = None    # offset de mensaje → vector de valores (ecCodes)
         self._build_ui()
         self.apply_theme()
 
@@ -61,6 +69,7 @@ class HexBrowser(QWidget):
             self._data = self._open(path)
         self._messages = gh.scan_messages(self._data)
         self._starts = [o for o, _s in self._messages]
+        self._by_offset = {o: i for i, (o, _s) in enumerate(self._messages)}
         self._fill_messages()
 
     def clear(self):
@@ -72,6 +81,7 @@ class HexBrowser(QWidget):
         self._trees.clear()
         self._messages = []
         self._starts = []
+        self._by_offset = {}
         self._data = b""
         self._path = ""
         try:
@@ -87,6 +97,12 @@ class HexBrowser(QWidget):
 
     def path(self):
         return self._path
+
+    def set_values_provider(self, fn):
+        """`fn(offset_del_mensaje)` → vector de valores en el orden del
+        archivo (o None): con él las celdas de un empaquetado en bloque
+        (complejo, JPEG, PNG) muestran su valor."""
+        self._values_provider = fn
 
     def _open(self, path):
         self._fh = open(path, "rb")
@@ -115,7 +131,7 @@ class HexBrowser(QWidget):
         head.addWidget(self.lbl_info)
         lay.addLayout(head)
 
-        self.split = QSplitter(Qt.Orientation.Vertical)
+        self.split = QSplitter(Qt.Orientation.Horizontal)
         self.tree = QTreeWidget()
         self.tree.setObjectName("HexTree")
         self.tree.setColumnCount(3)
@@ -124,6 +140,8 @@ class HexBrowser(QWidget):
         self.tree.setSelectionMode(QAbstractItemView.SelectionMode.SingleSelection)
         self.tree.setUniformRowHeights(True)
         self.tree.setIconSize(QSize(12, 12))
+        self.tree.setMinimumWidth(TREE_FLOOR)
+        self.tree.setMinimumHeight(60)
         hh = self.tree.header()
         hh.setSectionResizeMode(0, QHeaderView.ResizeMode.ResizeToContents)
         hh.setSectionResizeMode(1, QHeaderView.ResizeMode.Stretch)
@@ -134,8 +152,10 @@ class HexBrowser(QWidget):
         self.hex = HexView()
         self.hex.byte_clicked.connect(self.select_byte)
         self.split.addWidget(self.hex)
-        self.split.setStretchFactor(0, 1)
-        self.split.setStretchFactor(1, 1)
+        self.split.setStretchFactor(0, 1)       # el árbol toma el ancho que sobra
+        self.split.setStretchFactor(1, 0)
+        self.split.setCollapsible(0, False)
+        self.split.setCollapsible(1, False)
         lay.addWidget(self.split, 1)
 
         self.lbl_detail = QLabel("Sin archivo.")
@@ -163,17 +183,27 @@ class HexBrowser(QWidget):
         del árbol se rehacen con los colores nuevos."""
         if cfg is not None:
             self._cfg = cfg
-        colors = hex_colors(self._cfg.get("accent_color", "#4a90d9"))
+        colors = hex_colors(self._cfg.get("accent_color", "#4a90d9"), self._cfg.get("opacity", 180))
         self.hex.set_colors(colors)
         self.hex.set_font_size(max(9, int(self._cfg.get("font_size", 13)) - 1))
         self._level_icons = [self._swatch(c) for c in colors["levels"]]
         for i in range(self.tree.topLevelItemCount()):
             self._recolor(self.tree.topLevelItem(i), 0)
-        self.setMinimumWidth(self.hex.minimumSizeHint().width())
+        self.setMinimumWidth(TREE_FLOOR + self.hex.minimumSizeHint().width() + self.split.handleWidth())
+        self.updateGeometry()
+        self.fit_tree()
+
+    def fit_tree(self):
+        """El volcado con su ancho justo y el árbol con todo lo que sobra."""
+        self.split.setSizes([10 ** 6, self.hex.sizeHint().width()])
 
     def preferred_width(self):
-        """Ancho del volcado (posición · 16 bytes · ASCII) sin cortar."""
-        return self.hex.minimumSizeHint().width()
+        """Ancho para que entren el árbol y el volcado (posición · 16 bytes ·
+        ASCII) sin cortar."""
+        return TREE_MIN_WIDTH + self.hex.sizeHint().width() + self.split.handleWidth()
+
+    def sizeHint(self):
+        return QSize(self.preferred_width(), 420)
 
     def _recolor(self, item, level):
         item.setIcon(0, self.level_icon(level))
@@ -241,13 +271,63 @@ class HexBrowser(QWidget):
         it.setIcon(0, self.level_icon(level))
         self._nodes[id(it)] = node
         self._items[id(node)] = it
+        if node.kind in ("data", "row") and not node.children:
+            it.setChildIndicatorPolicy(QTreeWidgetItem.ChildIndicatorPolicy.ShowIndicator)
         for c in node.children:
             self._add_item(it, c, level + 1)
         return it
 
+    def _level_of(self, item):
+        n = 0
+        while item.parent() is not None:
+            item = item.parent()
+            n += 1
+        return n
+
+    def _ensure_rows(self, item):
+        """Cuelga las filas de un nodo de datos (una sola vez)."""
+        node = self._nodes.get(id(item))
+        if node is None or node.kind != "data" or node.children:
+            return node
+        level = self._level_of(item) + 1
+        for r in gh.data_rows(node):
+            node.add(r)
+            self._add_item(item, r, level)
+        it = item
+        it.setChildIndicatorPolicy(QTreeWidgetItem.ChildIndicatorPolicy.DontShowIndicatorWhenChildless)
+        return node
+
+    def _ensure_cells(self, item):
+        """Cuelga las celdas de una fila (una sola vez)."""
+        row = self._nodes.get(id(item))
+        if row is None or row.kind != "row" or row.children:
+            return row
+        data_node = row.parent
+        values = None
+        if self._values_provider is not None and (data_node.meta or {}).get("template") not in (0, 4):
+            msg = gh.path_of(data_node)[0]
+            try:
+                values = self._values_provider(msg.offset)
+            except Exception:
+                values = None
+        level = self._level_of(item) + 1
+        for c in gh.row_cells(self._data, data_node, row, values):
+            row.add(c)
+            self._add_item(item, c, level)
+        item.setChildIndicatorPolicy(QTreeWidgetItem.ChildIndicatorPolicy.DontShowIndicatorWhenChildless)
+        return row
+
     def _on_expanded(self, item):
         if item.parent() is None:
             self._ensure_parsed(item.data(0, _ROLE_NODE))
+            return
+        node = self._nodes.get(id(item))
+        if node is None:
+            return
+        if node.kind == "data":
+            self._ensure_rows(item)
+        elif node.kind == "row":
+            self._ensure_cells(item)
 
     def node_of(self, item):
         if item is None:
@@ -291,11 +371,62 @@ class HexBrowser(QWidget):
             return
         root = self._ensure_parsed(i)
         node = gh.find_at(root, pos) or root
+        if node.kind == "data":
+            k = gh.cell_at(node.meta or {}, pos)
+            if k is not None:
+                self._select_cell(node, k)
+                return
         it = self._items.get(id(node))
         if it is None:
             return
         self.tree.setCurrentItem(it)
         self.tree.scrollToItem(it)
+
+    def _data_node(self, root):
+        for sec in root.children:
+            for c in sec.children:
+                if c.kind == "data":
+                    return c
+        return None
+
+    def _select_cell(self, data_node, k):
+        """Abre filas y celdas hasta el valor `k` del nodo de datos y lo elige."""
+        it = self._items.get(id(data_node))
+        if it is None or k < 0 or k >= gh.cell_count(data_node.meta or {}):
+            return False
+        self._ensure_rows(it)
+        r = gh.row_of(data_node, k)
+        if r >= len(data_node.children):
+            return False
+        row = data_node.children[r]
+        rit = self._items[id(row)]
+        self._ensure_cells(rit)
+        cell = row.children[k - row.meta["k0"]]
+        cit = self._items[id(cell)]
+        it.setExpanded(True)
+        rit.setExpanded(True)
+        self.tree.setCurrentItem(cit)
+        self.tree.scrollToItem(cit)
+        return True
+
+    def goto_cell(self, msg_offset, k):
+        """Elige el valor `k` (en el orden del archivo) del mensaje que
+        empieza en `msg_offset`; si no hay celdas, la sección de datos.
+        Devuelve True si pudo."""
+        i = self._by_offset.get(int(msg_offset))
+        if i is None:
+            return False
+        root = self._ensure_parsed(i)
+        data_node = self._data_node(root)
+        if data_node is None:
+            self.tree.setCurrentItem(self.tree.topLevelItem(i))
+            return False
+        if self._select_cell(data_node, int(k)):
+            return True
+        it = self._items.get(id(data_node))
+        self.tree.setCurrentItem(it)
+        self.tree.scrollToItem(it)
+        return False
 
     def _goto(self):
         txt = self.ed_goto.text().strip().lower()

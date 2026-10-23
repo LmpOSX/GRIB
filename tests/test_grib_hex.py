@@ -7,6 +7,7 @@ import unittest
 
 os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
 from PyQt6.QtWidgets import QApplication  # noqa: E402
+from PyQt6.QtGui import QColor  # noqa: E402
 
 from app import config  # noqa: E402
 from app import grib_hex as gh  # noqa: E402
@@ -35,6 +36,72 @@ def _field(sec, name):
 
 @unittest.skipIf(ec is None, "sin eccodes")
 class TestAnalisis(unittest.TestCase):
+    def test_celdas_de_la_seccion_7(self):
+        """Los valores se listan por filas de la grilla y celda por celda, con
+        el tramo de bytes y el valor decodificado iguales a los de ecCodes."""
+        data = _grib([850], steps=(6,), variables=("u",), ni=7, nj=3, lat0=-20.0, lon0=290.0, dx=0.5)
+        m = gh.parse_message(data, 0, 0, 1)
+        d = next(c for c in _section(m, 7).children if c.kind == "data")
+        self.assertEqual(d.meta["template"], 0)
+        self.assertEqual((d.meta["ni"], d.meta["nj"], d.meta["nvals"]), (7, 3, 21))
+        rows = gh.data_rows(d)
+        self.assertEqual([r.name for r in rows][:2], ["Fila j=0 · lat 20.000°S", "Fila j=1 · lat 20.500°S"])
+        self.assertEqual(sum(r.size for r in rows), d.size)          # las filas cubren los datos
+        gid = ec.codes_new_from_message(data)
+        try:
+            vals = ec.codes_get_double_array(gid, "values")
+            lats = ec.codes_get_double_array(gid, "latitudes")
+            lons = ec.codes_get_double_array(gid, "longitudes")
+        finally:
+            ec.codes_release(gid)
+        cells = gh.row_cells(data, d, rows[1])
+        self.assertEqual(len(cells), 7)
+        for c in cells:
+            k = c.meta["k"]
+            self.assertAlmostEqual(c.value, vals[k], places=3)
+            j, i = gh.cell_grid(d.meta, k)
+            lat, lon = gh.cell_latlon(d.meta, j, i)
+            self.assertAlmostEqual(lat, lats[k], places=6)
+            self.assertAlmostEqual(((lon + 180) % 360) - 180, ((lons[k] + 180) % 360) - 180, places=6)
+            self.assertTrue(c.name.startswith(f"[{j}, {i}] "))
+            # el tramo de la celda contiene sus bits y se invierte con cell_at
+            self.assertEqual(gh.cell_at(d.meta, c.offset), k)
+            self.assertEqual(gh.cell_at(d.meta, c.offset + c.size - 1), k)
+            self.assertEqual(gh.row_of(d, k), 1)
+        self.assertEqual(gh.cell_at(d.meta, d.offset - 1), None)
+        self.assertEqual(gh.cell_range(d.meta, 20)[0] + gh.cell_range(d.meta, 20)[1], d.end)
+
+    def test_celdas_ieee_y_en_bloque(self):
+        """Con empaquetado IEEE cada celda son 4 bytes; con empaquetado
+        complejo no hay tramo propio y el valor lo aporta quien llama."""
+        from app import grib_encode as ge
+        data = _grib([850], steps=(6,), variables=("t",), ni=4, nj=2)
+        ieee, _info = ge.recode(data, {"packing": "ieee"}, labeled=False)
+        m = gh.parse_message(ieee, 0, 0, 1)
+        d = next(c for c in _section(m, 7).children if c.kind == "data")
+        self.assertEqual(d.meta["template"], 4)
+        cells = gh.row_cells(ieee, d, gh.data_rows(d)[1])
+        self.assertEqual([c.size for c in cells], [4] * 4)
+        self.assertEqual(cells[0].offset, d.offset + 4 * 4)
+        gid = ec.codes_new_from_message(data)
+        try:
+            vals = ec.codes_get_double_array(gid, "values")
+            ec.codes_set(gid, "packingType", "grid_complex")
+            ec.codes_set_double_array(gid, "values", vals)
+            cplx = ec.codes_get_message(gid)
+        finally:
+            ec.codes_release(gid)
+        m = gh.parse_message(cplx, 0, 0, 1)
+        d = next(c for c in _section(m, 7).children if c.kind == "data")
+        self.assertEqual(d.meta["template"], 2)
+        row = gh.data_rows(d)[0]
+        cells = gh.row_cells(cplx, d, row)
+        self.assertEqual((cells[1].offset, cells[1].size), (d.offset, d.size))
+        self.assertIn("ecCodes", cells[1].text)
+        cells = gh.row_cells(cplx, d, row, values=vals)
+        self.assertAlmostEqual(cells[1].value, vals[1], places=6)
+        self.assertIn("en bloque", cells[1].text)
+
     def test_mensajes_y_secciones(self):
         data = _grib([850, 500], steps=(6,))
         msgs = gh.scan_messages(data)
@@ -149,6 +216,39 @@ class TestVisor(unittest.TestCase):
         _app.processEvents()
         config.CONFIG_PATH = self._old
         self._tmp.cleanup()
+
+    def test_celdas_por_demanda_y_salto(self):
+        w = self.w
+        it = w.tree.topLevelItem(2)
+        it.setExpanded(True)
+        sec7 = next(it.child(k) for k in range(it.childCount()) if it.child(k).text(0).startswith("Sección 7"))
+        dat = next(sec7.child(k) for k in range(sec7.childCount()) if sec7.child(k).text(0) == "Datos empaquetados")
+        self.assertEqual(dat.childCount(), 0)                    # las filas se cuelgan al abrir
+        dat.setExpanded(True)
+        _app.processEvents()
+        self.assertEqual(dat.childCount(), 4)                    # nj = 4 filas
+        row = dat.child(2)
+        self.assertEqual(row.childCount(), 0)
+        row.setExpanded(True)
+        _app.processEvents()
+        self.assertEqual(row.childCount(), 5)                    # ni = 5 celdas
+        self.assertTrue(row.child(0).text(0).startswith("[2, 0] "))
+        # goto_cell elige la celda k del mensaje (fila 3, columna 1 → k = 16)
+        off = w._messages[2][0]
+        self.assertTrue(w.goto_cell(off, 16))
+        node = w.current_node()
+        self.assertEqual(node.kind, "cell")
+        self.assertEqual(node.meta["k"], 16)
+        self.assertTrue(node.name.startswith("[3, 1] "))
+        self.assertEqual([k for _o, _s, k in w.hex.path()], [0, 1, 2, 3, 4])
+        self.assertEqual(w.hex.selection(), (node.offset, node.size))
+        # Un clic sobre un byte de la sección 7 cae en su celda
+        w.select_byte(node.offset)
+        self.assertIs(w.current_node(), node)
+        # Otro mensaje, celda 0, y un offset que no es de un mensaje
+        self.assertTrue(w.goto_cell(w._messages[5][0], 0))
+        self.assertEqual(w.current_node().meta["k"], 0)
+        self.assertFalse(w.goto_cell(12345, 0))
 
     def test_cargar_y_vaciar(self):
         w = self.w
@@ -274,6 +374,20 @@ class TestVisor(unittest.TestCase):
         self.assertEqual(len(c["levels"]), 8)
         self.assertEqual(len({x.name() for x in c["levels"]}), 8)
         self.assertIsNotNone(self.w.hex._colors)
+        # Los niveles quedan en la familia del acento (tono a ±45°) y dos
+        # seguidos difieren en luminosidad; el marco es el acento claro
+        h0 = QColor("#4a90d9").getHsl()[0]
+        for x in c["levels"]:
+            dh = abs(x.getHsl()[0] - h0) % 360
+            self.assertLessEqual(min(dh, 360 - dh), 45)
+        lums = [x.getHsl()[2] for x in c["levels"][:4]]
+        for a, b in zip(lums, lums[1:]):
+            self.assertGreaterEqual(abs(a - b), 20)
+        # El fondo lleva la opacidad del tema (como el área de datos del stylesheet)
+        self.assertEqual(hex_colors("#4a90d9", 180)["bg"].alpha(), 160)
+        self.assertEqual(hex_colors("#4a90d9", 255)["bg"].alpha(), 235)
+        self.assertEqual(hex_colors("#4a90d9", 10)["bg"].alpha(), 2)
+        self.assertFalse(self.w.hex.viewport().autoFillBackground())
 
 
 class TestPanelEnLaVentana(unittest.TestCase):
@@ -316,9 +430,8 @@ class TestPanelEnLaVentana(unittest.TestCase):
         self.assertEqual(w._hex.path(), self.path)
         self.assertEqual(w._hex.tree.topLevelItemCount(), 6)
         self.assertTrue(config.load_config().get("hex_visible"))
-        # Ocupa un ancho fijo (el del volcado) y el mapa cede el resto
-        self.assertEqual(w._hex_frame.width(), w._hex_frame.minimumWidth())
-        self.assertEqual(w._hex_frame.width(), w._hex.preferred_width() + 24)
+        # Con el panel lateral a la vista va debajo del mapa (ver test_ubicacion…)
+        self.assertIs(w._center.widget(1), w._hex_frame)
         # Cerrar el archivo lo vacía; al ocultar el panel se suelta el archivo
         w._file_close()
         self.assertEqual(w._hex.path(), "")
@@ -330,6 +443,124 @@ class TestPanelEnLaVentana(unittest.TestCase):
         self.assertFalse(w._btn_hex.isChecked())
         self.assertEqual(w._hex.path(), "")
         self.assertFalse(config.load_config().get("hex_visible"))
+
+    def test_ubicacion_segun_el_panel_lateral(self):
+        """El hexadecimal es una subsección del bloque del mapa, bajo el
+        encabezado: debajo del mapa con el panel lateral a la vista, a la
+        derecha del mapa sin él, y nunca más ancho que el mapa."""
+        from PyQt6.QtCore import Qt
+        w = self.w
+        from app.grib_reader import GribReader
+        w.resize(1600, 1000)
+        w.load_reader(GribReader(self.path), self.path)
+        w.set_hex_visible(True)
+        _app.processEvents()
+        # Dentro del bloque del mapa, bajo el encabezado, en el separador central
+        self.assertIs(w._center.parent(), w._map_frame)
+        self.assertIs(w._center.widget(0), w._map_body)
+        self.assertIs(w._center.widget(1), w._hex_frame)
+        self.assertLess(w.panel.status.geometry().bottom(), w._center.geometry().top())
+        self.assertEqual(w._main_lay.indexOf(w._hex_frame), -1)
+        # Panel lateral a la vista: debajo del mapa, con el mapa más alto que el hexa
+        self.assertTrue(w._side.isVisibleTo(w))
+        self.assertEqual(w._center.orientation(), Qt.Orientation.Vertical)
+        self.assertGreater(w._map_body.height(), w._hex_frame.height())
+        self.assertGreater(w._hex_frame.height(), 200)
+        # El separador baja hasta dejar el hexa chico (y sube hasta el mínimo del mapa)
+        total = sum(w._center.sizes())
+        w._center.setSizes([total - 100, 100])
+        _app.processEvents()
+        self.assertLessEqual(w._hex_frame.height(), 200)
+        w._center.setSizes([100, total - 100])
+        _app.processEvents()
+        self.assertGreaterEqual(w._map_body.height(), 300)
+        self.assertLess(w._map_body.height(), 400)
+        # Sin panel lateral: a la derecha del mapa, bajo el mismo encabezado; el
+        # mapa a la izquierda, con al menos tanto ancho como el hexadecimal
+        w.set_panel_visible(False)
+        _app.processEvents()
+        self.assertEqual(w._center.orientation(), Qt.Orientation.Horizontal)
+        self.assertIs(w._center.widget(0), w._map_body)
+        self.assertIs(w._center.widget(1), w._hex_frame)
+        self.assertLess(w._map_body.geometry().right(), w._hex_frame.geometry().left())
+        self.assertGreaterEqual(w._map_body.width(), w._hex_frame.width())
+        self.assertGreaterEqual(w._hex_frame.width(), w._hex.minimumWidth())
+        self.assertEqual(w.width(), 1600)
+        # Con ventana ancha el hexadecimal toma su ancho preferido (árbol + volcado entero)
+        w.resize(3000, 1000)
+        w.set_hex_visible(False)
+        w.set_hex_visible(True)
+        _app.processEvents()
+        self.assertEqual(w._hex_frame.width(), w._hex.preferred_width() + 20)
+        self.assertEqual(w._hex_frame.objectName(), "SubPanel")
+        self.assertEqual(w._map_body.objectName(), "SubPanel")
+        self.assertGreaterEqual(w._map_body.width(), w._hex_frame.width())
+        # El árbol queda a la izquierda y el volcado a la derecha
+        self.assertIs(w._hex.split.widget(0), w._hex.tree)
+        self.assertIs(w._hex.split.widget(1), w._hex.hex)
+        # Vuelve el panel lateral: el hexadecimal vuelve abajo
+        w.set_panel_visible(True)
+        _app.processEvents()
+        self.assertEqual(w._center.orientation(), Qt.Orientation.Vertical)
+        self.assertIs(w._center.widget(1), w._hex_frame)
+
+    def test_alternar_paneles_no_agranda_ni_aleja(self):
+        """Mostrar y ocultar el lateral y el hexadecimal en cualquier orden
+        deja la ventana del mismo ancho y el mapa con la misma escala; al
+        volver a la disposición inicial, el mismo encuadre."""
+        w = self.w
+        from app.grib_reader import GribReader
+        w.resize(1600, 1000)
+        w.load_reader(GribReader(self.path), self.path)
+        _app.processEvents()
+        w.plot.zoom_center(0.5)
+        _app.processEvents()
+        ext0 = w.plot.get_extent()
+        scale0 = w.plot.ax.bbox.width / (ext0[1] - ext0[0])
+        seq = [("hex", True), ("side", False), ("hex", False), ("side", True),
+               ("hex", True), ("side", False), ("side", True), ("hex", False)]
+        for what, on in seq:
+            (w.set_hex_visible if what == "hex" else w.set_panel_visible)(on)
+            _app.processEvents()
+            self.assertEqual(w.width(), 1600, (what, on))
+            ext = w.plot.get_extent()
+            self.assertAlmostEqual(w.plot.ax.bbox.width / (ext[1] - ext[0]), scale0, delta=0.5, msg=(what, on))
+            self.assertLess(w.minimumSizeHint().width(), 1400, (what, on))
+        for a, b in zip(w.plot.get_extent(), ext0):
+            self.assertAlmostEqual(a, b, places=2)
+
+    def test_clic_en_el_mapa_va_a_la_celda(self):
+        w = self.w
+        from app.grib_reader import GribReader
+        r = GribReader(self.path)
+        w.load_reader(r, self.path)
+        w.set_hex_visible(True)
+        _app.processEvents()
+        # Punto de la grilla (lat 8, lon −77): celda j, i del lector y su índice en el archivo
+        j, i = r.grid_index(8.0, -77.0)
+        step_idx = w.panel.step_index()
+        target = w.hex_target(8.0, -77.0)
+        self.assertIsNotNone(target)
+        msg, k = target
+        self.assertEqual(k, r.cell_index(j, i))
+        self.assertEqual(msg.var, "u")                           # modo viento → U
+        self.assertTrue(w._hex_goto_point(8.0, -77.0))
+        node = w._hex.current_node()
+        self.assertEqual(node.kind, "cell")
+        self.assertEqual(node.meta["k"], k)
+        # El valor de la celda es el que el mapa muestra en ese punto
+        layer = r.point_query(step_idx, w._popup_fl(), 8.0, -77.0)
+        field = r.get_field(step_idx, "u", msg.level_hpa)
+        self.assertAlmostEqual(node.value, float(field[j, i]), places=3)
+        self.assertEqual(r.backend.read(self.path, msg)[k], float(field[j, i]))
+        self.assertIn("°", node.name)
+        # Modo temperatura → mensaje de T; fuera de la grilla → nada
+        w.panel.set_mode("temperatura")
+        self.assertEqual(w.hex_target(8.0, -77.0)[0].var, "t")
+        self.assertIsNone(w.hex_target(-60.0, 100.0))
+        # Con el panel oculto no se mueve nada
+        w.set_hex_visible(False)
+        self.assertFalse(w._hex_goto_point(8.0, -77.0))
 
 
 if __name__ == "__main__":
