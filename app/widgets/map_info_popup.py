@@ -115,12 +115,18 @@ class MapInfoPopup(QFrame):
         prof.set_max_height(ph - other - 16)
         refresh_layouts()
         self.adjustSize()
-        if self.height() > ph and prof.isVisibleTo(self):
-            # Por si el resto cambió de alto al reacomodarse: una pasada más
+        # Por si el resto cambió de alto al reacomodarse (un rótulo que se
+        # parte en dos líneas al cambiar el ancho): más pasadas, cada una
+        # descontando lo que todavía sobresale, hasta que entra
+        for _ in range(4):
+            if self.height() <= ph or not prof.isVisibleTo(self):
+                break
             other = self.sizeHint().height() - prof.sizeHint().height()
-            prof.set_max_height(ph - other - 16)
+            prof.set_max_height(ph - other - 16 - (self.height() - ph))
             refresh_layouts()
             self.adjustSize()
+        if self.height() > ph:
+            self.resize(self.width(), ph)
         x, y = pos.x() + 14, pos.y() + 14
         if x + self.width() > pw:
             x = pos.x() - self.width() - 14

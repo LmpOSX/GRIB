@@ -1,4 +1,4 @@
-# Plan de pruebas manual – Visor GRIB 0.5.1 (PyQt6)
+# Plan de pruebas manual – Visor GRIB 0.5.2 (PyQt6)
 
 Entorno: pyenv `Grib` (Python 3.14.3), macOS. Antes de empezar:
 
@@ -335,5 +335,6 @@ detalle.
 | T3 | Etiqueta de capa | Descargar con modo INDRA y etiqueta «ISA entera»; abrir | Capas 84300, 69700… (`wgrib2 -s` muestra `843 mb`); el inventario dice modo WAFS (presión ISA en Pa) y los FL se muestran sin interpolar. Con «Convertir a WAFS» apagado en un GFS la etiqueta queda deshabilitada. |
 | T4 | Generar | Generar GRIB con empaquetado «un valor por celda (IEEE)» y etiqueta ISA con un decimal, modo OACI | Panel hexadecimal: plantilla 5.4 = IEEE y la sección 7 tiene un float por punto, todos iguales; capa 84310 Pa aunque el modo sea OACI. Sin decimales ni centro en el bloque de Generar. |
 | T5 | Guardar como | Abrir un archivo convertido; Archivo ▸ Guardar como… (⌘ ⇧ S): viento dir/vel, temperatura 0 decimales; Guardar con «Abrir el archivo guardado» | Se escribe `nombre_rec_dirvel.grib2` con `.json` (`por_nivel: true`, `guardado`) e `.idx`, se abre, el inventario dice por Nivel y las temperaturas en la ficha del punto son enteras en K (decimales en °C vienen de los −273,15). |
+| T7 | Orden de las celdas | Guardar como con «Orden de las celdas: S→N, E→O» y «filas intercaladas»; abrir el guardado | El inventario del guardado dice `ORDEN DE LAS CELDAS: S→N, E→O, filas intercaladas`; el mapa y la ficha del punto muestran exactamente lo mismo que el original; en el panel hexadecimal, Sección 3 ▸ Modo de barrido tiene bits 1, 2 y 4 en 1, La1 es la latitud sur y Lo1 la longitud este, y la fila j=1 de «Datos empaquetados» lista las celdas de oeste a este (la impar corre al revés). Con motor wgrib2 el archivo también se abre. |
 | T6 | Guardar como de un crudo | Abrir un GFS sin convertir (conversión al abrir apagada); Guardar como | La etiqueta de capa está deshabilitada; el guardado sigue crudo (`por_nivel: false`) y al abrirse se interpola. No deja sobreescribir el archivo abierto. |
 

@@ -69,6 +69,11 @@ class TestAnalisis(unittest.TestCase):
             self.assertEqual(gh.cell_at(d.meta, c.offset + c.size - 1), k)
             self.assertEqual(gh.row_of(d, k), 1)
         self.assertEqual(gh.cell_at(d.meta, d.offset - 1), None)
+        # Filas intercaladas (bit 4): en la fila impar la celda i está en la longitud de ni−1−i
+        meta_alt = dict(d.meta, scan=d.meta["scan"] | 0x10)
+        self.assertEqual(gh.cell_latlon(meta_alt, 0, 0), gh.cell_latlon(d.meta, 0, 0))
+        self.assertEqual(gh.cell_latlon(meta_alt, 1, 0), gh.cell_latlon(d.meta, 1, 6))
+        self.assertEqual(gh.cell_latlon(meta_alt, 1, 6), gh.cell_latlon(d.meta, 1, 0))
         self.assertEqual(gh.cell_range(d.meta, 20)[0] + gh.cell_range(d.meta, 20)[1], d.end)
 
     def test_celdas_ieee_y_en_bloque(self):

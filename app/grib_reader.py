@@ -122,11 +122,16 @@ def normalize_grid(lat1d, lon1d):
     return lats, lons, lon_order, flip_lat
 
 
-def orient_values(values, nj, ni, flip_lat, lon_order):
+def orient_values(values, nj, ni, flip_lat, lon_order, alt_rows=False):
     """Reorganiza el vector de valores de un mensaje (nj*ni) en un array
     (nj, ni) con latitudes y longitudes ascendentes, según lo calculado por
-    normalize_grid."""
+    normalize_grid. `alt_rows`: filas intercaladas (bustrofedón, bit 4 del
+    modo de barrido): las filas impares vienen al revés y se enderezan
+    primero (ecCodes no lo hace: su iterador ignora ese bit)."""
     arr = np.asarray(values, dtype=float).reshape(nj, ni)
+    if alt_rows:
+        arr = arr.copy()
+        arr[1::2] = arr[1::2, ::-1]
     if flip_lat:
         arr = arr[::-1, :]
     arr = arr[:, lon_order]
@@ -367,7 +372,7 @@ class GribReader:
             return u if msg.var == "u" else v
         values = self.backend.read(self.path, msg)
         return orient_values(values, self.grid["nj"], self.grid["ni"],
-                             self._flip_lat, self._lon_order)
+                             self._flip_lat, self._lon_order, bool(self.grid.get("alt_rows")))
 
     def get_field(self, step_idx, var, level_hpa):
         """Campo 2D (nj, ni) de la variable en el nivel y paso dados, o None
@@ -561,7 +566,15 @@ class GribReader:
         nj, ni = int(self.grid["nj"]), int(self.grid["ni"])
         jo = nj - 1 - int(j) if self._flip_lat else int(j)
         io = int(self._lon_order[int(i)])
+        if self.grid.get("alt_rows") and jo % 2 == 1:     # fila intercalada: corre al revés
+            io = ni - 1 - io
         return jo * ni + io
+
+    def scan_text(self):
+        """«N→S, O→E» (y «filas intercaladas») según el modo de barrido."""
+        from .grib_encode import scan_text
+        g = self.grid or {}
+        return scan_text(bool(g.get("i_negative")), bool(g.get("j_positive")), bool(g.get("alt_rows")))
 
     def _layer_at(self, step_idx, p_true, label, j, i):
         """Valores de un nivel del archivo en el punto (j, i)."""
@@ -724,6 +737,7 @@ class GribReader:
         lines.append(f"  tipo: {g.get('grid_type')}   Ni={g.get('ni')}  Nj={g.get('nj')}")
         lines.append(f"  primer punto: lat {g.get('lat_first'):.3f}, lon {g.get('lon_first'):.3f}")
         lines.append(f"  último punto: lat {g.get('lat_last'):.3f}, lon {g.get('lon_last'):.3f}")
+        lines.append(f"  ORDEN DE LAS CELDAS: {self.scan_text()}")
         di = g.get("di")
         dj = g.get("dj")
         lines.append(f"  incremento: di={di if di is not None else '?'}  dj={dj if dj is not None else '?'}"

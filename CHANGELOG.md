@@ -1,5 +1,20 @@
 # Cambios
 
+## 0.5.2 — 2026-10-23
+
+- Bloque «Archivo a guardar»: «Orden de las celdas» (N→S o S→N, O→E o E→O,
+  el modo de barrido de la sección 3) y «filas» (todas en el mismo sentido
+  o intercaladas, bustrofedón). Los valores se reordenan y las esquinas de
+  la grilla se corrigen; el dato no cambia. El lector endereza las filas
+  intercaladas (ecCodes las ignora en su iterador y wgrib2 las informa como
+  `EW|WE`, que antes no se reconocía) y el inventario dice el orden del
+  archivo abierto. Con motor wgrib2, un archivo con barrido E→O se leía con
+  las longitudes corridas 360°.
+- Ficha del punto: si tras ajustar el perfil al alto del mapa la ficha
+  todavía sobresale (rótulos que se parten al cambiar el ancho, fuentes de
+  Linux), se vuelve a ajustar descontando lo que sobra; antes podía quedar
+  un píxel fuera del mapa.
+
 ## 0.5.1 — 2026-10-23
 
 - El mapa y el hexadecimal, subsecciones del bloque del mapa, llevan el

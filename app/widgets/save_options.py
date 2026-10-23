@@ -2,8 +2,9 @@
 """Bloque «Archivo a guardar»: las mismas opciones en Preferencias (valores
 por defecto), Obtener datos, Generar GRIB y Guardar como…: viento, decimales
 del viento y de la temperatura, etiqueta de capa (por Nivel), empaquetado y
-centro generador. `values()` devuelve {wind, dec_wind, dec_temp, label,
-packing, centre}; `config_values()` lo mismo con el prefijo `save_`."""
+centro generador, orden de las celdas y filas intercaladas. `values()`
+devuelve {wind, dec_wind, dec_temp, label, packing, centre, scan, rows};
+`config_values()` lo mismo con el prefijo `save_`."""
 from PyQt6.QtWidgets import QWidget, QGridLayout, QLabel, QComboBox
 
 from .. import fl_table as flt
@@ -56,6 +57,21 @@ class SaveOptionsBox(QWidget):
             self.cb_centre.addItem(text, key)
         self.cb_centre.setToolTip("Centro generador de la sección 1 (tabla C-11). «Sin centro» graba "
                                   "65535, el valor faltante: el archivo no es de un modelo.")
+        self.cb_scan = QComboBox()
+        for key, text in ge.SCANS:
+            self.cb_scan.addItem(text, key)
+        self.cb_scan.setToolTip("Orden de las celdas en el archivo (modo de barrido de la sección 3): "
+                                "filas de norte a sur o de sur a norte y, dentro de cada fila, de "
+                                "oeste a este o de este a oeste. El GFS y el WAFS de WAFC Washington van N→S, "
+                                "O→E; el WAFS de WAFC London, S→N, O→E (los lectores deben mirar el "
+                                "octeto 72 de la sección 3, no suponerlo). Se reordenan los valores y se "
+                                "corrigen las esquinas de la grilla; el dato no cambia.")
+        self.cb_rows = QComboBox()
+        for key, text in ge.ROWS:
+            self.cb_rows.addItem(text, key)
+        self.cb_rows.setToolTip("Filas todas en el mismo sentido, o intercaladas (bustrofedón, bit 4 del "
+                                "barrido): la segunda fila corre al revés que la primera, y así. El "
+                                "visor las lee en los dos casos.")
 
     def _build_rows(self, show_decimals, show_label, show_packing, show_centre, compact):
         """Apaisado: pares (rótulo, combo) de a tres por fila, sólo los visibles."""
@@ -69,7 +85,9 @@ class SaveOptionsBox(QWidget):
                  ("temperatura", self.cb_dec_temp, show_decimals),
                  ("Etiqueta de capa", self.cb_label, show_label),
                  ("Empaquetado", self.cb_packing, show_packing),
-                 ("Centro", self.cb_centre, show_centre)]
+                 ("Centro", self.cb_centre, show_centre),
+                 ("Orden de las celdas", self.cb_scan, True),
+                 ("filas", self.cb_rows, True)]
         self._dec_widgets, self._label_widgets, self._packing_widgets, self._centre_widgets = [], [], [], []
         k = 0
         for text, cb, shown in pairs:
@@ -135,6 +153,12 @@ class SaveOptionsBox(QWidget):
         g.addWidget(label("Centro generador"), row, 0)
         g.addWidget(self.cb_centre, row, 1, 1, 3)
         self._centre_widgets = [g.itemAtPosition(row, 0).widget(), self.cb_centre]
+        row += 1
+
+        g.addWidget(label("Orden de las celdas"), row, 0)
+        g.addWidget(self.cb_scan, row, 1)
+        g.addWidget(label("filas"), row, 2)
+        g.addWidget(self.cb_rows, row, 3)
         g.setColumnStretch(4, 1)
 
         for w in self._dec_widgets:
@@ -154,7 +178,9 @@ class SaveOptionsBox(QWidget):
                              "dec_temp": self.cb_dec_temp.currentData(),
                              "label": self.cb_label.currentData(),
                              "packing": self.cb_packing.currentData(),
-                             "centre": self.cb_centre.currentData()})
+                             "centre": self.cb_centre.currentData(),
+                             "scan": self.cb_scan.currentData(),
+                             "rows": self.cb_rows.currentData()})
 
     def config_values(self):
         return {"save_" + k: v for k, v in self.values().items()}
@@ -167,6 +193,8 @@ class SaveOptionsBox(QWidget):
         self.cb_label.setCurrentIndex(max(0, self.cb_label.findData(o["label"])))
         self.cb_packing.setCurrentIndex(max(0, self.cb_packing.findData(o["packing"])))
         self.cb_centre.setCurrentIndex(max(0, self.cb_centre.findData(o["centre"])))
+        self.cb_scan.setCurrentIndex(max(0, self.cb_scan.findData(o["scan"])))
+        self.cb_rows.setCurrentIndex(max(0, self.cb_rows.findData(o["rows"])))
 
     def wind_format(self):
         return wfm.normalize(self.cb_wind.currentData())

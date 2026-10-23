@@ -11,6 +11,18 @@ Opciones (`opts`, claves de config sin el prefijo o con él):
   label    'modo' | 'nominal' | 'isa' | 'isa_int' etiqueta de capa; sólo por Nivel
   packing  'origen' | 'simple' | 'ieee'
   centre   'origen' | 'missing'                   65535 = «Missing value» (C-11)
+  scan     'origen' | 'ns_we' | 'ns_ew' | 'sn_we' | 'sn_ew'
+           orden de las celdas (modo de barrido de la sección 3): filas de
+           norte a sur o de sur a norte, y dentro de cada fila de oeste a
+           este o de este a oeste
+  rows     'origen' | 'consecutivas' | 'intercaladas'
+           filas todas en el mismo sentido, o alternadas (bustrofedón: la
+           segunda fila corre al revés que la primera, y así)
+
+El orden de las celdas se cambia con `swapScanningX` / `swapScanningY` de
+ecCodes (reordenan los valores y actualizan los bits y las esquinas); las
+filas intercaladas se arman a mano porque ecCodes no las reordena ni las
+tiene en cuenta en su iterador (el lector las deshace al leer).
 
 Los decimales se fijan con `changeDecimalPrecision` de ecCodes: factor
 decimal D con escala binaria E = 0 y los bits por valor recalculados, así
@@ -39,7 +51,11 @@ DECIMALS = [(None, "Como el origen"), (0, "0 (enteros)"), (1, "1"), (2, "2")]
 PACKINGS = [("origen", "Como el origen"), ("simple", "Simple (bits por valor)"),
             ("ieee", "Un valor por celda (IEEE 32 bits)")]
 CENTRES = [("origen", "El del origen"), ("missing", "Sin centro (65535)")]
-KEYS = ("wind", "dec_wind", "dec_temp", "label", "packing", "centre")
+SCANS = [("origen", "Como el origen"), ("ns_we", "N→S, O→E (GFS, WAFC Washington)"),
+         ("ns_ew", "N→S, E→O"), ("sn_we", "S→N, O→E (WAFC London)"), ("sn_ew", "S→N, E→O")]
+ROWS = [("origen", "Como el origen"), ("consecutivas", "Todas en el mismo sentido"),
+        ("intercaladas", "Intercaladas (bustrofedón)")]
+KEYS = ("wind", "dec_wind", "dec_temp", "label", "packing", "centre", "scan", "rows")
 
 
 def options_from_config(cfg, prefix="save_"):
@@ -60,6 +76,10 @@ def normalize(opts):
     out["packing"] = pk if pk in dict(PACKINGS) else "origen"
     ce = o.get("centre") or o.get("save_centre") or "origen"
     out["centre"] = ce if ce in dict(CENTRES) else "origen"
+    sc = o.get("scan") or o.get("save_scan") or "origen"
+    out["scan"] = sc if sc in dict(SCANS) else "origen"
+    rw = o.get("rows") or o.get("save_rows") or "origen"
+    out["rows"] = rw if rw in dict(ROWS) else "origen"
     return out
 
 
@@ -67,7 +87,8 @@ def is_default(opts):
     """True si el bloque no cambia nada respecto del origen (salvo el viento U/V)."""
     o = normalize(opts)
     return (o["wind"] == "uv" and o["dec_wind"] is None and o["dec_temp"] is None
-            and o["label"] == "modo" and o["packing"] == "origen" and o["centre"] == "origen")
+            and o["label"] == "modo" and o["packing"] == "origen" and o["centre"] == "origen"
+            and o["scan"] == "origen" and o["rows"] == "origen")
 
 
 def describe(opts):
@@ -84,7 +105,57 @@ def describe(opts):
         parts.append("empaquetado " + ("IEEE" if o["packing"] == "ieee" else "simple"))
     if o["centre"] == "missing":
         parts.append("sin centro (65535)")
+    if o["scan"] != "origen":
+        parts.append("celdas " + dict(SCANS)[o["scan"]].split(" (")[0])
+    if o["rows"] != "origen":
+        parts.append("filas " + ("intercaladas" if o["rows"] == "intercaladas" else "en el mismo sentido"))
     return ", ".join(parts)
+
+
+def scan_text(i_neg, j_pos, alt):
+    """«N→S, O→E» (más «, filas intercaladas») a partir de los bits del
+    modo de barrido; lo usan el inventario y el hexadecimal."""
+    txt = ("S→N" if j_pos else "N→S") + ", " + ("E→O" if i_neg else "O→E")
+    return txt + (", filas intercaladas" if alt else "")
+
+
+def _apply_scan(gid, o):
+    """Deja el mensaje con el orden de celdas pedido. Devuelve True si cambió."""
+    want_scan, want_rows = o["scan"], o["rows"]
+    if want_scan == "origen" and want_rows == "origen":
+        return False
+    i_neg = bool(_get(gid, "iScansNegatively", as_long=True))
+    j_pos = bool(_get(gid, "jScansPositively", as_long=True))
+    alt = bool(_get(gid, "alternativeRowScanning", as_long=True))
+    ni, nj = _get(gid, "Ni", as_long=True), _get(gid, "Nj", as_long=True)
+    if not ni or not nj or _get(gid, "bitmapPresent", as_long=True):
+        return False
+    if want_scan == "origen":
+        w_j_pos, w_i_neg = j_pos, i_neg
+    else:
+        w_j_pos, w_i_neg = want_scan.startswith("sn"), want_scan.endswith("ew")
+    w_alt = alt if want_rows == "origen" else want_rows == "intercaladas"
+    if (w_j_pos, w_i_neg, w_alt) == (j_pos, i_neg, alt):
+        return False
+    # 1. Filas todas en el mismo sentido (ecCodes no entiende las intercaladas)
+    if alt:
+        v = np.asarray(ec.codes_get_values(gid), dtype=float).reshape(nj, ni).copy()
+        v[1::2] = v[1::2, ::-1]
+        ec.codes_set(gid, "alternativeRowScanning", 0)
+        ec.codes_set_values(gid, v.ravel())
+    # 2. Sentido de las filas y de las columnas: ecCodes reordena los valores
+    #    y corrige los bits y las esquinas
+    if w_j_pos != j_pos:
+        ec.codes_set(gid, "swapScanningY", 1)
+    if w_i_neg != i_neg:
+        ec.codes_set(gid, "swapScanningX", 1)
+    # 3. Filas intercaladas: las impares al revés, con el bit 4 del barrido
+    if w_alt:
+        v = np.asarray(ec.codes_get_values(gid), dtype=float).reshape(nj, ni).copy()
+        v[1::2] = v[1::2, ::-1]
+        ec.codes_set(gid, "alternativeRowScanning", 1)
+        ec.codes_set_values(gid, v.ravel())
+    return True
 
 
 def recode(data, opts, labeled=False, mode=None):
@@ -106,7 +177,8 @@ def recode(data, opts, labeled=False, mode=None):
         info["pares_viento"] = winfo.get("pares", 0)
     # 2. Por mensaje: etiqueta, decimales, empaquetado, centro
     touch = (o["dec_wind"] is not None or o["dec_temp"] is not None or o["packing"] != "origen"
-             or o["centre"] == "missing" or (labeled and o["label"] != "modo"))
+             or o["centre"] == "missing" or (labeled and o["label"] != "modo")
+             or o["scan"] != "origen" or o["rows"] != "origen")
     if not touch:
         return data, info
     from .wafs_format import iter_messages, level_pa
@@ -135,6 +207,10 @@ def recode(data, opts, labeled=False, mode=None):
                     ec.codes_set(gid, "packingType", want)
                     ec.codes_set_values(gid, vals)
                     changed = True
+            # Orden de las celdas antes de los decimales: así el redondeo y la
+            # precisión decimal quedan sobre los valores ya reordenados
+            if _apply_scan(gid, o):
+                changed = True
             dec = o["dec_wind"] if short in _WIND_SHORT else o["dec_temp"] if short in _TEMP_SHORT else None
             if dec is not None and o["packing"] != "ieee" and _get(gid, "packingType") == "grid_simple":
                 vals = ec.codes_get_values(gid)

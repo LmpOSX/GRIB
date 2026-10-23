@@ -125,6 +125,7 @@ class GridInfo:
     """Grilla regular lat/lon tal como viene en el archivo."""
 
     __slots__ = ("grid_type", "ni", "nj", "lat1d", "lon1d", "lat_first", "lon_first",
+                 "i_negative", "alt_rows",
                  "lat_last", "lon_last", "di", "dj", "j_positive")
 
     def __init__(self, **kw):
@@ -270,6 +271,8 @@ class EccodesBackend:
             di=self._get(gid, "iDirectionIncrementInDegrees", None, "double"),
             dj=self._get(gid, "jDirectionIncrementInDegrees", None, "double"),
             j_positive=self._get(gid, "jScansPositively", None, "long"),
+            i_negative=self._get(gid, "iScansNegatively", 0, "long"),
+            alt_rows=bool(self._get(gid, "alternativeRowScanning", 0, "long")),
         )
 
     def read(self, path, msg):
@@ -298,7 +301,8 @@ _RE_MB = re.compile(r"^(\d+(?:\.\d+)?) mb$")
 _RE_AGL = re.compile(r"^(\d+(?:\.\d+)?) m above ground$")
 _RE_MSL = re.compile(r"^(\d+(?:\.\d+)?) m above mean sea level$")
 _RE_FTIME = re.compile(r"^(\d+)(?:-(\d+))? (hour|day|min)")
-_RE_GRID_LL = re.compile(r"lat-lon grid:\((\d+) x (\d+)\).*?input (WE|EW):(NS|SN)", re.S)
+# «input WE:NS»; con filas intercaladas wgrib2 informa «input EW|WE:NS»
+_RE_GRID_LL = re.compile(r"lat-lon grid:\((\d+) x (\d+)\).*?input (WE|EW)(\|(?:WE|EW))?:(NS|SN)", re.S)
 _RE_GRID_LAT = re.compile(r"lat (-?\d+(?:\.\d+)?) to (-?\d+(?:\.\d+)?) by (-?\d+(?:\.\d+)?)")
 _RE_GRID_LON = re.compile(r"lon (-?\d+(?:\.\d+)?) to (-?\d+(?:\.\d+)?) by (-?\d+(?:\.\d+)?)")
 
@@ -416,13 +420,19 @@ def parse_grid(text):
         raise ValueError("No se pudo interpretar la grilla que informa wgrib2:\n" + text)
     lat_a, lat_b, dj = (float(x) for x in mlat.groups())
     lon_a, lon_b, di = (float(x) for x in mlon.groups())
-    lon_b_eff = lon_b if lon_b >= lon_a else lon_b + 360.0
+    # Las longitudes pueden cruzar 0/360; con barrido E→O («input EW») van en
+    # bajada, así que el cruce es hacia el otro lado
+    if m.group(3) == "EW":
+        lon_b_eff = lon_b if lon_b <= lon_a else lon_b - 360.0
+    else:
+        lon_b_eff = lon_b if lon_b >= lon_a else lon_b + 360.0
     lat1d = np.linspace(lat_a, lat_b, nj) if nj > 1 else np.array([lat_a])
     lon1d = np.linspace(lon_a, lon_b_eff, ni) if ni > 1 else np.array([lon_a])
     return GridInfo(
         grid_type="regular_ll", ni=ni, nj=nj, lat1d=lat1d, lon1d=lon1d,
         lat_first=lat_a, lon_first=lon_a, lat_last=lat_b, lon_last=lon_b,
-        di=di, dj=dj, j_positive=1 if m.group(4) == "SN" else 0,
+        di=di, dj=dj, j_positive=1 if m.group(5) == "SN" else 0,
+        i_negative=1 if m.group(3) == "EW" else 0, alt_rows=bool(m.group(4)),
     )
 
 

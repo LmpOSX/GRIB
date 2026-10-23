@@ -106,6 +106,10 @@ class TestGrilla(unittest.TestCase):
         np.testing.assert_array_equal(arr[2], [0.0, 1.0, 2.0])
         self.assertEqual(lons[0], -10.0)
         self.assertTrue(arr.flags["C_CONTIGUOUS"])
+        # Filas intercaladas (bustrofedón): la fila impar viene al revés
+        vals_alt = np.array([0, 1, 2, 5, 4, 3, 6, 7, 8], dtype=float)
+        arr2 = orient_values(vals_alt, 3, 3, flip, order, alt_rows=True)
+        np.testing.assert_array_equal(arr2, arr)
 
 
 def _reader_sintetico(levels, shape=(3, 4)):
@@ -333,6 +337,17 @@ class TestMotorWgrib2(unittest.TestCase):
         self.assertEqual((g.lon1d[0], g.lon1d[-1]), (285.0, 338.0))
         self.assertAlmostEqual(g.lon1d[1] - g.lon1d[0], 0.25)
         # Norte→sur y cruce del meridiano 0
+        g3 = ge.parse_grid(self.GRID.replace("input WE:SN", "input EW|WE:NS"))
+        self.assertTrue(g3.alt_rows)
+        self.assertEqual((g3.i_negative, g3.j_positive), (1, 0))
+        self.assertFalse(ge.parse_grid(self.GRID).alt_rows)
+        # Barrido E→O: las longitudes bajan (y el cruce de 0/360 va hacia el otro lado)
+        g4 = ge.parse_grid(self.GRID.replace("input WE:SN", "input EW:SN")
+                           .replace("lon 285.000000 to 338.000000", "lon 338.000000 to 285.000000"))
+        self.assertEqual((g4.lon1d[0], g4.lon1d[-1]), (338.0, 285.0))
+        g5 = ge.parse_grid(self.GRID.replace("input WE:SN", "input EW:SN")
+                           .replace("lon 285.000000 to 338.000000", "lon 10.000000 to 350.000000"))
+        self.assertEqual((g5.lon1d[0], g5.lon1d[-1]), (10.0, -10.0))
         g = ge.parse_grid(self.GRID.replace("input WE:SN", "input WE:NS")
                           .replace("lat -64.000000 to -20.000000", "lat 20.000000 to -24.000000")
                           .replace("lon 285.000000 to 338.000000", "lon 350.000000 to 43.000000"))

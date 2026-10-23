@@ -735,6 +735,8 @@ def cell_latlon(meta, j, i):
     scan = meta.get("scan", 0)
     la1, lo1 = meta["la1"] / 1e6, meta["lo1"] / 1e6
     dj, di = meta["dj"] / 1e6, meta["di"] / 1e6
+    if scan & 0x10 and j % 2 == 1:          # filas intercaladas: la impar corre al revés
+        i = int(meta["ni"]) - 1 - i
     lat = la1 + (j * dj if scan & 0x40 else -j * dj)
     lon = lo1 + (-i * di if scan & 0x80 else i * di)
     lon = ((lon + 180.0) % 360.0) - 180.0

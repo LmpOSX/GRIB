@@ -50,9 +50,16 @@ class TestOpciones(unittest.TestCase):
     def test_normalizar_y_describir(self):
         o = ge.normalize({})
         self.assertEqual(o, {"wind": "uv", "dec_wind": None, "dec_temp": None, "label": "modo",
-                             "packing": "origen", "centre": "origen"})
+                             "packing": "origen", "centre": "origen", "scan": "origen", "rows": "origen"})
         self.assertTrue(ge.is_default({}))
         self.assertFalse(ge.is_default({"centre": "missing"}))
+        self.assertFalse(ge.is_default({"scan": "sn_ew"}))
+        self.assertFalse(ge.is_default({"rows": "intercaladas"}))
+        self.assertEqual(ge.normalize({"save_scan": "sn_we", "save_rows": "intercaladas"})["scan"], "sn_we")
+        self.assertEqual(ge.normalize({"scan": "zzz", "rows": "zzz"})["scan"], "origen")
+        self.assertIn("celdas S→N, E→O, filas intercaladas", ge.describe({"scan": "sn_ew", "rows": "intercaladas"}))
+        self.assertEqual(ge.scan_text(0, 0, 0), "N→S, O→E")
+        self.assertEqual(ge.scan_text(1, 1, 1), "S→N, E→O, filas intercaladas")
         o = ge.normalize({"save_wind": "dirspeed", "save_dec_wind": "1", "save_label": "isa_int",
                           "save_packing": "ieee", "save_centre": "missing", "save_dec_temp": 7})
         self.assertEqual(o["wind"], "dirspeed")
@@ -143,6 +150,58 @@ class TestRecodificar(unittest.TestCase):
         out, info = ge.recode(self.raw, {"label": "isa"}, labeled=False)
         self.assertEqual(out, self.raw)
         self.assertFalse(info["etiqueta_aplicada"])
+
+    def test_orden_de_las_celdas(self):
+        """Cambiar el modo de barrido reordena los valores y corrige las
+        esquinas: el campo orientado que lee el visor es el mismo, y
+        cell_index sigue apuntando al valor de cada celda."""
+        import eccodes as ec
+        from app.grib_reader import GribReader
+        tmp = tempfile.mkdtemp()
+        src = os.path.join(tmp, "src.grib2")
+        with open(src, "wb") as fh:
+            fh.write(self.raw)
+        ref = GribReader(src)
+        u0 = ref.get_field(0, "u", 850)
+        for scan, rows in (("sn_ew", "intercaladas"), ("ns_ew", "origen"), ("sn_we", "consecutivas"),
+                           ("origen", "intercaladas")):
+            out, info = ge.recode(self.raw, {"scan": scan, "rows": rows}, labeled=False)
+            self.assertNotEqual(out, self.raw)
+            gid = ec.codes_new_from_message(out)
+            try:
+                i_neg, j_pos = ec.codes_get(gid, "iScansNegatively"), ec.codes_get(gid, "jScansPositively")
+                alt = ec.codes_get(gid, "alternativeRowScanning")
+                la1 = ec.codes_get(gid, "latitudeOfFirstGridPointInDegrees")
+                lo1 = ec.codes_get(gid, "longitudeOfFirstGridPointInDegrees")
+                raw = ec.codes_get_double_array(gid, "values")
+            finally:
+                ec.codes_release(gid)
+            if scan != "origen":
+                self.assertEqual((j_pos, i_neg), (int(scan.startswith("sn")), int(scan.endswith("ew"))))
+            self.assertEqual(alt, int(rows == "intercaladas"))
+            if scan.startswith("sn"):
+                self.assertEqual(la1, float(ref.lats.min()))
+            if scan.endswith("ew"):
+                self.assertAlmostEqual(((lo1 + 180) % 360) - 180, float(ref.lons.max()), places=6)
+            dst = os.path.join(tmp, f"{scan}_{rows}.grib2")
+            with open(dst, "wb") as fh:
+                fh.write(out)
+            r = GribReader(dst)
+            self.assertEqual(bool(r.grid["alt_rows"]), rows == "intercaladas")
+            np.testing.assert_allclose(r.get_field(0, "u", 850), u0, atol=1e-6)
+            np.testing.assert_allclose(r.get_field(0, "t", 500), ref.get_field(0, "t", 500), atol=1e-6)
+            # cell_index: el valor crudo k de la celda (j, i) es el del campo orientado
+            # (el primer mensaje del archivo es U en 1000 hPa)
+            u1000 = ref.get_field(0, "u", 1000)
+            for j, i in ((0, 0), (1, 2), (2, 4), (3, 1)):
+                self.assertAlmostEqual(raw[r.cell_index(j, i)], u1000[j, i], places=6)
+            if scan == "sn_ew" and rows == "intercaladas":
+                self.assertIn("S→N, E→O, filas intercaladas", r.inventory_text())
+                self.assertIn("filas intercaladas", r.scan_text())
+        # Pedir lo que ya tiene no cambia nada
+        out, _ = ge.recode(self.raw, {"scan": "ns_we", "rows": "consecutivas"}, labeled=False)
+        self.assertEqual(out, self.raw)
+        self.assertEqual(ref.scan_text(), "N→S, O→E")
 
     def test_descarga_aplica_el_bloque(self):
         import datetime as dt

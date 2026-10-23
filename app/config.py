@@ -115,6 +115,8 @@ DEFAULTS = {
     "save_label": "modo",               # etiqueta de capa por Nivel: 'modo' | 'nominal' | 'isa' | 'isa_int'
     "save_packing": "origen",           # empaquetado: 'origen' | 'simple' | 'ieee' (un valor por celda)
     "save_centre": "origen",            # centro generador: 'origen' | 'missing' (65535)
+    "save_scan": "origen",              # orden de las celdas: 'origen' | 'ns_we' | 'ns_ew' | 'sn_we' | 'sn_ew'
+    "save_rows": "origen",              # filas: 'origen' | 'consecutivas' | 'intercaladas' (bustrofedón)
     "generate_res_deg": 0.25,           # última resolución de «Generar GRIB…»
     # Formato WAFS (formato interno único del visor)
     "wafs_convert": True,               # valor inicial de «Convertir a WAFS» en el diálogo de descarga
