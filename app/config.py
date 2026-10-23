@@ -106,7 +106,14 @@ DEFAULTS = {
     "download_area_codes": ["SARR", "SACF", "SAMF", "SAEF", "SAVF"],   # casillas marcadas
     "download_manual_region": [4.0, -64.0, -90.0, -22.0],              # última zona manual (N, S, W, E)
     "download_area_draw": False,        # dibujar los rectángulos del área en el mapa
-    "download_wind_format": "uv",       # viento en el archivo bajado: 'uv' (UGRD/VGRD) | 'dirspeed' (WDIR/WIND)
+    # Bloque «Archivo a guardar» (Preferencias ▸ Guardar; también en Obtener
+    # datos, Generar GRIB y Guardar como…): cómo se graba lo que escribe el visor
+    "save_wind": "uv",                  # viento: 'uv' (UGRD/VGRD) | 'dirspeed' (WDIR/WIND)
+    "save_dec_wind": None,              # decimales del viento: None (como el origen) | 0 | 1 | 2
+    "save_dec_temp": None,              # decimales de la temperatura: ídem
+    "save_label": "modo",               # etiqueta de capa por Nivel: 'modo' | 'nominal' | 'isa' | 'isa_int'
+    "save_packing": "origen",           # empaquetado: 'origen' | 'simple' | 'ieee' (un valor por celda)
+    "save_centre": "origen",            # centro generador: 'origen' | 'missing' (65535)
     "generate_res_deg": 0.25,           # última resolución de «Generar GRIB…»
     # Formato WAFS (formato interno único del visor)
     "wafs_convert": True,               # valor inicial de «Convertir a WAFS» en el diálogo de descarga
@@ -194,6 +201,14 @@ def _migrate(cfg: dict):
         cfg["sources"] = sources
 
 
+def _migrate_save(cfg):
+    """«Viento en el archivo» (download_wind_format) pasó al bloque Archivo a guardar."""
+    if "download_wind_format" in cfg:
+        old = cfg.pop("download_wind_format")
+        if cfg.get("save_wind") in (None, DEFAULTS["save_wind"]) and old in ("uv", "dirspeed"):
+            cfg["save_wind"] = old
+
+
 def load_config() -> dict:
     if os.path.exists(CONFIG_PATH):
         try:
@@ -203,6 +218,7 @@ def load_config() -> dict:
             merged = dict(DEFAULTS)
             merged.update(data)
             _migrate(merged)
+            _migrate_save(merged)
             return merged
         except Exception:
             pass

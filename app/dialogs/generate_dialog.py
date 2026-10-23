@@ -27,6 +27,8 @@ from .. import areas as A
 from .. import fl_table as flt
 from .. import grib_generate as gg
 from .. import wind_format as wfm
+from .. import grib_encode as ge
+from ..widgets.save_options import SaveOptionsBox
 from .download_dialog import MODE_BUTTONS
 
 COLS = ("FL", "Presión", "T (°C)", "Viento (kt)", "Dir (°)")
@@ -93,7 +95,7 @@ class GenerateGribDialog(GlassDialog):
     def __init__(self, parent=None, cfg=None, dest_dir=".", region=None):
         super().__init__(parent)
         self.setWindowTitle("Generar GRIB")
-        self.setMinimumWidth(760)
+        self.setMinimumWidth(920)
         self._cfg = cfg if cfg is not None else {}
         self._dest_dir = dest_dir
         self._areas = list(A.areas_from_config(self._cfg))
@@ -286,20 +288,24 @@ class GenerateGribDialog(GlassDialog):
             b.clicked.connect(lambda _on, m=m: self._on_mode_clicked(m))
             self.mode_buttons[m] = b
             row.addWidget(b)
-        row.addSpacing(16)
-        row.addWidget(QLabel("Viento en el archivo"))
-        self.cb_wind = QComboBox()
-        for key, text in wfm.FORMATS:
-            self.cb_wind.addItem(text, key)
-        self.cb_wind.setCurrentIndex(max(0, self.cb_wind.findData(
-            wfm.normalize(self._cfg.get("download_wind_format", "uv")))))
+        row.addStretch()
+        lay.addLayout(row)
+        # Archivo a guardar: viento, etiqueta de capa y empaquetado (los
+        # campos son constantes y se graban exactos: sin decimales que
+        # elegir; el centro es siempre 65535, «sin centro»)
+        srow = QHBoxLayout()
+        lbl = QLabel("Archivo a guardar")
+        lbl.setObjectName("SubHeading")
+        srow.addWidget(lbl)
+        self.save_box = SaveOptionsBox(cfg=self._cfg, show_decimals=False, show_centre=False,
+                                       compact=True, rows=True)
+        self.cb_wind = self.save_box.cb_wind
         self.cb_wind.setToolTip("La tabla se carga siempre en velocidad y dirección; el archivo se "
                                 "graba como U/V (UGRD/VGRD, como los modelos) o como dirección y "
                                 "velocidad (WDIR/WIND) según esta opción. El visor lee los dos; el "
                                 "WAFS operativo lleva U/V.")
-        row.addWidget(self.cb_wind)
-        row.addStretch()
-        lay.addLayout(row)
+        srow.addWidget(self.save_box, 1)
+        lay.addLayout(srow)
 
         self.table = QTableWidget(0, len(COLS))
         self.table.setHorizontalHeaderLabels(COLS)
@@ -747,7 +753,10 @@ class GenerateGribDialog(GlassDialog):
             self.dest.setText(d)
 
     def wind_format(self):
-        return wfm.normalize(self.cb_wind.currentData())
+        return self.save_box.wind_format()
+
+    def save_options(self):
+        return self.save_box.values()
 
     def output_path(self):
         run, step = self.run(), self.step_h()
@@ -783,9 +792,13 @@ class GenerateGribDialog(GlassDialog):
             if r != QMessageBox.StandardButton.Yes:
                 return
         try:
+            opts = self.save_options()
             data, info = gg.generate_grib(rows, region, self.resolution(), mode=self._mode,
                                           run=self.run(), steps=self.hours(),
-                                          wind_format=self.wind_format())
+                                          wind_format=opts["wind"])
+            if not ge.is_default(dict(opts, wind="uv")):
+                data, ginfo = ge.recode(data, opts, labeled=True, mode=self._mode)
+                info["guardado"] = dict({k: ginfo[k] for k in ge.KEYS}, descripcion=ge.describe(opts))
             prov = gg.provenance(rows, info, self.area_mode(),
                                  self.selected_codes() if self.area_mode() == "fir" else [],
                                  self.margin() if self.area_mode() == "fir" else 0.0, region)
@@ -799,7 +812,7 @@ class GenerateGribDialog(GlassDialog):
         self._cfg["download_h_from"] = int(self.h_from.value())
         self._cfg["download_h_to"] = int(self.h_to.value())
         self._cfg["download_h_step"] = int(self.h_step.value())
-        self._cfg["download_wind_format"] = self.wind_format()
+        self._cfg.update(self.save_box.config_values())
         self._cfg["download_area_mode"] = self.area_mode()
         if self.area_mode() == "fir":
             self._cfg["download_area_codes"] = self.selected_codes()

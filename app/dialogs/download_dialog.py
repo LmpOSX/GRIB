@@ -37,6 +37,7 @@ from ..widgets.areas_editor import CoordEdit
 from .. import areas as A
 from .. import fl_table as flt
 from .. import wind_format as wfm
+from ..widgets.save_options import SaveOptionsBox
 
 MODE_BUTTONS = {"INDRA": "INDRA (14)", "OACI": "OACI (17)", "OACI56": "OACI (56)", "WAFS": "WAFS (56)"}
 WAFS_CHECK_TEXT = "Convertir a WAFS (FL cada 1000 ft, interpolado a presiones reales)"
@@ -295,26 +296,18 @@ class DownloadDialog(GlassDialog):
         self.var_grid.setVerticalSpacing(2)
         self.var_checks = {}
         lay.addWidget(self.var_box)
-        # Viento en el archivo: U/V tal cual lo publica el modelo, o dirección
-        # y velocidad (se convierte al bajar, después de interpolar)
-        wrow = QHBoxLayout()
-        wrow.setContentsMargins(0, 0, 0, 0)
-        lbl = QLabel("Viento en el archivo")
+        # Archivo a guardar: viento U/V o dirección y velocidad (se convierte
+        # al bajar, después de interpolar), decimales, etiqueta de capa,
+        # empaquetado y centro; arranca con Preferencias ▸ Guardar
+        lbl = QLabel("Archivo a guardar")
         lbl.setObjectName("SubHeading")
-        wrow.addWidget(lbl)
-        self.cb_wind = QComboBox()
-        for key, text in wfm.FORMATS:
-            self.cb_wind.addItem(text, key)
-        self.cb_wind.setCurrentIndex(max(0, self.cb_wind.findData(
-            wfm.normalize(self._cfg.get("download_wind_format", "uv")))))
-        self.cb_wind.setToolTip("Los modelos publican las componentes U (este) y V (norte). Con "
-                                "«Dirección y velocidad» cada par U/V se reemplaza por WDIR (grados "
-                                "verdaderos, de dónde sopla) y WIND (m/s) al terminar; el visor lee "
-                                "los dos formatos. El WAFS operativo lleva U/V.")
-        self.cb_wind.currentIndexChanged.connect(self._on_wind_changed)
-        wrow.addWidget(self.cb_wind)
-        wrow.addStretch()
-        lay.addLayout(wrow)
+        lay.addWidget(lbl)
+        self.save_box = SaveOptionsBox(cfg=self._cfg, compact=True, rows=True)
+        self.cb_wind = self.save_box.cb_wind
+        for cb in (self.save_box.cb_wind, self.save_box.cb_dec_wind, self.save_box.cb_dec_temp,
+                   self.save_box.cb_label, self.save_box.cb_packing, self.save_box.cb_centre):
+            cb.currentIndexChanged.connect(self._on_save_changed)
+        lay.addWidget(self.save_box)
 
         self.form = None
 
@@ -784,6 +777,7 @@ class DownloadDialog(GlassDialog):
         self._mode = flt.normalize_mode(self._cfg.get("wafs_mode", flt.DEFAULT_MODE))
         self._apply_mode()
         self._refresh_levels()
+        self._refresh_save_labeled()
         # Zona (la fuente puede proponer su dominio si no se pidió otra)
         has_zone = src.region_filter != "ninguno"
         self.lbl_zone.setVisible(has_zone)
@@ -888,16 +882,27 @@ class DownloadDialog(GlassDialog):
         self._refresh_levels_hint()
 
     def wind_format(self):
-        return wfm.normalize(self.cb_wind.currentData())
+        return self.save_box.wind_format()
 
-    def _on_wind_changed(self, _i):
-        self._cfg["download_wind_format"] = self.wind_format()
+    def save_options(self):
+        """Bloque «Archivo a guardar» del diálogo."""
+        return self.save_box.values()
+
+    def _on_save_changed(self, _i):
+        self._cfg.update(self.save_box.config_values())
+
+    def _refresh_save_labeled(self):
+        """La etiqueta de capa sólo se aplica a un archivo por Nivel: lo que
+        se convierte a WAFS o lo que ya viene por FL."""
+        labeled = bool(getattr(self.source, "flight_levels", False)) or self._wafs_options() is not None
+        self.save_box.set_labeled(labeled)
 
     def _on_wafs_toggled(self, _on):
         # Con o sin conversión cambian los niveles que necesita el modo
         if not self._applying and self._mode is not None and self.level_checks:
             self._apply_mode()
         self._refresh_levels_hint()
+        self._refresh_save_labeled()
 
     def _wanted_levels(self):
         """Lo que pide el modo elegido a esta fuente (fl_table.download_levels)."""
@@ -1017,6 +1022,7 @@ class DownloadDialog(GlassDialog):
             area_mode=mode, area_codes=self.selected_codes() if mode == "fir" else [],
             area_margin=self.margin() if mode == "fir" else 0.0,
             wind_format=self.wind_format(),
+            save_opts=self.save_options(),
         )
 
     # ── Descarga ─────────────────────────────────────────────────────────────

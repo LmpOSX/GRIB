@@ -1,5 +1,28 @@
 # Cambios
 
+## Sin publicar
+
+- Bloque «Archivo a guardar» en Preferencias ▸ Guardar (valores por defecto,
+  aplicados también al convertir al abrir), Obtener datos…, Generar GRIB… y el
+  nuevo Archivo ▸ Guardar como… (⌘ ⇧ S), que recodifica entero el archivo
+  abierto con otro nombre: viento U/V o dirección y velocidad (reemplaza al
+  selector «Viento en el archivo»); decimales del viento y de la temperatura
+  (0, 1 o 2, exactos: factor decimal con escala binaria 0 y los valores
+  redondeados antes); etiqueta de capa de los archivos por Nivel (según el
+  modo, nominal 850, ISA 843,1 o ISA entera 843, que el visor reconoce como
+  ISA); empaquetado simple o un valor IEEE por celda; centro generador del
+  origen o «sin centro» (65535). Todo queda en la procedencia (`guardado`,
+  `por_nivel`).
+- Vista ▸ Ver hexadecimal… (⌘ ⇧ H): el archivo abierto como un `hexdump -C`
+  con su estructura en árbol (mensaje → sección → campo → subcampo) y el valor
+  decodificado de cada campo. Cada mensaje lleva un tinte alternado; el nodo
+  elegido se pinta con el acento y sus hijos con colores propios, así al
+  entrar en el árbol se ven las secciones del mensaje, los campos de la
+  sección y los bytes del campo. Clic en un byte abre el árbol hasta el campo
+  que lo contiene; «Ir al byte», línea de detalle con la ruta, los bytes y la
+  interpretación, y «Copiar bytes». Análisis propio, sin ecCodes, de las
+  plantillas del GFS, el WAFS y el visor.
+
 ## 0.4.2 — 2026-10-22
 
 - Crudo o por Nivel al abrir: el `.json` de procedencia decide. Un archivo

@@ -63,6 +63,15 @@ ISA_TOL_PA = 10         # tolerancia al reconocer la columna ISA (Pa): NOAA redo
 
 _ISA_TO_FL = {pa: fl for fl, (pa, _h) in FL_TABLE.items()}
 _NOMINAL_TO_FL = {h * 100: fl for fl, (_pa, h) in FL_TABLE.items()}
+# Etiqueta «ISA entera»: la presión ISA redondeada al hPa (84300 = 843 hPa)
+_ISA_INT_TO_FL = {int(round(pa / 100.0)) * 100: fl for fl, (pa, _h) in FL_TABLE.items()}
+
+# Etiqueta de capa al guardar (bloque «Archivo a guardar»): según el modo, o
+# forzada a nominal (850), ISA con un decimal (843,1) o ISA entera (843)
+LABELS = [("modo", "Según el modo de etiquetado"),
+          ("nominal", "Nominal (850 hPa)"),
+          ("isa", "ISA con un decimal (843,1 hPa)"),
+          ("isa_int", "ISA entera (843 hPa)")]
 
 
 def mode_fls(mode):
@@ -97,6 +106,24 @@ def label_pa(fl, mode=DEFAULT_MODE):
     return isa_pa(fl) if normalize_mode(mode) == "WAFS" else nominal_hpa(fl) * 100
 
 
+def isa_int_pa(fl):
+    """Presión ISA del FL redondeada al hPa, en Pa (84310 → 84300)."""
+    return int(round(isa_pa(fl) / 100.0)) * 100
+
+
+def label_pa_for(fl, label="modo", mode=DEFAULT_MODE):
+    """Presión (Pa) que se graba para el FL con una etiqueta elegida: 'modo'
+    (la del modo), 'nominal', 'isa' o 'isa_int'."""
+    label = str(label or "modo")
+    if label == "nominal":
+        return nominal_hpa(fl) * 100
+    if label == "isa":
+        return isa_pa(fl)
+    if label == "isa_int":
+        return isa_int_pa(fl)
+    return label_pa(fl, mode)
+
+
 def label_text(fl, mode=DEFAULT_MODE):
     """'850 hPa' en los modos nominales, '84310 Pa' en WAFS."""
     return f"{isa_pa(fl)} Pa" if normalize_mode(mode) == "WAFS" else f"{nominal_hpa(fl)} hPa"
@@ -117,6 +144,9 @@ def fl_from_pa(pa, tol=ISA_TOL_PA):
         fl = _NOMINAL_TO_FL.get(cand)
         if fl is not None:
             return fl, "nominal"
+    fl = _ISA_INT_TO_FL.get(p)
+    if fl is not None:
+        return fl, "isa"
     return None, None
 
 
@@ -150,6 +180,11 @@ def classify(pas):
     if out["unrecognized"]:
         out["fls"] = {**isa, **nominal}
         return out
+    # Etiqueta ISA entera: en FL420/440/510/520/530 coincide con la nominal
+    # del mismo FL; si el resto está en ISA, el archivo es ISA (modo WAFS)
+    if isa and all(_ISA_INT_TO_FL.get(p) == fl for p, fl in nominal.items()):
+        isa = {**isa, **nominal}
+        nominal = {}
     if len(isa) == len(pas):
         out.update({"mode": "WAFS", "column": "isa", "fls": isa,
                     "labeled": set(isa.values()) != {340}})
@@ -189,6 +224,8 @@ def labeled_by_provenance(prov):
     capas de INDRA, un archivo crudo se tomaría por uno ajustado."""
     if not isinstance(prov, dict):
         return None
+    if "por_nivel" in prov:                 # lo anota Guardar como… explícitamente
+        return bool(prov["por_nivel"])
     w = prov.get("wafs")
     if isinstance(w, dict) and (w.get("convertido") or w.get("generado")
                                 or w.get("formato") == "WAFS"):

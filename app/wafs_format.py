@@ -449,12 +449,18 @@ def options_from_config(cfg):
             "mode": normalize_mode(cfg.get("wafs_mode", DEFAULT_MODE))}
 
 
-def convert_file(src_path, dst_path, provenance=None, idx=True, force=False, **opts):
+def convert_file(src_path, dst_path, provenance=None, idx=True, force=False, save_opts=None, **opts):
     """Convierte un archivo a WAFS, escribe el .idx y un JSON de procedencia
     junto a la salida (de qué fuente, modelo y archivo original salió).
-    `force` convierte aunque los niveles parezcan etiquetados por FL.
-    Devuelve (dst_path, info)."""
+    `force` convierte aunque los niveles parezcan etiquetados por FL;
+    `save_opts` es el bloque «Archivo a guardar» (grib_encode) que se aplica
+    al convertido. Devuelve (dst_path, info)."""
     data, info = convert_if_needed(src_path, force=force, **opts)
+    if info.get("convertido") and save_opts:
+        from . import grib_encode as ge
+        if not ge.is_default(save_opts):
+            data, ginfo = ge.recode(data, save_opts, labeled=True, mode=info.get("modo"))
+            info["guardado"] = dict({k: ginfo[k] for k in ge.KEYS}, descripcion=ge.describe(save_opts))
     with open(dst_path, "wb") as fh:
         fh.write(data)
     prov = dict(provenance or {})
@@ -468,6 +474,9 @@ def convert_file(src_path, dst_path, provenance=None, idx=True, force=False, **o
         prov.setdefault("plazos_h", steps)
     prov["archivo_original"] = os.path.abspath(src_path)
     prov["wafs"] = info
+    if info.get("guardado"):
+        prov["guardado"] = info["guardado"]
+        prov["viento"] = info["guardado"]["wind"]
     prov["convertido"] = dt.datetime.now(dt.timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
     with open(dst_path + ".json", "w", encoding="utf-8") as fh:
         json.dump(prov, fh, ensure_ascii=False, indent=2)

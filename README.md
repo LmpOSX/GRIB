@@ -137,13 +137,15 @@ fuente) y **Descarga y archivo**:
   plazos se validan contra los que la fuente ofrece (el GFS: cada hora
   hasta +120, cada 3 h hasta +384).
 * **Variables** y **niveles** de la fuente (sin selector de nivel en las
-  fuentes de superficie). Debajo de las variables, **Viento en el archivo**:
-  `Componentes U y V (UGRD/VGRD)`, como lo publica el modelo, o `Dirección y
-  velocidad (WDIR/WIND)`: al terminar la descarga (después de interpolar a
-  los FL, porque la dirección no se interpola) cada par U/V se reemplaza por
-  WDIR (grados verdaderos, de dónde sopla) y WIND (m/s), conservando grilla,
-  nivel, plazo y empaquetado; el nombre lleva `_dirvel` y la procedencia
-  `viento: dirspeed`. El visor lee los dos formatos (de un WDIR/WIND deriva
+  fuentes de superficie). Debajo de las variables, el bloque **Archivo a
+  guardar** (ver «Archivo a guardar»), que arranca con Preferencias ▸
+  Guardar. Su primera opción, el viento: `Componentes U y V (UGRD/VGRD)`,
+  como lo publica el modelo, o `Dirección y velocidad (WDIR/WIND)`: al
+  terminar la descarga (después de interpolar a los FL, porque la dirección
+  no se interpola) cada par U/V se reemplaza por WDIR (grados verdaderos, de
+  dónde sopla) y WIND (m/s), conservando grilla, nivel y plazo; el nombre
+  lleva `_dirvel` y la procedencia `viento: dirspeed`. El visor lee los dos
+  formatos (de un WDIR/WIND deriva
   U/V al leer, y el inventario y FUENTE lo dicen); el WAFS operativo lleva
   U/V y el validador lo avisa sin bloquear. Debajo de la grilla de niveles hay cuatro
   botones excluyentes, **INDRA (14)**, **OACI (17)**, **OACI (56)** y **WAFS
@@ -702,6 +704,30 @@ reemplaza a las demás fuentes para las FIR que contiene (el código OACI
 se toma de la propiedad `id`/`icao`/`code` o del nombre). Fuentes y
 licencias en `docs/FUENTES_FIR.md`.
 
+### Ver hexadecimal
+
+Vista ▸ Ver hexadecimal… (⌘ ⇧ H) muestra el archivo abierto (el convertido,
+si se convirtió al abrir) como un `hexdump -C`: a la derecha el volcado,
+posición · 16 bytes en hexadecimal · ASCII; a la izquierda su estructura en
+árbol, mensaje → sección → campo → subcampo, con el valor decodificado de
+cada campo (centro generador con su nombre de la tabla C-11, hora de
+referencia, Ni/Nj y esquinas de la grilla en grados, parámetro con su
+abreviatura, capa en Pa y hPa, plazo, R/E/D y bits por valor, y para el
+empaquetado simple o IEEE los primeros valores decodificados). Cada mensaje
+va con un tinte alternado en el volcado; el nodo elegido se pinta con el
+acento y, si tiene hijos, cada uno con un color propio: así, al entrar en un
+mensaje se distinguen sus secciones, en una sección sus campos y en un campo
+sus bytes (por ejemplo tipo, factor y valor de la capa). Un clic sobre un
+byte del volcado abre el árbol hasta el campo que lo contiene; «Ir al byte»
+acepta la posición en decimal o `0x…`. La línea de detalle muestra la ruta
+del nodo, su posición y tamaño, sus bytes en hexadecimal y su
+interpretación; «Copiar bytes» los pasa al portapapeles. Los mensajes se
+desarrollan al abrirlos, así que un archivo de miles de mensajes abre al
+instante. El análisis es propio (no usa ecCodes) y desarrolla las plantillas
+del GFS, el WAFS y el visor: grilla 3.0, producto 4.0 y 4.8, empaquetado
+5.0, 5.2, 5.3, 5.4, 5.40 y 5.41; con otra plantilla se muestran los campos
+comunes y el resto como bytes.
+
 ### Atajos
 
 | Acción | macOS | Windows / Linux |
@@ -712,6 +738,7 @@ licencias en `docs/FUENTES_FIR.md`.
 | Exportar PNG… | ⌘ E | Ctrl E |
 | Exportar CSV… | ⌘ ⇧ E | Ctrl Shift E |
 | Exportar a WAFS… | ⌘ ⇧ W | Ctrl Shift W |
+| Guardar como… (recodificar el archivo abierto) | ⌘ ⇧ S | Ctrl Shift S |
 | Cerrar archivo | ⌘ W | Ctrl W |
 | Salir | ⌘ Q | Ctrl Q |
 | Todo el dominio | ⌘ ⇧ 0 | Ctrl Shift 0 |
@@ -719,6 +746,7 @@ licencias en `docs/FUENTES_FIR.md`.
 | Capa de datos activada / desactivada | ⌘ D | Ctrl D |
 | Límites de FIR de Argentina | ⌘ ⇧ F | Ctrl Shift F |
 | Consultar punto… (la ficha, en el último punto o el centro) | ⌘ I | Ctrl I |
+| Ver hexadecimal… (el archivo byte a byte con su estructura) | ⌘ ⇧ H | Ctrl Shift H |
 | Preferencias… | ⌘ , | Ctrl , |
 | Agrandar / achicar / restablecer fuente | ⌘ + / ⌘ − / ⌘ 0 | Ctrl + / Ctrl − / Ctrl 0 |
 | Desplazar el mapa | Arrastrar | Arrastrar |
@@ -943,9 +971,12 @@ resultante); **Niveles y valores**, con los botones **INDRA (14)**, **OACI
 modo y fijan cómo se etiquetan los niveles (nominal hPa×100, o la ISA en Pa
 en WAFS), y una tabla con una fila por FL: presión (etiqueta), temperatura
 en °C (arranca en la ISA del FL), velocidad en kt y dirección verdadera en
-grados, de dónde sopla (la tabla se carga siempre así; a la derecha de los
-botones de modo, **Viento en el archivo** decide si se graba como U/V o
-como dirección y velocidad). Siempre hay una fila elegida: al entrar, la
+grados, de dónde sopla (la tabla se carga siempre así; debajo de los
+botones de modo, el bloque **Archivo a guardar** decide si el viento se
+graba como U/V o como dirección y velocidad, la etiqueta de capa y el
+empaquetado; los campos son constantes y se graban exactos, así que no hay
+decimales que elegir, y el centro es siempre 65535). Siempre hay una fila
+elegida: al entrar, la
 última de abajo; `Agregar FL` inserta encima de la elegida una fila con FL
 + 10 (aunque ese FL ya exista: la columna Presión dice `repetido` hasta
 corregirlo), la T ISA y el viento de la elegida, que sigue elegida;
@@ -996,10 +1027,39 @@ máximo y tropopausa ni ICAHT, y el centro/subcentro queda el del origen
 (NCEP en los GFS) salvo que se indique otro (`--centro`); `tablesVersion`
 se pone en 25 al exportar.
 
+## Archivo a guardar
+
+Un mismo bloque de opciones decide cómo se graba todo lo que escribe el
+visor. Está en cuatro lugares: Preferencias ▸ Guardar (valores por defecto,
+que además se aplican al convertir un archivo al abrirlo), Obtener datos…
+(el archivo que se descarga), Generar GRIB… (el que se genera) y Archivo ▸
+Guardar como… (⌘ ⇧ S), que recodifica entero el archivo abierto y lo
+escribe con otro nombre (`nombre_rec.grib2`, `_dirvel` si el viento va en
+dirección y velocidad), con su `.json` y su `.idx`, y lo abre si se pide;
+Guardar como no selecciona plazos ni niveles ni regrilla: para eso está
+Exportar a WAFS, que sigue como estaba.
+
+| Opción | Valores | Qué hace |
+|---|---|---|
+| Viento | U/V (UGRD/VGRD) · dirección y velocidad (WDIR/WIND) | Cada par U/V se graba como tal o como WDIR (grados verdaderos, de dónde sopla) y WIND (m/s); al bajar se convierte al final, después de interpolar. |
+| Decimales del viento / de la temperatura | como el origen · 0 · 1 · 2 | Factor decimal D con escala binaria E = 0 y los bits por valor recalculados (`changeDecimalPrecision` de ecCodes); los valores se redondean antes, así cada uno queda exacto con esos decimales (con 0, enteros). «Como el origen» no toca el empaquetado del modelo. Un campo constante (los generados) se graba exacto en la referencia, con 0 bits, y no se toca. |
+| Etiqueta de capa | según el modo · nominal (850) · ISA con un decimal (843,1) · ISA entera (843) | Presión grabada como capa de cada FL en un archivo por Nivel; el dato está siempre en la ISA exacta. «Según el modo» deja la del modo de etiquetado (nominal en INDRA/OACI/OACI56, ISA en WAFS). ISA entera redondea al hPa (84300 Pa); el visor la reconoce como ISA (modo WAFS). En un archivo de capas crudas la opción está deshabilitada. |
+| Empaquetado | como el origen · simple · un valor por celda (IEEE 32 bits) | Simple: referencia más N bits por punto. IEEE: un float de 32 bits por celda, sin escalas; ocupa más (654 bytes contra 179 en una grilla de 11 × 11) y cualquier lector lo decodifica tal cual. Al cambiar de plantilla los valores se recargan, así no se corren. |
+| Centro generador | el del origen · sin centro (65535) | Sección 1, tabla C-11: 7 es NCEP, 98 ECMWF…; 65535 es «faltante»: el archivo no es de un modelo. Los generados llevan siempre 65535. |
+
+Lo aplicado queda en la procedencia (`guardado` en el `.json`, con su
+descripción) y Guardar como anota además `por_nivel`, que es lo primero que
+mira el visor para decidir crudo o por Nivel. Dentro del GRIB la
+temperatura va siempre en K, el viento en m/s, la dirección en grados y las
+coordenadas en millonésimas de grado: lo fija el formato (el visor muestra
+°C y kt). No se ofrecen °C/°F ni kt dentro del archivo, decimales en la
+grilla ni etiquetas libres por fila: cualquier lector los leería mal, o el
+visor dejaría de reconocer el archivo por Nivel.
+
 ## Preferencias
 
 `⚙` en la barra de acciones o Vista ▸ Preferencias… (⌘,) abre un diálogo
-con siete pestañas:
+con ocho pestañas:
 
 * **Apariencia**: color de acento (presets o personalizado, con vista previa
   en vivo) y transparencia de la ventana.
@@ -1033,6 +1093,9 @@ con siete pestañas:
   rango de FL (por defecto FL050–FL530), ampliar el rango si la fuente trae
   niveles por debajo de 850 o por encima de 100 hPa, y extrapolar con el
   nivel más cercano en vez de omitir (ver «Formato WAFS»).
+* **Guardar**: valores por defecto del bloque «Archivo a guardar» (viento,
+  decimales, etiqueta de capa, empaquetado, centro), que también se aplican
+  al convertir un archivo al abrirlo (ver «Archivo a guardar»).
 * **Motor**: cómo se leen los GRIB2. `ecCodes` usa la biblioteca Python
   incluida en `requirements.txt`; `wgrib2` ejecuta el programa de NOAA como
   proceso externo (inventario con `-s -T -VT -nxny`, grilla con `-grid` y

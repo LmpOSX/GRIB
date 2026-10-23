@@ -207,6 +207,8 @@ def provenance(rows, info, area_mode="manual", area_codes=None, area_margin=0.0,
                   "fl_rango": f"FL{min(info['fls']):03d}–FL{max(info['fls']):03d}", "generado": True},
          "tabla": [dict(r) for r in rows],
          "generado": dt.datetime.now(dt.timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")}
+    if info.get("guardado"):
+        d["guardado"] = dict(info["guardado"])
     if region is not None:
         d["area"] = A.area_info(area_mode, area_codes or [], area_margin, region, tuple(info["zona"]))
     return d

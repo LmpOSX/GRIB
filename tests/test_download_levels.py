@@ -221,11 +221,12 @@ class TestBotonesDeModo(unittest.TestCase):
         job = dlg.job()
         self.assertEqual(job.wind_format, "dirspeed")
         self.assertTrue(job.suffix.startswith("_dirvel"), job.suffix)
-        self.assertEqual(dlg._cfg["download_wind_format"], "dirspeed")
+        self.assertEqual(dlg._cfg["save_wind"], "dirspeed")
+        self.assertEqual(job.save_opts["wind"], "dirspeed")
         self.assertIn("WDIR", dlg.cb_wind.currentText())
         self.assertEqual([k for k, _t in wfm.FORMATS], ["uv", "dirspeed"])
         dlg.close()
-        dlg2 = self._dialog(download_wind_format="dirspeed")     # lo guardado
+        dlg2 = self._dialog(save_wind="dirspeed")                # lo guardado
         self.assertEqual(dlg2.wind_format(), "dirspeed")
         self.assertTrue(dlg2.job().suffix.startswith("_dirvel"))
         dlg2.close()

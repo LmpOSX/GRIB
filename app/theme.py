@@ -47,6 +47,32 @@ def generate_palette(accent_hex: str) -> dict:
     )
 
 
+def hex_colors(accent_hex: str) -> dict:
+    """Colores del visor hexadecimal, derivados de la paleta del acento:
+    fondo y texto; dos tintes alternados para los mensajes; el tramo elegido
+    (acento) y una serie de colores distintos, con el tono rotado, para los
+    hijos del nodo elegido (secciones, campos, subcampos)."""
+    p = generate_palette(accent_hex)
+    base = p["accent"]
+    h, s, l, _a = base.getHsl()
+    h = max(h, 0)
+    fields = []
+    for k in range(8):
+        c = QColor.fromHsl((h + 40 + k * 43) % 360, max(120, min(s, 200)), 110)
+        c.setAlpha(170)
+        fields.append(c)
+    sel = QColor(base)
+    sel.setAlpha(210)
+    msg_a = QColor(p["mid"])
+    msg_a.setAlpha(90)
+    msg_b = QColor(p["accent"])
+    msg_b.setAlpha(70)
+    return {"bg": QColor(p["bg_data"]), "text": QColor(p["text_bright"]),
+            "text_dim": QColor(p["text_dim"]), "offset": QColor(p["accent_light"]),
+            "msg_a": msg_a, "msg_b": msg_b, "selected": sel, "fields": fields,
+            "border": QColor(p["border"])}
+
+
 def _font_stack() -> str:
     """Lista de familias para el stylesheet: la del sistema y, como reserva,
     solo familias que existan en esta máquina.  Qt intenta resolver cada
@@ -821,6 +847,22 @@ QTabBar::tab:hover:!selected {{
 }}
 QLabel#Hint {{
     color: {txd};
+    font-size: {h3}px;
+}}
+/* Visor hexadecimal: el volcado se pinta a mano (ver hex_colors); el árbol y
+   la línea de detalle van en monoespaciada */
+QAbstractScrollArea#HexView {{
+    background: {bg_d};
+    border: none;
+    border-radius: 6px;
+}}
+QTreeWidget#HexTree {{
+    font-family: "Menlo", "Consolas", "DejaVu Sans Mono", monospace;
+    font-size: {h3}px;
+}}
+QLabel#HexDetail {{
+    color: {txt};
+    font-family: "Menlo", "Consolas", "DejaVu Sans Mono", monospace;
     font-size: {h3}px;
 }}
 /* Consulta de punto: los datos que informa, un punto más grandes y con el

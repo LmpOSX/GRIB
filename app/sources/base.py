@@ -21,6 +21,7 @@ import socket
 import time
 import urllib.error
 
+from .. import grib_encode as ge
 from .cache import DownloadCache
 
 GRIB_MAGIC = b"GRIB"
@@ -83,12 +84,17 @@ class DownloadJob:
 
     def __init__(self, run_date, cycle, steps, variables=None, levels=None, region=None,
                  dest_dir=".", basename=None, merge=True, params=None, suffix="",
-                 area_mode="manual", area_codes=None, area_margin=0.0, wind_format="uv"):
+                 area_mode="manual", area_codes=None, area_margin=0.0, wind_format="uv",
+                 save_opts=None):
         self.run_date = run_date              # datetime.date UTC
         self.suffix = suffix                  # p. ej. '_wafs' cuando se convierte al bajar
-        # Viento en el archivo: 'uv' (UGRD/VGRD, como lo publica el modelo) o
-        # 'dirspeed' (WDIR/WIND: dirección y velocidad, convertido al bajar)
-        self.wind_format = wind_format if wind_format in ("uv", "dirspeed") else "uv"
+        # Bloque «Archivo a guardar» (ver grib_encode): viento 'uv' (UGRD/VGRD,
+        # como lo publica el modelo) o 'dirspeed' (WDIR/WIND, convertido al
+        # bajar), decimales, etiqueta de capa, empaquetado y centro
+        so = dict(save_opts or {})
+        so["wind"] = so.get("wind") or wind_format
+        self.save_opts = ge.normalize(so)
+        self.wind_format = self.save_opts["wind"]
         # Área de descarga (ver app/areas.py): 'manual' o 'fir' con los códigos
         # de las áreas marcadas; `region` ya es la envolvente con el margen.
         self.area_mode = area_mode if area_mode in ("manual", "fir") else "manual"
@@ -484,16 +490,20 @@ class Source:
                         progress_cb(i, n, f"{msg}: convirtiendo a WAFS…", (i + 1) / n)
                     data, winfo = self._to_wafs(data, wafs, step)
                     effective.setdefault("wafs", {}).update(winfo)
-                if job.wind_format == "dirspeed" and data[:4] == b"GRIB":
-                    # Viento como dirección y velocidad: se convierte al final,
-                    # después de interpolar (la dirección no se interpola)
-                    from .. import wind_format as wfm
+                if data[:4] == b"GRIB" and not ge.is_default(job.save_opts):
+                    # Archivo a guardar: viento como dirección y velocidad (al
+                    # final, después de interpolar: la dirección no se
+                    # interpola), decimales, etiqueta, empaquetado, centro
                     try:
-                        data, dinfo = wfm.convert(data, "dirspeed")
+                        data, ginfo = ge.recode(data, job.save_opts,
+                                                labeled=bool(convert) or self.flight_levels,
+                                                mode=(wafs or {}).get("mode"))
                     except Exception as exc:
-                        raise DownloadError(f"{self.name}: no se pudo pasar el viento a dirección/"
-                                            f"velocidad en el plazo +{step} h: {exc}") from exc
-                    effective["viento"] = "dirspeed" if dinfo.get("pares") else "uv"
+                        raise DownloadError(f"{self.name}: no se pudo recodificar el plazo +{step} h "
+                                            f"({ge.describe(job.save_opts)}): {exc}") from exc
+                    effective["viento"] = job.wind_format
+                    effective["guardado"] = dict({k: ginfo[k] for k in ge.KEYS},
+                                                 descripcion=ge.describe(job.save_opts))
                 if job.merge:
                     out.write(data)
                 else:

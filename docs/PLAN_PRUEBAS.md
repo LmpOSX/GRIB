@@ -309,3 +309,26 @@ detalle.
 | K3 | Linux | `scripts/build_linux.sh` en Ubuntu 22.04 o posterior | Genera `.tar.gz`, `.deb` y `.AppImage`; `sudo apt install ./…deb` deja el comando `visor-grib` y la entrada del menú; la prueba de humo del script termina en `smoke: ok`. |
 | K4 | Windows | `pwsh scripts\build_windows.ps1` con Inno Setup 6 | Genera `…_Setup.exe` y `.zip`; el instalador asocia `.grib2` si se marca la tarea; la app arranca y abre un GRIB. |
 | K5 | GitHub Actions | `git tag vX.Y.Z && git push origin vX.Y.Z` | El workflow «Instaladores» termina en verde en los cuatro sistemas y la release de la etiqueta tiene los siete archivos. |
+
+## S. Visor hexadecimal
+
+| # | Caso | Pasos | Resultado esperado |
+|---|---|---|---|
+| S1 | Abrir | Con un archivo abierto, Vista ▸ Ver hexadecimal… (⌘ ⇧ H) | Diálogo con «N bytes · M mensajes»; a la izquierda un renglón por mensaje con su posición, el primero elegido y pintado en el volcado; a la derecha el volcado completo (posición, 16 bytes en hex, ASCII) sin cortar la columna ASCII. Sin archivo, la opción está deshabilitada. |
+| S2 | Entrar en el árbol | Desplegar un mensaje, luego Sección 4, luego «Primera superficie» | Al elegir el mensaje sus secciones se pintan con colores distintos; al elegir la sección, sus campos; al elegir «Primera superficie», tipo / factor / valor con colores propios y la línea de detalle muestra `64 00 00 01 4c 08 → capa 85000 Pa = 850 hPa` (o la capa que sea). |
+| S3 | Clic en un byte | Clic sobre un byte del volcado dentro de otro mensaje | El árbol se abre hasta el campo que lo contiene y queda elegido; el volcado se desplaza para mostrarlo. |
+| S4 | Ir al byte | Escribir `0x15` (o `21`) y Enter | Queda elegido «Centro generador» del primer mensaje, con su nombre de la tabla C-11 (7 = NCEP; 65535 = faltante en un generado). |
+| S5 | Copiar | Elegir un campo y «Copiar bytes» | El portapapeles tiene los bytes en hexadecimal (`64 00 00 01 4c 08`). |
+| S6 | Archivo grande | Abrir un GFS con miles de mensajes | Abre al instante; desplazar el volcado con la rueda es fluido; desplegar un mensaje es inmediato. |
+
+## T. Archivo a guardar
+
+| # | Caso | Pasos | Resultado esperado |
+|---|---|---|---|
+| T1 | Preferencias | Preferencias ▸ Guardar: viento «Dirección y velocidad», temperatura 0 decimales; Aplicar. Abrir Obtener datos… y Generar GRIB… | Los dos arrancan con esas opciones en su bloque «Archivo a guardar». |
+| T2 | Descarga | GFS, convertir a WAFS, bloque: viento dir/vel, viento 1 decimal, centro «sin centro»; bajar y abrir | El inventario dice `VIENTO: dirección y velocidad`; en Ver hexadecimal el centro es `65535 = faltante` y en la sección 5 de un WDIR, D = 1 y E = 0; el `.json` tiene `guardado` con la descripción. |
+| T3 | Etiqueta de capa | Descargar con modo INDRA y etiqueta «ISA entera»; abrir | Capas 84300, 69700… (`wgrib2 -s` muestra `843 mb`); el inventario dice modo WAFS (presión ISA en Pa) y los FL se muestran sin interpolar. Con «Convertir a WAFS» apagado en un GFS la etiqueta queda deshabilitada. |
+| T4 | Generar | Generar GRIB con empaquetado «un valor por celda (IEEE)» y etiqueta ISA con un decimal, modo OACI | Ver hexadecimal: plantilla 5.4 = IEEE y la sección 7 tiene un float por punto, todos iguales; capa 84310 Pa aunque el modo sea OACI. Sin decimales ni centro en el bloque de Generar. |
+| T5 | Guardar como | Abrir un archivo convertido; Archivo ▸ Guardar como… (⌘ ⇧ S): viento dir/vel, temperatura 0 decimales; Guardar con «Abrir el archivo guardado» | Se escribe `nombre_rec_dirvel.grib2` con `.json` (`por_nivel: true`, `guardado`) e `.idx`, se abre, el inventario dice por Nivel y las temperaturas en la ficha del punto son enteras en K (decimales en °C vienen de los −273,15). |
+| T6 | Guardar como de un crudo | Abrir un GFS sin convertir (conversión al abrir apagada); Guardar como | La etiqueta de capa está deshabilitada; el guardado sigue crudo (`por_nivel: false`) y al abrirse se interpola. No deja sobreescribir el archivo abierto. |
+

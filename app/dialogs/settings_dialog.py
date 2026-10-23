@@ -35,6 +35,7 @@ from ..fl_table import MODES, MODE_LABELS, DEFAULT_MODE
 from ..sources import all_sources, source_config, set_source_config, source_label
 from ..sources.cache import DownloadCache
 from ..widgets.areas_editor import AreasEditor
+from ..widgets.save_options import SaveOptionsBox
 
 
 class ColorPreview(QFrame):
@@ -70,7 +71,7 @@ class SettingsDialog(GlassDialog):
         ("#8A3A5F", "Bordo"),
     ]
 
-    TABS = ("Apariencia", "Mapa", "Fuentes", "Descarga", "Áreas / FIR", "WAFS", "Motor")
+    TABS = ("Apariencia", "Mapa", "Fuentes", "Descarga", "Áreas / FIR", "WAFS", "Guardar", "Motor")
 
     def __init__(self, parent=None, cfg: dict = None, owner=None):
         """`parent` es la ventana sobre la que se apila (puede ser otro
@@ -111,7 +112,8 @@ class SettingsDialog(GlassDialog):
         self.tabs.addTab(self._tab_descarga(), self.TABS[3])
         self.tabs.addTab(self._tab_areas(), self.TABS[4])
         self.tabs.addTab(self._tab_wafs(), self.TABS[5])
-        self.tabs.addTab(self._tab_motor(), self.TABS[6])
+        self.tabs.addTab(self._tab_guardar(), self.TABS[6])
+        self.tabs.addTab(self._tab_motor(), self.TABS[7])
         lay.addWidget(self.tabs, 1)
 
         btn_row = QHBoxLayout()
@@ -594,6 +596,24 @@ class SettingsDialog(GlassDialog):
         lay.addStretch()
         return w
 
+    def _tab_guardar(self):
+        w, lay = self._page()
+        self._sub(lay, "Archivo a guardar: cómo se graba lo que escribe el visor")
+        self._hint(lay, "Valores por defecto del bloque «Archivo a guardar» de Obtener datos…, "
+                        "Generar GRIB… y Guardar como…; también se aplican al convertir un archivo "
+                        "al abrirlo. Viento como U/V o como dirección y velocidad; decimales del "
+                        "viento y de la temperatura (factor decimal con escala binaria 0: se "
+                        "respetan exactos); etiqueta de capa de los archivos por Nivel (nominal "
+                        "850, ISA 843,1 o ISA entera 843); empaquetado simple o un valor IEEE por "
+                        "celda; centro generador del origen o «sin centro» (65535).")
+        self.save_box = SaveOptionsBox(cfg=self._cfg)
+        lay.addWidget(self.save_box)
+        self._hint(lay, "Dentro del GRIB la temperatura va siempre en K, el viento en m/s y la "
+                        "dirección en grados verdaderos, y las coordenadas en millonésimas de "
+                        "grado: lo fija el formato. El visor muestra °C y kt.")
+        lay.addStretch()
+        return w
+
     def _show_fl_table(self):
         from .fl_table_dialog import FlTableDialog
         FlTableDialog(self, mode=self.cb_wafs_mode.currentData() or DEFAULT_MODE).exec()
@@ -737,6 +757,7 @@ class SettingsDialog(GlassDialog):
             "wafs_fl_max": int(self.wafs_fl_max.value()),
             "wafs_fl_extend": self.chk_wafs_extend.isChecked(),
             "wafs_extrapolate": self.chk_wafs_extrap.isChecked(),
+            **self.save_box.config_values(),
             "engine": self.selected_engine(),
             "wgrib2_path": self.ed_wgrib2.text().strip(),
         }

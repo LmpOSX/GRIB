@@ -35,6 +35,7 @@ from .widgets.inventory_panel import InventoryPanel
 from .widgets.map_info_popup import MapInfoPopup
 from .point_query import geodesic_ddmm
 from .sources import enabled_sources, all_sources, get_source, source_label, read_provenance
+from . import grib_encode as ge
 from . import fir as firmod
 from . import fl_table as flt
 from . import working_area as wamod
@@ -451,6 +452,7 @@ class MainWindow(QMainWindow):
                                               "Ctrl+Shift+D")
         self._act_generate = self._add_action(archivo, "Generar GRIB…", self.generate_grib,
                                               "Ctrl+G")
+        self._act_save_as = self._add_action(archivo, "Guardar como…", self.save_as, "Ctrl+Shift+S")
         self._recent_menu = archivo.addMenu("Recientes")
         self._refresh_recent_menu()
         archivo.addSeparator()
@@ -479,6 +481,7 @@ class MainWindow(QMainWindow):
         self._act_update = self._add_action(vista, "Actualizar", self.redraw, "F5")
         self._act_point = self._add_action(vista, "Consultar punto…", self.open_point_popup,
                                            "Ctrl+I")
+        self._act_hex = self._add_action(vista, "Ver hexadecimal…", self.show_hex, "Ctrl+Shift+H")
         self._act_layer = self._add_action(vista, "Capa de datos activada",
                                            self.toggle_layer, "Ctrl+D")
         self._act_layer.setCheckable(True)
@@ -721,7 +724,8 @@ class MainWindow(QMainWindow):
         self._main_area.setVisible(not empty)
         self._bar_file_area.setVisible(not empty)
         for act in (self._act_export_png, self._act_export_csv, self._act_export_wafs,
-                    self._act_close, self._act_full, self._act_update, self._act_layer):
+                    self._act_close, self._act_full, self._act_update, self._act_layer,
+                    self._act_hex, self._act_save_as):
             act.setEnabled(not empty)
         if empty:
             self._welcome.set_recent_files(self._cfg.get("recent_files") or [])
@@ -805,6 +809,7 @@ class MainWindow(QMainWindow):
         try:
             try:
                 _dst, info = wf.convert_file(path, dst, provenance=read_provenance(path) or {}, force=True,
+                                             save_opts=ge.options_from_config(self._cfg),
                                              **(wf.options_from_config(self._cfg) or {}))
             except PermissionError:
                 from .sources.cache import default_cache_dir
@@ -812,6 +817,7 @@ class MainWindow(QMainWindow):
                 os.makedirs(folder, exist_ok=True)
                 dst = os.path.join(folder, os.path.basename(dst))
                 _dst, info = wf.convert_file(path, dst, provenance=read_provenance(path) or {}, force=True,
+                                             save_opts=ge.options_from_config(self._cfg),
                                              **(wf.options_from_config(self._cfg) or {}))
         except Exception as exc:
             traceback.print_exc()
@@ -1843,6 +1849,33 @@ class MainWindow(QMainWindow):
             self.set_status(f"CSV guardado: {path}")
         except Exception as exc:
             QMessageBox.critical(self, "Exportar CSV", f"No se pudo guardar:\n{exc}")
+
+    def save_as(self):
+        """«Guardar como…»: el archivo abierto recodificado entero según el
+        bloque «Archivo a guardar» (viento, decimales, etiqueta de capa,
+        empaquetado, centro), con su .json y su .idx."""
+        if self._reader is None or not self._path or not os.path.isfile(self._path):
+            QMessageBox.information(self, "Guardar como", "No hay archivo abierto.")
+            return
+        from .dialogs.save_as_dialog import SaveAsDialog
+        dlg = SaveAsDialog(self, path=self._path, reader=self._reader, cfg=self._cfg,
+                           dest_dir=working_dir(self._cfg), provenance=self._provenance)
+        dlg.exec()
+        if dlg.saved_path:
+            self._cfg["last_directory"] = os.path.dirname(dlg.saved_path)
+            save_config(self._cfg)
+            self.set_status(f"Guardado: {dlg.saved_path}")
+            if dlg.open_after:
+                self.open_file(dlg.saved_path, convert=False)
+
+    def show_hex(self):
+        """«Ver hexadecimal…»: el archivo abierto (el convertido, si se
+        convirtió) byte a byte, con su estructura en árbol."""
+        if not self._path or not os.path.isfile(self._path):
+            QMessageBox.information(self, "Ver hexadecimal", "No hay archivo abierto.")
+            return
+        from .dialogs.hex_dialog import HexViewerDialog
+        HexViewerDialog(self, path=self._path, cfg=self._cfg).exec()
 
     def export_wafs(self):
         """«Exportar a WAFS…»: lo cargado (todos los plazos y niveles, o una
