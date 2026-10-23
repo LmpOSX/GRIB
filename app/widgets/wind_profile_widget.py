@@ -31,6 +31,7 @@ from ..grib_reader import speed_color, KELVIN, SPEED_STOPS
 
 ROW_MAX = 28        # alto máximo de una fila (px)
 ROW_MIN = 8         # alto mínimo (perfil denso)
+ROW_FLOOR = 5       # si ni con ROW_MIN entra en el mapa, hasta acá antes que salirse
 BAR_W = 64          # largo de la barra al tope de la escala
 BAR_MAX_KT = float(SPEED_STOPS[-1])   # velocidad que llena la barra (tope de la escala)
 GAP = 10
@@ -110,7 +111,13 @@ class WindProfileWidget(QWidget):
         n = max(1, len(self._rows))
         row_max = max(ROW_MAX, self._fm().height() + 6)     # con letra grande, filas más altas
         avail = self._max_h - self._header_h()
-        return int(max(ROW_MIN, min(row_max, avail / n)))
+        h = avail / n
+        if h >= ROW_MIN:
+            return int(min(row_max, h))
+        # Perfil muy denso en un mapa muy bajo (un GFS crudo con 37 capas en
+        # una ventana chica, fuentes altas de Linux): la ficha tiene que
+        # entrar entera, así que las filas bajan de ROW_MIN hasta ROW_FLOOR
+        return int(max(ROW_FLOOR, h))
 
     def _header_h(self):
         return self._fm().height() + 4

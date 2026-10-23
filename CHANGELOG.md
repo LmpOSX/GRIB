@@ -1,5 +1,11 @@
 # Cambios
 
+## Sin publicar
+
+- Ficha del punto: con un perfil muy denso en un mapa muy bajo, las filas
+  bajan del mínimo de 8 px hasta 5 px antes que la ficha se salga del mapa
+  (con las fuentes de Linux quedaba un píxel afuera).
+
 ## 0.5.2 — 2026-10-23
 
 - Bloque «Archivo a guardar»: «Orden de las celdas» (N→S o S→N, O→E o E→O,
