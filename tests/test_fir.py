@@ -126,8 +126,16 @@ class TestGeometria(unittest.TestCase):
         dense = fir.densify(ring, step=1.0)
         self.assertGreater(len(dense), 25)
         self.assertTrue(np.allclose(dense[0], (0, 0)))
-        polo = np.array([(0, -46), (10, -46), (0, -90)], dtype=float)
-        self.assertEqual(len(fir.densify(polo, step=1.0)), 3 + 10)        # sólo el lado que no toca el polo
+        # Un lado que llega al polo es un meridiano: se densifica en latitud
+        # con la longitud del extremo que no está en el polo (el que corre a
+        # lo largo del polo, no)
+        polo = np.array([(0, -46), (10, -46), (10, -90), (0, -90)], dtype=float)
+        d = fir.densify(polo, step=1.0)
+        self.assertEqual(len(d), 4 + 10 + 44 + 44)
+        lado = d[(d[:, 1] < -46) & (d[:, 1] > -90)]
+        self.assertTrue(set(np.round(lado[:, 0], 6)) <= {0.0, 10.0})      # siempre sobre un meridiano
+        self.assertTrue(np.all(np.diff(d[11:57, 1]) < 0))                 # de −46 bajando a −90 por 10°E
+        self.assertTrue(np.all(d[11:57, 0] == 10.0))
 
     def test_region_bbox_extremos_cobertura(self):
         r = fir.FirRegion("SAVF", polygons=[(np.array([(-73, -39), (-10, -46), (-10, -90), (-73, -90)]), [])])

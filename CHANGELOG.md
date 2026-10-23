@@ -2,6 +2,11 @@
 
 ## Sin publicar
 
+- Rectángulo del área de descarga y polígonos de FIR que llegan al polo
+  (SAVF): el lado que baja al polo es un meridiano y ahora se densifica en
+  latitud; en las proyecciones con meridianos curvos (estereográfica tangente
+  a WA o del centro, Lambert) se dibujaba como una recta que no coincidía con
+  el meridiano y dejaba datos fuera del marco.
 - Bloque «Archivo a guardar» en Preferencias ▸ Guardar (valores por defecto,
   aplicados también al convertir al abrir), Obtener datos…, Generar GRIB… y el
   nuevo Archivo ▸ Guardar como… (⌘ ⇧ S), que recodifica entero el archivo

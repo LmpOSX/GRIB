@@ -160,8 +160,12 @@ def interior_point(ring, holes=()):
 
 def densify(ring, step=DENSIFY_DEG):
     """Inserta vértices cada `step` grados a lo largo de cada lado (lineal
-    en lon/lat, como dibujan los clientes de VATSpy). Los lados que tocan
-    el polo no se densifican (allí la longitud es indefinida)."""
+    en lon/lat, como dibujan los clientes de VATSpy). Un lado que corre a lo
+    largo del polo (los dos extremos en ±90°) no se densifica: allí la
+    longitud es indefinida. Un lado que *llega* al polo es un meridiano: se
+    densifica en latitud con la longitud del otro extremo, así en las
+    proyecciones donde los meridianos son curvos (estereográfica oblicua,
+    Lambert) el trazo sigue al meridiano y no lo corta con una recta."""
     r = np.asarray(ring, dtype=float)
     if len(r) < 2 or step <= 0:
         return r
@@ -171,8 +175,14 @@ def densify(ring, step=DENSIFY_DEG):
         a = r[i]
         b = r[(i + 1) % n]
         out.append(a)
-        if abs(a[1]) >= 89.99 or abs(b[1]) >= 89.99:
+        a_pole, b_pole = abs(a[1]) >= 89.99, abs(b[1]) >= 89.99
+        if a_pole and b_pole:
             continue
+        if a_pole or b_pole:
+            # Meridiano hasta el polo: la longitud es la del extremo que no está en él
+            lon = b[0] if a_pole else a[0]
+            a = np.array([lon, a[1]])
+            b = np.array([lon, b[1]])
         span = max(abs(b[0] - a[0]), abs(b[1] - a[1]))
         k = int(span // step)
         if k >= 1:
