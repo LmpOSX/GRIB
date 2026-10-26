@@ -1,8 +1,9 @@
 # -*- coding: utf-8 -*-
 """«Exportar a WAFS…»: escribe lo cargado en el visor como GRIB2 WAFS, con
-selección de plazos, niveles y variables, recorte, regrillado bilineal,
-un archivo por plazo (gfs.tHHz.wafs_0p25.fFFF.grib2) o uno solo, el .idx
-junto a cada archivo y la verificación de lo escrito."""
+selección de plazos, niveles y variables, recorte, el bloque «Archivo a
+guardar» (perfil, regrillado bilineal, viento, decimales, orden de las
+celdas, longitudes…), un archivo por plazo (gfs.tHHz.wafs_0p25.fFFF.grib2)
+o uno solo, el .idx junto a cada archivo y la verificación de lo escrito."""
 import os
 
 from PyQt6.QtCore import Qt, QThread, pyqtSignal
@@ -13,6 +14,7 @@ from PyQt6.QtWidgets import (
 )
 
 from .glass_dialog import GlassDialog, add_shadow as _add_shadow
+from ..widgets.save_options import SaveOptionsBox
 from .. import wafs_format as wf
 from .. import fl_table as flt
 
@@ -197,15 +199,16 @@ class ExportWafsDialog(GlassDialog):
         self.chk_crop.toggled.connect(self._on_crop_toggled)
         self._on_crop_toggled(False)
 
-        # Regrillado y salida
-        self._sub(lay, "Grilla y archivos")
+        # Archivo a guardar: el mismo bloque que en Obtener datos y Guardar
+        # como (perfil, regrillado, viento, decimales, orden, longitudes…)
+        self._sub(lay, "Archivo a guardar")
+        self.save_box = SaveOptionsBox(cfg=self._cfg, compact=True, rows=True)
+        lay.addWidget(self.save_box)
+
+        # Salida
+        self._sub(lay, "Archivos")
         grid = QGridLayout()
         grid.setHorizontalSpacing(8)
-        grid.addWidget(QLabel("Regrillar"), 0, 0)
-        self.cb_regrid = QComboBox()
-        for key, text in wf.EXPORT_REGRID:
-            self.cb_regrid.addItem(text, key)
-        grid.addWidget(self.cb_regrid, 0, 1, 1, 3)
         self.rb_per_step = QRadioButton("Un archivo por plazo (gfs.tHHz.wafs_0p25.fFFF.grib2)")
         self.rb_single = QRadioButton("Un único archivo multi-plazo")
         self.rb_per_step.setChecked(True)
@@ -300,7 +303,7 @@ class ExportWafsDialog(GlassDialog):
             src=self._reader.path, dest_dir=self.ed_dest.text().strip() or ".",
             steps=steps, fls=fls,
             variables="basicas" if self.rb_basic.isChecked() else "todas",
-            region=region, regrid=self.cb_regrid.currentData() or "ninguno",
+            region=region, save_opts=self.save_box.values(),
             per_step=self.rb_per_step.isChecked(),
             model=(self.ed_model.text().strip() or "gfs"),
             basename=(self.ed_name.text().strip() or None),
@@ -338,6 +341,7 @@ class ExportWafsDialog(GlassDialog):
         if err:
             QMessageBox.warning(self, "Exportar a WAFS", err)
             return
+        self._cfg.update(self.save_box.config_values())
         self._set_busy(True)
         self.progress.setValue(0)
         self.lbl_status.setText("Exportando…")

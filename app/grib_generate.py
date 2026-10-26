@@ -33,7 +33,7 @@ try:
 except Exception:  # pragma: no cover
     ec = None
 
-RESOLUTIONS = [(0.25, "0,25°"), (0.5, "0,50°"), (1.0, "1,00°")]
+RESOLUTIONS = [(0.25, "0,25°"), (0.5, "0,50°"), (1.0, "1,00°"), (1.25, "1,25° (WAFS clásico)")]
 KT_TO_MS = 0.514444
 KELVIN = 273.15
 CENTRE_MISSING = 65535          # centro «Missing value» (tabla C-11): el archivo no es de un modelo
@@ -88,10 +88,15 @@ def grid_axes(region, res_deg):
     res = float(res_deg)
     top, bottom, left, right = A.round_outward(region, res)
     nj = int(round((top - bottom) / res)) + 1
-    ni = int(round((right - left) / res)) + 1
+    if right - left >= 360.0 - 1e-6:
+        # La vuelta completa: 360/res columnas, sin repetir el meridiano de corte
+        ni = int(round(360.0 / res))
+        right = left + res * (ni - 1)
+    else:
+        ni = int(round((right - left) / res)) + 1
     lats = np.round(top - res * np.arange(nj), 6)
     lons = np.round(left + res * np.arange(ni), 6)
-    return lats, lons, (top, bottom, left, right)
+    return lats, lons, (top, bottom, left, round(right, 6))
 
 
 def validate_rows(rows):
@@ -245,7 +250,8 @@ def default_basename(run, step_h, res_deg, area_tag, wind_format="uv", mode=flt.
                      steps=None):
     """`generado_20261021_12z_f006_0p25_SAEF+SACF_OACI[_dirvel]`; con varios
     plazos, `f006-f024`."""
-    res = {0.25: "0p25", 0.5: "0p50", 1.0: "1p00"}.get(float(res_deg), f"{float(res_deg):g}".replace(".", "p"))
+    res = {0.25: "0p25", 0.5: "0p50", 1.0: "1p00", 1.25: "1p25"}.get(float(res_deg),
+                                                                     f"{float(res_deg):g}".replace(".", "p"))
     steps = sorted({int(s) for s in (steps if steps else [step_h])})
     f = f"f{steps[0]:03d}" if len(steps) == 1 else f"f{steps[0]:03d}-f{steps[-1]:03d}"
     base = f"generado_{run:%Y%m%d}_{run:%H}z_{f}_{res}_{area_tag}_{flt.normalize_mode(mode)}"
@@ -263,7 +269,7 @@ def provenance(rows, info, area_mode="manual", area_codes=None, area_margin=0.0,
          "plazos_h": list(info.get("plazos_h") or [info["plazo_h"]]),
          "variables": ["TMP", "WDIR", "WIND"] if info["viento"] == "dirspeed" else ["TMP", "UGRD", "VGRD"],
          "niveles_fl": info["fls"], "zona": info["zona"],
-         "resolucion_final": {0.25: "0p25", 0.5: "0p50", 1.0: "1p00"}.get(
+         "resolucion_final": {0.25: "0p25", 0.5: "0p50", 1.0: "1p00", 1.25: "1p25"}.get(
              float(info["grilla"]["resolucion_deg"]), f"{info['grilla']['resolucion_deg']:g}"),
          "viento": info["viento"],
          "wafs": {"formato": "WAFS", "modo": info["modo"], "convertido": False,

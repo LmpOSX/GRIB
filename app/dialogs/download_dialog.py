@@ -296,17 +296,16 @@ class DownloadDialog(GlassDialog):
         self.var_grid.setVerticalSpacing(2)
         self.var_checks = {}
         lay.addWidget(self.var_box)
-        # Archivo a guardar: viento U/V o dirección y velocidad (se convierte
-        # al bajar, después de interpolar), decimales, etiqueta de capa,
-        # empaquetado y centro; arranca con Preferencias ▸ Guardar
+        # Archivo a guardar: perfil, regrillado, viento U/V o dirección y
+        # velocidad (se convierte al bajar, después de interpolar), decimales,
+        # etiqueta de capa, empaquetado, centro y orden de las celdas;
+        # arranca con Preferencias ▸ Guardar
         lbl = QLabel("Archivo a guardar")
         lbl.setObjectName("SubHeading")
         lay.addWidget(lbl)
         self.save_box = SaveOptionsBox(cfg=self._cfg, compact=True, rows=True)
         self.cb_wind = self.save_box.cb_wind
-        for cb in (self.save_box.cb_wind, self.save_box.cb_dec_wind, self.save_box.cb_dec_temp,
-                   self.save_box.cb_label, self.save_box.cb_packing, self.save_box.cb_centre):
-            cb.currentIndexChanged.connect(self._on_save_changed)
+        self.save_box.changed.connect(self._on_save_changed)
         lay.addWidget(self.save_box)
 
         self.form = None
@@ -888,7 +887,7 @@ class DownloadDialog(GlassDialog):
         """Bloque «Archivo a guardar» del diálogo."""
         return self.save_box.values()
 
-    def _on_save_changed(self, _i):
+    def _on_save_changed(self, _i=None):
         self._cfg.update(self.save_box.config_values())
 
     def _refresh_save_labeled(self):

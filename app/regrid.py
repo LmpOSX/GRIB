@@ -7,9 +7,13 @@ del campo de 0,25°, así que el submuestreo reproduce esos productos salvo la
 cuantización del empaquetado; el promedio de área ("suavizado") da un campo
 más representativo de la celda pero distinto del publicado.
 """
+import os
+import subprocess
+import tempfile
+
 import numpy as np
 
-from .grib_engines import ec
+from .grib_engines import ec, find_wgrib2
 
 SMOOTHING = [
     ("ninguno", "Ninguno (submuestreo = productos de NOAA)"),
@@ -317,25 +321,48 @@ def _interp_axis(values, x_src, x_dst, axis):
     return (1.0 - w) * a + w * b
 
 
+def is_global_lon(lon1d):
+    """True si el eje de longitudes da la vuelta completa (n × paso = 360)."""
+    lon1d = np.asarray(lon1d, dtype=float)
+    if len(lon1d) < 2:
+        return False
+    d = abs(float(lon1d[1] - lon1d[0]))
+    return d > 0 and abs(len(lon1d) * d - 360.0) < 1e-4
+
+
 def bilinear_regrid(values2d, lat1d, lon1d, lat_out, lon_out):
     """Regrillado bilineal de un campo (nj, ni) con ejes `lat1d`/`lon1d` (en
-    cualquier sentido) a los ejes `lat_out`/`lon_out`."""
+    cualquier sentido) a los ejes `lat_out`/`lon_out`. En una grilla global
+    las longitudes destino entre la última columna y la primera se
+    interpolan cruzando el meridiano de corte (la grilla se cierra)."""
     lat1d = np.asarray(lat1d, dtype=float)
     lon1d = np.asarray(lon1d, dtype=float)
     vals = np.asarray(values2d, dtype=float)
+    lon_out = np.asarray(lon_out, dtype=float)
     if len(lat1d) > 1 and lat1d[0] > lat1d[-1]:
         lat1d, vals = lat1d[::-1], vals[::-1, :]
     if len(lon1d) > 1 and lon1d[0] > lon1d[-1]:
         lon1d, vals = lon1d[::-1], vals[:, ::-1]
+    if is_global_lon(lon1d):
+        # Se agrega la primera columna 360° más allá y los destinos se llevan
+        # al rango [primera, primera + 360)
+        lon1d = np.append(lon1d, lon1d[0] + 360.0)
+        vals = np.concatenate([vals, vals[:, :1]], axis=1)
+        lon_out = lon1d[0] + np.mod(lon_out - lon1d[0], 360.0)
     tmp = _interp_axis(vals, lon1d, lon_out, axis=1)
     return _interp_axis(tmp, lat1d, lat_out, axis=0)
 
 
-def target_axis(axis, res):
-    """Múltiplos de `res` dentro del rango del eje, en el sentido del eje."""
+def target_axis(axis, res, wrap=False):
+    """Múltiplos de `res` dentro del rango del eje, en el sentido del eje.
+    Con `wrap` (longitudes de una grilla global) el destino también da la
+    vuelta completa: 360/res puntos desde el primer múltiplo."""
     lo, hi = float(np.min(axis)), float(np.max(axis))
     start = np.ceil(lo / res - 1e-9) * res
-    out = np.round(np.arange(start, hi + 1e-9, res), 6)
+    if wrap:
+        out = np.round(start + res * np.arange(int(round(360.0 / res))), 6)
+    else:
+        out = np.round(np.arange(start, hi + 1e-9, res), 6)
     if len(axis) > 1 and axis[0] > axis[-1]:
         out = out[::-1]
     return out
@@ -361,7 +388,8 @@ def regrid_bilinear_grib(data, res_deg):
                 continue
             ni, nj = ec.codes_get(gid, "Ni"), ec.codes_get(gid, "Nj")
             lat1d, lon1d = grid_axes(gid)
-            lat_out, lon_out = target_axis(lat1d, res_deg), target_axis(lon1d, res_deg)
+            lat_out = target_axis(lat1d, res_deg)
+            lon_out = target_axis(lon1d, res_deg, wrap=is_global_lon(lon1d))
             if len(lat_out) == 0 or len(lon_out) == 0:
                 raise ValueError(f"La grilla no contiene puntos múltiplos de {res_deg:g}°.")
             same = (len(lat_out) == nj and len(lon_out) == ni
@@ -391,3 +419,148 @@ def regrid_bilinear_grib(data, res_deg):
             pos += total
             ec.codes_release(gid)
     return bytes(out)
+
+
+# ── Regrillado con wgrib2 (-new_grid, NCEPLIBS-ip) ───────────────────────────
+
+REGRID_ENGINES = [("eccodes", "Bilineal propio (ecCodes)"),
+                  ("wgrib2", "wgrib2 -new_grid (NCEPLIBS-ip)")]
+_IPOLATES = {}
+
+
+def wgrib2_can_regrid(wgrib2_path=""):
+    """True si hay un wgrib2 compilado con la interpolación (IPOLATES):
+    `wgrib2 -config` no dice «IPOLATES package is not installed»."""
+    exe = find_wgrib2(wgrib2_path or "")
+    if not exe:
+        return False
+    if exe not in _IPOLATES:
+        try:
+            out = subprocess.run([exe, "-config"], capture_output=True, text=True, timeout=10)
+            text = (out.stdout or "") + (out.stderr or "")
+            _IPOLATES[exe] = "IPOLATES" in text and "IPOLATES package is not installed" not in text
+        except Exception:
+            _IPOLATES[exe] = False
+    return _IPOLATES[exe]
+
+
+def _uv_paired(data):
+    """True si cada U del archivo va seguida de su V (mismo nivel y plazo) y
+    no hay V sueltas: así wgrib2 puede interpolarlas como vector."""
+    seq = []
+    pos = 0
+    while pos < len(data):
+        gid = ec.codes_new_from_message(data[pos:])
+        if gid is None:
+            break
+        try:
+            total = ec.codes_get_message_size(gid)
+            seq.append((ec.codes_get(gid, "shortName"), ec.codes_get(gid, "level"),
+                        ec.codes_get(gid, "stepRange")))
+        finally:
+            pos += total
+            ec.codes_release(gid)
+    us = [k for k, m in enumerate(seq) if m[0] == "u"]
+    vs = [k for k, m in enumerate(seq) if m[0] == "v"]
+    if not us or len(us) != len(vs):
+        return False
+    return all(k + 1 < len(seq) and seq[k + 1][0] == "v" and seq[k + 1][1:] == seq[k][1:] for k in us)
+
+
+def regrid_wgrib2_grib(data, res_deg, wgrib2_path="", method="bilinear"):
+    """Regrilla con `wgrib2 -new_grid latlon` a `res_deg` grados, con los
+    mismos puntos destino que el bilineal propio (múltiplos de la
+    resolución, la vuelta completa en una grilla global). wgrib2 escribe de
+    sur a norte: si el origen iba de norte a sur se vuelve a ese orden. Si
+    cada U va seguida de su V se interpolan como vector (en el polo el
+    viento queda bien definido); si no (una sola componente, otro orden) se
+    interpolan como escalares, que de lat/lon a lat/lon da lo mismo salvo
+    en las filas de los polos."""
+    if ec is None:
+        raise RuntimeError("regrillar requiere eccodes")
+    exe = find_wgrib2(wgrib2_path or "")
+    if not exe:
+        raise RuntimeError("no se encontró wgrib2")
+    if not wgrib2_can_regrid(exe):
+        raise RuntimeError("este wgrib2 no tiene la interpolación (IPOLATES): no puede regrillar")
+    gid = ec.codes_new_from_message(bytes(data))
+    try:
+        lat1d, lon1d = grid_axes(gid)
+        j_pos = int(ec.codes_get(gid, "jScansPositively"))
+    finally:
+        ec.codes_release(gid)
+    res = float(res_deg)
+    lat_out = target_axis(lat1d, res)
+    lon_out = target_axis(lon1d, res, wrap=is_global_lon(lon1d))
+    if len(lat_out) == 0 or len(lon_out) == 0:
+        raise ValueError(f"La grilla no contiene puntos múltiplos de {res:g}°.")
+    lat_s, lon_w = float(np.min(lat_out)), float(np.min(lon_out)) % 360.0
+    with tempfile.TemporaryDirectory() as tmp:
+        src, dst = os.path.join(tmp, "in.grib2"), os.path.join(tmp, "out.grib2")
+        with open(src, "wb") as fh:
+            fh.write(bytes(data))
+        vectors = "UGRD:VGRD" if _uv_paired(bytes(data)) else "none"
+        cmd = [exe, src, "-new_grid_winds", "earth", "-new_grid_vectors", vectors,
+               "-new_grid_interpolation", method,
+               "-new_grid", "latlon", f"{lon_w:g}:{len(lon_out)}:{res:g}",
+               f"{lat_s:g}:{len(lat_out)}:{res:g}", dst]
+        out = subprocess.run(cmd, capture_output=True, text=True, timeout=600)
+        if out.returncode != 0 or not os.path.isfile(dst) or os.path.getsize(dst) == 0:
+            msg = (out.stderr or out.stdout or "").strip().splitlines()
+            raise RuntimeError("wgrib2 -new_grid falló: " + (msg[-1] if msg else f"código {out.returncode}"))
+        with open(dst, "rb") as fh:
+            new = fh.read()
+    if j_pos:
+        return new
+    # De vuelta a norte → sur, como el origen
+    res_out = bytearray()
+    pos = 0
+    while pos < len(new):
+        gid = ec.codes_new_from_message(new[pos:])
+        if gid is None:
+            break
+        try:
+            total = ec.codes_get_message_size(gid)
+            if int(ec.codes_get(gid, "jScansPositively")):
+                ec.codes_set(gid, "swapScanningY", 1)
+                res_out += ec.codes_get_message(gid)
+            else:
+                res_out += new[pos:pos + total]
+        finally:
+            pos += total
+            ec.codes_release(gid)
+    return bytes(res_out)
+
+
+def already_on_grid(data, res_deg):
+    """True si todos los mensajes ya están en la grilla destino de
+    `res_deg` (o no son lat/lon regulares): no hay nada que regrillar."""
+    pos = 0
+    while pos < len(data):
+        gid = ec.codes_new_from_message(data[pos:])
+        if gid is None:
+            break
+        try:
+            pos += ec.codes_get_message_size(gid)
+            if ec.codes_get(gid, "gridType") != "regular_ll":
+                continue
+            lat1d, lon1d = grid_axes(gid)
+            lat_out = target_axis(lat1d, res_deg)
+            lon_out = target_axis(lon1d, res_deg, wrap=is_global_lon(lon1d))
+            if not (len(lat_out) == len(lat1d) and len(lon_out) == len(lon1d)
+                    and np.allclose(lat_out, lat1d, atol=1e-6) and np.allclose(lon_out, lon1d, atol=1e-6)):
+                return False
+        finally:
+            ec.codes_release(gid)
+    return True
+
+
+def regrid_to(data, res_deg, engine="eccodes", wgrib2_path=""):
+    """Regrilla a `res_deg` con el motor elegido: «wgrib2» usa -new_grid
+    (bilineal de NCEPLIBS-ip); cualquier otro, el bilineal propio. Si el
+    archivo ya está en esa grilla pasa sin cambios."""
+    if ec is not None and already_on_grid(bytes(data), float(res_deg)):
+        return bytes(data)
+    if engine == "wgrib2":
+        return regrid_wgrib2_grib(data, res_deg, wgrib2_path)
+    return regrid_bilinear_grib(data, res_deg)

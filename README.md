@@ -989,11 +989,23 @@ inventario dice `FORMATO: etiquetado por FL, modo …` y FUENTE agrega
 **Exportar a WAFS…** (Archivo, ⌘⇧W) toma lo cargado y escribe GRIB2 WAFS:
 todos los plazos y niveles o una selección (plazos, rango de FL), sólo
 UGRD/VGRD/TMP o todas las variables, recorte geográfico opcional (el
-recuadro visible como valor inicial), regrillado bilineal a 0,25° (como el
-operativo) o a 1,00° (para el FDP), un archivo por plazo con el nombre
+recuadro visible como valor inicial), el bloque «Archivo a guardar» (perfil,
+regrillado bilineal a 0,25° como el operativo, 0,50°, 1,00° para el FDP o
+1,25° como el WAFS clásico de WAFC London, viento, decimales, orden de las
+celdas, longitudes…), un archivo por plazo con el nombre
 `gfs.tHHz.wafs_0p25.fFFF.grib2` (prefijo del modelo editable) o un único
 archivo multi-plazo, `tablesVersion 25` en los mensajes y el inventario
-`.idx` (formato `wgrib2 -s`: `1:0:d=2026101318:TMP:843.1 mb:6 hour fcst:`)
+`.idx` (formato `wgrib2 -s`: `1:0:d=2026101318:TMP:843.1 mb:6 hour fcst:`).
+El regrillado lo hace el motor de Preferencias: con `wgrib2`, si está
+compilado con la interpolación de NCEPLIBS-ip (`wgrib2 -config` dice
+`IPOLATES`), usa `-new_grid` bilineal con U/V como vector cuando van en
+pares; si no, el bilineal propio sobre ecCodes, avisado. Los dos dan las
+mismas grillas: puntos en múltiplos de la resolución y, en una grilla
+global, la vuelta completa (de 1,25° a 1° salen 360 columnas, la última
+interpolada entre 358,75° y 0°). La temperatura sale idéntica; el viento
+difiere unos centésimos de m/s porque wgrib2 lo interpola como vector, y en
+las filas de los polos, donde wgrib2 deja un único valor y el propio copia
+la fila del original. El diálogo dice cuál se va a usar
 junto a cada archivo. Al terminar **reabre lo escrito** y comprueba cantidad
 de mensajes, niveles y que los valores coincidan con lo que había en
 memoria dentro de la precisión del empaquetado; el resultado se muestra
@@ -1009,7 +1021,10 @@ cuatro recuadros: **Corrida y plazo** (fecha, ciclo 00/06/12/18 y plazos
 desde / hasta / cada como en la descarga, con la cantidad y la validez
 resultantes; el mismo perfil se escribe en cada plazo); **Área y grilla** (`Manual` con Lat N /
 Lat S / Lon W / Lon E, o `Por FIR` con las casillas de las áreas
-configuradas, Todas / Ninguna y Margen; resolución 0,25°, 0,50° o 1,00°; la
+configuradas, Todas / Ninguna y Margen; un botón `Global` pone 90N–90S y
+180W–180E; resolución 0,25°, 0,50°, 1,00° o 1,25°, y con la vuelta completa
+la grilla no repite el meridiano de corte: a 1,25° son 288 × 145 puntos,
+como el WAFS clásico de WAFC London; la
 zona se redondea hacia afuera a la resolución y se muestra la grilla
 resultante); **Niveles y valores**, con los botones **INDRA (14)**, **OACI
 (17)**, **OACI (56)** y **WAFS (56)** que llenan la tabla con los FL de ese
@@ -1093,23 +1108,50 @@ se pone en 25 al exportar.
 ## Archivo a guardar
 
 Un mismo bloque de opciones decide cómo se graba todo lo que escribe el
-visor. Está en cuatro lugares: Preferencias ▸ Guardar (valores por defecto,
+visor. Está en cinco lugares: Preferencias ▸ Guardar (valores por defecto,
 que además se aplican al convertir un archivo al abrirlo), Obtener datos…
-(el archivo que se descarga), Generar GRIB… (el que se genera) y Archivo ▸
-Guardar como… (⌘ ⇧ S), que recodifica entero el archivo abierto y lo
-escribe con otro nombre (`nombre_rec.grib2`, `_dirvel` si el viento va en
-dirección y velocidad), con su `.json` y su `.idx`, y lo abre si se pide;
-Guardar como no selecciona plazos ni niveles ni regrilla: para eso está
-Exportar a WAFS, que sigue como estaba.
+(el archivo que se descarga), Exportar a WAFS… (cada plazo exportado),
+Generar GRIB… (el que se genera; sin regrillado, porque la grilla la define
+la tabla) y Archivo ▸ Guardar como… (⌘ ⇧ S), que recodifica entero el
+archivo abierto y lo escribe con otro nombre (`nombre_rec.grib2`, `_dirvel`
+si el viento va en dirección y velocidad), con su `.json` y su `.idx`, y lo
+abre si se pide. Guardar como no selecciona plazos ni niveles ni recorta:
+para eso está Exportar a WAFS. Abrir un archivo no lo transforma (salvo la
+conversión a WAFS al abrir, que aplica los valores de Preferencias).
+
+El orden es siempre el mismo, así da igual dónde se elija: primero se
+regrilla, después el viento, la etiqueta, el empaquetado, la primera
+longitud y el orden de las celdas, y al final los decimales.
+
+**Perfil** carga de una vez los valores de un formato conocido; después se
+puede cambiar cualquiera y el perfil pasa a «Personalizado» (al revés,
+elegir uno por uno los valores de un perfil lo muestra elegido):
+
+| Perfil | Regrillar | Viento | Decimales | Etiqueta | Empaquetado | Tablas | Celdas | Longitudes |
+|---|---|---|---|---|---|---|---|---|
+| Como el origen | — | U/V | origen | según el modo | origen | origen | origen | origen |
+| NOAA GFS | — | U/V | origen | según el modo | origen | origen | N→S, O→E | desde Greenwich |
+| WAFS WAFC Washington | 0,25° | U/V | origen | ISA | origen | origen | N→S, O→E | desde Greenwich |
+| WAFC London clásico | 1,25° | U/V | 1 y 1 | nominal | JPEG 2000 | 4 | S→N, O→E | desde Greenwich |
+
+El de WAFC London reproduce la grilla de los boletines GTS `YUXM70 EGRR`
+(288 × 145, 90S/0E a 90N/358,75E, `scanningMode` 64, 70000 Pa para FL100),
+con la versión de tablas 4 y JPEG 2000 sin pérdida (10 bits con un decimal
+en el viento, como el original). No cambia el centro (EGRR diría que el dato
+es del Met Office; se puede elegir a mano, con el subcentro 5) ni escribe el
+sobre GTS (cabeceras WMO).
 
 | Opción | Valores | Qué hace |
 |---|---|---|
+| Regrillar | sin regrillar · 0,25° · 0,50° · 1,00° · 1,25° | Interpolación bilineal a puntos múltiplos de la resolución; una grilla global da la vuelta completa (a 1,25°: 288 × 145). Con Preferencias ▸ motor wgrib2 y la interpolación (`IPOLATES`) usa `wgrib2 -new_grid` (U/V como vector si van en pares); si no, el bilineal propio. Si el archivo ya está en esa grilla no se toca. Un viento en dirección y velocidad se pasa a U/V para interpolar y se vuelve. El GFS se publica a 0,25, 0,50 y 1,00°: para 1,25° conviene bajarlo a 0,25°, que se regrilla en la máquina al terminar cada plazo. |
 | Viento | U/V (UGRD/VGRD) · dirección y velocidad (WDIR/WIND) | Cada par U/V se graba como tal o como WDIR (grados verdaderos, de dónde sopla) y WIND (m/s); al bajar se convierte al final, después de interpolar. |
 | Decimales del viento / de la temperatura | como el origen · 0 · 1 · 2 | Factor decimal D con escala binaria E = 0 y los bits por valor recalculados (`changeDecimalPrecision` de ecCodes); los valores se redondean antes, así cada uno queda exacto con esos decimales (con 0, enteros). «Como el origen» no toca el empaquetado del modelo. Un campo constante (los generados) se graba exacto en la referencia, con 0 bits, y no se toca. |
 | Etiqueta de capa | según el modo · nominal (850) · ISA con un decimal (843,1) · ISA entera (843) | Presión grabada como capa de cada FL en un archivo por Nivel; el dato está siempre en la ISA exacta. «Según el modo» deja la del modo de etiquetado (nominal en INDRA/OACI/OACI56, ISA en WAFS). ISA entera redondea al hPa (84300 Pa); el visor la reconoce como ISA (modo WAFS). En un archivo de capas crudas la opción está deshabilitada. |
-| Empaquetado | como el origen · simple · un valor por celda (IEEE 32 bits) | Simple: referencia más N bits por punto. IEEE: un float de 32 bits por celda, sin escalas; ocupa más (654 bytes contra 179 en una grilla de 11 × 11) y cualquier lector lo decodifica tal cual. Al cambiar de plantilla los valores se recargan, así no se corren. |
-| Centro generador | el del origen · sin centro (65535) | Sección 1, tabla C-11: 7 es NCEP, 98 ECMWF…; 65535 es «faltante»: el archivo no es de un modelo. Los generados llevan siempre 65535. |
+| Empaquetado | como el origen · simple · JPEG 2000 sin pérdida · un valor por celda (IEEE 32 bits) | Simple: referencia más N bits por punto. JPEG 2000 (plantilla 5.40, compresión sin pérdida): los mismos valores, D y bits que el simple, comprimidos como en los boletines GTS de WAFC London; ocupa cerca de la mitad. IEEE: un float de 32 bits por celda, sin escalas; ocupa más (654 bytes contra 179 en una grilla de 11 × 11) y cualquier lector lo decodifica tal cual. Al cambiar de plantilla los valores se recargan, así no se corren. |
+| Centro generador y subcentro | el del origen · sin centro (65535) · cualquiera de la tabla C-11 · subcentro como el origen o un número | Sección 1, tabla común C-11 de la OMM (la lista sale de ecCodes: 7 NCEP, 41 Buenos Aires, 74 Met Office/EGRR, 98 ECMWF…); 65535 es «faltante»: el archivo no es de un modelo. El subcentro no tiene tabla común (lo asigna cada centro; los boletines de WAFC London graban 5). El centro dice quién produjo el dato: ningún perfil lo cambia. Los generados llevan siempre 65535 y en Generar GRIB… no se ofrece. |
+| Versión de tablas | como el origen · 4 (WAFC London clásico) · 25 (la de Exportar a WAFS) | Tabla maestra de la sección 1: con qué edición de las tablas OMM se codificó. El GFS graba 2, los boletines GTS de WAFC London 4 y Exportar a WAFS 25; U, V y T significan lo mismo en todas. Al fijarla, un parámetro estándar queda con tablas locales 0. El centro y el subcentro no se tocan (dicen quién hizo el dato); en Exportar a WAFS la del bloque manda sobre la 25. |
 | Orden de las celdas | como el origen · N→S, O→E (GFS, WAFC Washington) · N→S, E→O · S→N, O→E (WAFC London) · S→N, E→O | Modo de barrido de la sección 3: en qué sentido corren las filas (norte a sur o sur a norte) y las celdas dentro de cada fila (oeste a este o este a oeste). El GFS y el WAFS de WAFC Washington van N→S, O→E; el de WAFC London, S→N, O→E (la guía del Met Office lo lista como diferencia conocida entre los dos centros y pide leer el octeto 72 de la sección 3 en vez de suponerlo). Las longitudes van siempre 0–360. Se reordenan los valores y se corrigen las esquinas de la grilla (`swapScanningX/Y` de ecCodes); el dato no cambia. El inventario dice el orden del archivo abierto. |
+| Longitudes | como el origen · desde 180°W (−180…180) · desde Greenwich (0…360, WAFC London) | Dónde empieza una grilla que da la vuelta completa: las columnas se rotan para que la primera sea 180°W o 0°, en el sentido de barrido que tenga (con E→O, la del oeste queda última). En una grilla regional no hace nada, porque GRIB2 graba siempre las longitudes de 0 a 360. Con 1,25° global, S→N, O→E y desde Greenwich, Generar GRIB… escribe la grilla de los boletines `YUXM70 EGRR` (288 × 145, 90S/0E a 90N/358,75E, `scanningMode` 64). |
 | Filas | como el origen · todas en el mismo sentido · intercaladas (bustrofedón) | Bit 4 del barrido: con filas intercaladas la segunda fila corre al revés que la primera, y así. ecCodes no las reordena ni las tiene en cuenta en su iterador, así que el visor las endereza al leer (y wgrib2 las informa como `EW|WE`). |
 
 Lo aplicado queda en la procedencia (`guardado` en el `.json`, con su
@@ -1158,9 +1200,10 @@ con ocho pestañas:
   rango de FL (por defecto FL050–FL530), ampliar el rango si la fuente trae
   niveles por debajo de 850 o por encima de 100 hPa, y extrapolar con el
   nivel más cercano en vez de omitir (ver «Formato WAFS»).
-* **Guardar**: valores por defecto del bloque «Archivo a guardar» (viento,
-  decimales, etiqueta de capa, empaquetado, centro), que también se aplican
-  al convertir un archivo al abrirlo (ver «Archivo a guardar»).
+* **Guardar**: valores por defecto del bloque «Archivo a guardar» (perfil,
+  regrillado, viento, decimales, etiqueta de capa, empaquetado, centro,
+  orden de las celdas, longitudes), que también se aplican al convertir un
+  archivo al abrirlo (ver «Archivo a guardar»).
 * **Motor**: cómo se leen los GRIB2. `ecCodes` usa la biblioteca Python
   incluida en `requirements.txt`; `wgrib2` ejecuta el programa de NOAA como
   proceso externo (inventario con `-s -T -VT -nxny`, grilla con `-grid` y
@@ -1170,10 +1213,13 @@ con ocho pestañas:
   la versión. Si el motor elegido no está, abrir un archivo avisa y sigue
   con ecCodes. Ambos motores entregan los mismos campos (diferencias del
   orden de 1e-5 por el float32 de wgrib2) y el inventario indica cuál se
-  usó. wgrib2 no viene en Homebrew; se compila desde
-  <https://ftp.cpc.ncep.noaa.gov/wd51we/wgrib2/wgrib2.tgz> (`make` con
-  `CC=clang` y las opciones USE_NETCDF3/USE_IPOLATES/USE_OPENJPEG… en 0) o se
-  instala con `conda install -c conda-forge wgrib2`.
+  usó. wgrib2 no viene en Homebrew: el tap propio `LmpOSX/wgrib2`
+  (`brew tap LmpOSX/wgrib2 && brew trust --tap LmpOSX/wgrib2 && brew install
+  wgrib2`) lo compila con los decodificadores de NCEPLIBS-g2c y con la
+  interpolación de NCEPLIBS-ip, que necesita gfortran (el `gcc` de Homebrew);
+  también se instala con `conda install -c conda-forge wgrib2`. Con el
+  motor wgrib2 y la interpolación, Exportar a WAFS regrilla con
+  `wgrib2 -new_grid`.
 
 Cancelar devuelve el tema que había; Aplicar guarda todo en `config.json`.
 Si cambia el motor con un archivo abierto, se reabre con el nuevo.

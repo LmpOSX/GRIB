@@ -1,5 +1,46 @@
 # Cambios
 
+## 0.6.0 — 2026-10-26
+
+- Generar GRIB: resolución 1,25° (el WAFS clásico de WAFC London) y botón
+  «Global»; con la vuelta completa la grilla no repite el meridiano de
+  corte (288 × 145 a 1,25°).
+- «Archivo a guardar»: opción «Longitudes» (como el origen, desde 180°W o
+  desde Greenwich, 0…360). Rota las columnas de una grilla global; con
+  1,25°, S→N, O→E y desde Greenwich sale la grilla de los boletines
+  `YUXM70 EGRR`.
+- Exportar a WAFS: regrillado a 0,50° y 1,25° además de 0,25° y 1,00°. Con
+  el motor wgrib2 y la interpolación (IPOLATES) regrilla con
+  `wgrib2 -new_grid` (U/V como vector si van en pares); si no, con el
+  bilineal propio, avisado. El bilineal propio ahora cierra las grillas
+  globales: de 1,25° a 1° salen 360 columnas, la última interpolada entre
+  358,75° y 0°.
+- «Archivo a guardar» suma **Perfil** y **Regrillar** y ahora está también
+  en Exportar a WAFS: las mismas transformaciones al descargar, al exportar
+  y al guardar. Perfiles: como el origen, NOAA GFS, WAFS WAFC Washington
+  (0,25°, ISA) y WAFC London clásico (1,25°, S→N, desde Greenwich, un
+  decimal, JPEG 2000, tablas 4: como los boletines `YUXM70 EGRR`). Regrillar a
+  0,25, 0,50, 1,00 o 1,25° va antes que lo demás, con el motor de
+  Preferencias; así una descarga del GFS a 0,25° puede salir ya a 1,25°.
+  Exportar a WAFS aplica orden de las celdas y longitudes, que antes no.
+- «Archivo a guardar»: opción «Versión de tablas» (como el origen, 4 o 25).
+  Sólo cambia la tabla maestra de la sección 1 (y deja sin tablas locales
+  los parámetros estándar); el centro y los valores no se tocan. El perfil
+  WAFC London clásico la pone en 4, como los boletines de EGRR.
+- «Archivo a guardar»: empaquetado JPEG 2000 sin pérdida (plantilla 5.40),
+  con los decimales pedidos; el perfil WAFC London clásico lo usa, como los
+  boletines GTS, y el archivo ocupa cerca de la mitad que en simple.
+- «Archivo a guardar»: centro generador de la tabla común C-11 de la OMM
+  (además de «el del origen» y «sin centro») y subcentro (como el origen o
+  un número). Ningún perfil cambia el centro.
+- Proyección tangente a la WA con un archivo global: la vista abría sobre
+  cualquier lado (el contorno del globo proyectado se va al infinito cerca
+  del antípoda de la tangencia). Ahora, si el dominio llega a más de 80° de
+  la tangencia, abre mostrando la WA y su tangencia con un margen; «Todo el
+  dominio» e «Inicio» también. Los regionales siguen mostrando su dominio.
+- El tap `LmpOSX/wgrib2` suma NCEPLIBS-ip 5.4.1 y compila wgrib2 con la
+  interpolación (`-new_grid`).
+
 ## 0.5.4 — 2026-10-26
 
 - Archivos incompletos: lo que le falte a un GRIB para dibujarse (una

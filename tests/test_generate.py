@@ -9,7 +9,7 @@ import numpy as np
 
 os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
 
-from PyQt6.QtWidgets import QApplication  # noqa: E402
+from PyQt6.QtWidgets import QApplication, QPushButton  # noqa: E402
 
 from app import config  # noqa: E402
 from app import fl_table as flt  # noqa: E402
@@ -54,6 +54,14 @@ class TestGenerador(unittest.TestCase):
         self.assertTrue(np.all(np.diff(lons) > 0))
         lats, lons, zone = gg.grid_axes((-30.0, -40.0, -70.0, -60.0), 1.0)
         self.assertEqual((len(lats), len(lons)), (11, 11))
+        # 1,25° y la vuelta completa: 288 × 145 sin repetir el meridiano de corte
+        lats, lons, zone = gg.grid_axes((90, -90, -180, 180), 1.25)
+        self.assertEqual((len(lons), len(lats)), (288, 145))
+        self.assertEqual((float(lons[0]), float(lons[-1])), (-180.0, 178.75))
+        self.assertEqual(zone, (90.0, -90.0, -180.0, 178.75))
+        self.assertEqual(len(gg.grid_axes((90, -90, -180, 180), 0.25)[1]), 1440)
+        self.assertIn((1.25, "1,25° (WAFS clásico)"), gg.RESOLUTIONS)
+        self.assertIn("_1p25_", gg.default_basename(RUN, 36, 1.25, "MANUAL", "uv", "OACI"))
 
     def test_validacion(self):
         ok, err = gg.validate_rows([{"fl": 300, "t_c": -40, "spd_kt": 50, "dir_deg": 270},
@@ -529,6 +537,16 @@ class TestDialogoGenerar(unittest.TestCase):
         d.table.setCurrentCell(2, COL_P)
         _app.processEvents(); _app.processEvents()
         self.assertEqual(d.table.currentColumn(), COL_FL)
+
+    def test_global_a_1p25(self):
+        """Botón «Global» y 1,25°: 288 × 145 puntos, como el WAFS clásico."""
+        d = self._dialog(download_area_mode="manual")
+        btn = [b for b in d.findChildren(QPushButton) if b.text() == "Global"][0]
+        btn.click()
+        d.cb_res.setCurrentIndex(d.cb_res.findData(1.25))
+        self.assertEqual(d.region(), (90.0, -90.0, -180.0, 180.0))
+        self.assertIn("grilla 288 × 145 puntos", d.lbl_size.text())
+        self.assertIn("_1p25_MANUAL_", d.output_path())
 
     def test_area_y_grilla(self):
         d = self._dialog(download_area_mode="manual", download_manual_region=[-20.3, -45.7, -75.2, -50.1])

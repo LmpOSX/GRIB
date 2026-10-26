@@ -123,13 +123,17 @@ class DownloadJob:
 
     def file_paths(self, source):
         """Rutas de salida. El nombre automático lleva la etiqueta del área
-        (`..._SAEF+SACF_...` o `..._MANUAL`) salvo que la zona sea global."""
+        (`..._SAEF+SACF_...` o `..._MANUAL`) salvo que la zona sea global, y
+        `_a1p25` (o la que sea) si el bloque regrilla."""
         if self.basename:
             base = self.basename
         else:
             base = source.default_basename(self)
             if self.region is not None:
                 base += "_" + self.area_tag
+            res = ge.regrid_res(self.save_opts)
+            if res is not None:
+                base += f"_a{int(res)}p{int(round((res % 1) * 100)):02d}"
         base += (self.suffix or "")
         if self.merge:
             return [os.path.join(self.dest_dir, base + source.file_ext)]

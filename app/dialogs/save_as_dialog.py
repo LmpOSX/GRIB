@@ -1,9 +1,10 @@
 # -*- coding: utf-8 -*-
 """«Guardar como…»: el archivo abierto recodificado entero según el bloque
-«Archivo a guardar» (viento U/V o dirección y velocidad, decimales del
-viento y de la temperatura, etiqueta de capa si está por Nivel, empaquetado
-simple o IEEE, centro generador), con su `.json` de procedencia y su `.idx`.
-No selecciona ni regrilla: para eso está Exportar a WAFS."""
+«Archivo a guardar» (perfil, regrillado, viento U/V o dirección y
+velocidad, decimales del viento y de la temperatura, etiqueta de capa si
+está por Nivel, empaquetado simple o IEEE, centro generador, orden de las
+celdas y longitudes), con su `.json` de procedencia y su `.idx`. No
+selecciona plazos ni niveles: para eso está Exportar a WAFS."""
 import datetime as dt
 import json
 import os
@@ -45,6 +46,8 @@ def save_recoded(src_path, dst_path, opts, labeled=False, mode=None, provenance=
     prov["archivo_original"] = os.path.abspath(src_path)
     prov["guardado"] = dict({k: info[k] for k in ge.KEYS}, descripcion=ge.describe(opts),
                             etiqueta_aplicada=bool(info.get("etiqueta_aplicada")))
+    if info.get("regrillado_con"):
+        prov["guardado"]["regrillado_con"] = info["regrillado_con"]
     prov["viento"] = info["wind"]
     prov["por_nivel"] = bool(labeled)
     prov["recodificado"] = dt.datetime.now(dt.timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
@@ -84,8 +87,8 @@ class SaveAsDialog(GlassDialog):
         title = QLabel("Guardar como…")
         title.setObjectName("Heading")
         lay.addWidget(title)
-        hint = QLabel("Graba el archivo abierto entero, recodificado según este bloque. Para elegir "
-                      "plazos y niveles, recortar o regrillar está Exportar a WAFS.")
+        hint = QLabel("Graba el archivo abierto entero, regrillado y recodificado según este bloque. "
+                      "Para elegir plazos y niveles o recortar está Exportar a WAFS.")
         hint.setObjectName("Hint")
         hint.setWordWrap(True)
         lay.addWidget(hint)

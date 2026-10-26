@@ -387,6 +387,43 @@ class TestVentana(unittest.TestCase):
         d2 = SettingsDialog(w, cfg=w._cfg)
         self.assertFalse(d2.cb_proj.model().item(d2.cb_proj.findData("lambert_wa")).isEnabled())
 
+    def test_global_tangente_a_la_wa(self):
+        """Un archivo global en la proyección tangente a la WA abre mostrando
+        la WA (el contorno del globo proyectado se va al infinito cerca del
+        antípoda); «Todo el dominio» también. Un regional sigue mostrando su
+        dominio."""
+        from app.wind_plot import HAVE_CARTOPY
+        if not HAVE_CARTOPY:
+            self.skipTest("sin cartopy")
+        from tests.test_grib_reader import _reader_sintetico
+        w = self.w
+        w._cfg["working_areas"] = [dict(SAEF, tangency=True)]
+        r = _reader_sintetico([850, 700], shape=(145, 288))
+        r.lats = -90 + 1.25 * np.arange(145)
+        r.lons = -180 + 1.25 * np.arange(288)
+        r.path = os.path.join(self.tmp, "g.grib2")
+        w.load_reader(r, r.path)
+        w.set_projection("stereo_wa")
+        wa = W.WorkingArea(**dict(SAEF, tangency=True))
+        xy = w.plot.proj.transform_points(w.plot.data_crs, wa.ring()[:, 0], wa.ring()[:, 1])
+        x0, x1 = w.plot.ax.get_xlim()
+        y0, y1 = w.plot.ax.get_ylim()
+        for x, y in xy[:, :2]:
+            self.assertTrue(x0 <= x <= x1 and y0 <= y <= y1)
+        self.assertTrue(x0 <= 0.0 <= x1 and y0 <= 0.0 <= y1)          # la tangencia a la vista
+        self.assertLess(x1 - x0, 4 * (xy[:, 0].max() - xy[:, 0].min()))  # y no el globo entero
+        w.plot.ax.set_xlim(x0 * 10, x1 * 10)
+        w.full_extent()
+        self.assertAlmostEqual(w.plot.ax.get_xlim()[0], x0, delta=abs(x0) * 0.01 + 1)
+        # Regional: la vista es el dominio
+        r2 = _reader_sintetico([850, 700], shape=(69, 69))
+        r2.lats = np.arange(-64.0, 4.1, 1.0)
+        r2.lons = np.arange(-90.0, -21.9, 1.0)
+        r2.path = os.path.join(self.tmp, "s.grib2")
+        w.load_reader(r2, r2.path)
+        w.set_projection("stereo_wa")
+        self.assertFalse(w.plot.wa_view_needed(r2.lons, r2.lats))
+
     def test_dialogo_variacion_y_tangencia(self):
         from app.dialogs import fir_dialog
         from app.dialogs.fir_dialog import FirDialog

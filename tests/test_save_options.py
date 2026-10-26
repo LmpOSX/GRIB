@@ -50,7 +50,33 @@ class TestOpciones(unittest.TestCase):
     def test_normalizar_y_describir(self):
         o = ge.normalize({})
         self.assertEqual(o, {"wind": "uv", "dec_wind": None, "dec_temp": None, "label": "modo",
-                             "packing": "origen", "centre": "origen", "scan": "origen", "rows": "origen"})
+                             "packing": "origen", "centre": "origen", "sub_centre": None, "scan": "origen",
+                             "rows": "origen", "lons": "origen", "regrid": "origen", "tables": "origen"})
+        self.assertEqual(ge.normalize({"centre": 74, "sub_centre": "5"})["centre"], "74")
+        self.assertEqual(ge.normalize({"sub_centre": "5"})["sub_centre"], 5)
+        self.assertIsNone(ge.normalize({"sub_centre": -1})["sub_centre"])
+        self.assertEqual(ge.normalize({"centre": "zzz"})["centre"], "origen")
+        self.assertIn("centro 74 · egrr · U.K. Met Office - Exeter, subcentro 5",
+                      ge.describe({"centre": "74", "sub_centre": 5}))
+        self.assertIn("empaquetado JPEG 2000", ge.describe({"packing": "jpeg"}))
+        self.assertEqual(ge.normalize({"save_tables": 4})["tables"], "4")
+        self.assertEqual(ge.normalize({"tables": "99"})["tables"], "origen")
+        self.assertFalse(ge.is_default({"tables": "25"}))
+        self.assertIn("tablas versión 4", ge.describe({"tables": "4"}))
+        self.assertEqual(ge.normalize({"regrid": "ninguno"})["regrid"], "origen")
+        self.assertEqual(ge.normalize({"save_regrid": "1.25"})["regrid"], "1.25")
+        self.assertEqual(ge.normalize({"regrid": "3"})["regrid"], "origen")
+        self.assertFalse(ge.is_default({"regrid": "0.5"}))
+        self.assertEqual(ge.regrid_res({"regrid": "1.25"}), 1.25)
+        self.assertIsNone(ge.regrid_res({}))
+        self.assertTrue(ge.describe({"regrid": "1.25"}).startswith("regrillado a 1,25°"))
+        # El motor pasa sin tocarse (desde la config, sin prefijo)
+        o = ge.options_from_config(dict(config.DEFAULTS, engine="wgrib2", wgrib2_path="/x/wgrib2"))
+        self.assertEqual((o["engine"], o["wgrib2_path"]), ("wgrib2", "/x/wgrib2"))
+        self.assertFalse(ge.is_default({"lons": "0_360"}))
+        self.assertEqual(ge.normalize({"save_lons": "m180"})["lons"], "m180")
+        self.assertEqual(ge.normalize({"lons": "zzz"})["lons"], "origen")
+        self.assertIn("longitudes desde Greenwich (0…360)", ge.describe({"lons": "0_360"}))
         self.assertTrue(ge.is_default({}))
         self.assertFalse(ge.is_default({"centre": "missing"}))
         self.assertFalse(ge.is_default({"scan": "sn_ew"}))
@@ -70,6 +96,18 @@ class TestOpciones(unittest.TestCase):
         cfg = dict(config.DEFAULTS, save_wind="dirspeed", save_dec_temp=0)
         self.assertEqual(ge.options_from_config(cfg)["dec_temp"], 0)
         self.assertIn("dirección y velocidad", ge.describe(cfg and ge.options_from_config(cfg)))
+
+    def test_perfiles(self):
+        """Cada perfil se reconoce por sus valores; un cambio lo vuelve
+        personalizado. WAFC London clásico es la grilla del boletín GTS."""
+        for key, _text, vals in ge.PROFILES:
+            self.assertEqual(ge.profile_of(vals), key)
+        self.assertEqual(ge.profile_of({}), "origen")
+        lon = ge.profile_values("wafc_london")
+        self.assertEqual((lon["regrid"], lon["scan"], lon["lons"], lon["dec_wind"], lon["tables"]),
+                         ("1.25", "sn_we", "0_360", 1, "4"))
+        self.assertIsNone(ge.profile_of(dict(lon, dec_temp=2)))
+        self.assertIsNone(ge.profile_values("zzz"))
 
     def test_migracion_de_config(self):
         cfg = dict(config.DEFAULTS, download_wind_format="dirspeed")
@@ -98,6 +136,141 @@ class TestRecodificar(unittest.TestCase):
     def setUp(self):
         self.raw = _grib([1000, 850, 700, 500, 400, 300, 250, 200, 150, 100], steps=(6,))
         self.wafs = wf.convert_to_wafs(self.raw, mode="OACI").data
+
+    def test_longitudes_de_una_grilla_global(self):
+        """«Desde Greenwich» rota las columnas de una grilla global para que
+        empiece en 0°; «desde 180°W», en 180°. Cada valor sigue en su
+        longitud; con S→N, O→E queda la grilla del WAFS de WAFC London. En
+        una grilla regional no cambia nada."""
+        import datetime as _dt
+        from app import grib_generate as gg
+        rows = [{"fl": 100, "t_c": 0, "spd_kt": 30, "dir_deg": 250, "spd_inc": 2}]
+        data, _ = gg.generate_grib(rows, (90, -90, -180, 180), 1.25, mode="OACI",
+                                   run=_dt.datetime(2026, 10, 24, tzinfo=_dt.timezone.utc), step_h=36)
+
+        def grid(b):
+            gid = ec.codes_new_from_message(b)
+            try:
+                return ({k: ec.codes_get(gid, k) for k in ("Ni", "Nj", "longitudeOfFirstGridPointInDegrees",
+                         "longitudeOfLastGridPointInDegrees", "latitudeOfFirstGridPointInDegrees",
+                         "scanningMode")},
+                        np.asarray(ec.codes_get_values(gid)).reshape(ec.codes_get(gid, "Nj"), ec.codes_get(gid, "Ni")))
+            finally:
+                ec.codes_release(gid)
+        k0, v0 = grid(data)
+        self.assertEqual((k0["Ni"], k0["Nj"]), (288, 145))
+        self.assertEqual(k0["longitudeOfFirstGridPointInDegrees"], 180.0)    # −180
+        out, _ = ge.recode(data, {"lons": "0_360", "scan": "sn_we"}, labeled=True, mode="OACI")
+        k1, v1 = grid(out)
+        self.assertEqual(k1["longitudeOfFirstGridPointInDegrees"], 0.0)
+        self.assertEqual(k1["longitudeOfLastGridPointInDegrees"], 358.75)
+        self.assertEqual(k1["latitudeOfFirstGridPointInDegrees"], -90.0)
+        self.assertEqual(k1["scanningMode"], 64)                              # como el boletín YUXM70 EGRR
+        # 0° estaba en la columna 144 (desde −180) de la fila 90N; ahora en la 0 de la última fila
+        np.testing.assert_allclose(v1[::-1][:, 0], v0[:, 144])
+        np.testing.assert_allclose(v1[::-1][:, 143], v0[:, 287])
+        back, _ = ge.recode(out, {"lons": "m180"}, labeled=True, mode="OACI")
+        k2, v2 = grid(back)
+        self.assertEqual(k2["longitudeOfFirstGridPointInDegrees"], 180.0)
+        np.testing.assert_allclose(v2, v1[:, list(range(144, 288)) + list(range(0, 144))])
+        # E→O también: la del oeste queda última
+        ew, _ = ge.recode(data, {"lons": "0_360", "scan": "ns_ew"}, labeled=True, mode="OACI")
+        k3, v3 = grid(ew)
+        self.assertEqual(k3["longitudeOfLastGridPointInDegrees"], 0.0)
+        np.testing.assert_allclose(v3[:, -1], v0[:, 144])
+        # Regional: nada que rotar
+        reg, _ = ge.recode(self.wafs, {"lons": "0_360"}, labeled=True, mode="OACI")
+        self.assertEqual(reg, self.wafs)
+
+    def test_regrillado_en_el_bloque(self):
+        """El perfil WAFC London clásico lleva un global de 1° a la grilla de
+        los boletines YUXM de EGRR: 288 × 145 desde 90S/0E, barrido 64, un
+        decimal. Si el origen está en dirección y velocidad se regrilla
+        sobre U/V y se vuelve a dirección y velocidad."""
+        import datetime as _dt
+        from app import grib_generate as gg
+        rows = [{"fl": 100, "t_c": 0, "spd_kt": 30, "dir_deg": 250, "spd_inc": 2}]
+        data, _ = gg.generate_grib(rows, (90, -90, -180, 180), 1.0, mode="OACI",
+                                   run=_dt.datetime(2026, 10, 24, tzinfo=_dt.timezone.utc), step_h=36)
+        out, info = ge.recode(data, ge.profile_values("wafc_london"), labeled=True, mode="OACI")
+        self.assertEqual(info["regrillado_con"], "eccodes")
+        for gid, _p, _s in wf.iter_messages(out):
+            try:
+                self.assertEqual((ec.codes_get(gid, "Ni"), ec.codes_get(gid, "Nj")), (288, 145))
+                self.assertEqual(ec.codes_get(gid, "scanningMode"), 64)
+                self.assertEqual(ec.codes_get(gid, "latitudeOfFirstGridPointInDegrees"), -90.0)
+                self.assertEqual(ec.codes_get(gid, "longitudeOfFirstGridPointInDegrees"), 0.0)
+                self.assertEqual(ec.codes_get(gid, "longitudeOfLastGridPointInDegrees"), 358.75)
+                if ec.codes_get(gid, "shortName") in ("u", "v"):     # la TMP es constante: exacta
+                    self.assertEqual(ec.codes_get(gid, "decimalScaleFactor"), 1)
+                self.assertEqual(wf.level_pa(gid), 70000)
+                self.assertEqual((ec.codes_get(gid, "tablesVersion"), ec.codes_get(gid, "localTablesVersion")),
+                                 (4, 0))
+            finally:
+                ec.codes_release(gid)
+        # Ya en la grilla: no se toca
+        again, _ = ge.recode(out, {"regrid": "1.25"}, labeled=True, mode="OACI")
+        self.assertEqual(again, out)
+        # Dirección y velocidad: vuelve igual que por U/V
+        ds, _ = ge.recode(data, {"wind": "dirspeed"}, labeled=True, mode="OACI")
+        a, _ = ge.recode(data, {"wind": "dirspeed", "regrid": "1.25"}, labeled=True, mode="OACI")
+        b, _ = ge.recode(ds, {"wind": "dirspeed", "regrid": "1.25"}, labeled=True, mode="OACI")
+        self.assertEqual(wfm.detect(b), "dirspeed")
+        va = {m[:3]: m[3] for m in _messages(a)}
+        vb = {m[:3]: m[3] for m in _messages(b)}
+        for k in va:
+            np.testing.assert_allclose(va[k], vb[k], atol=0.05)
+
+    def test_version_de_tablas(self):
+        """La versión de tablas cambia sólo la sección 1: centro, subcentro y
+        valores quedan iguales; los parámetros estándar, sin tablas locales."""
+        src = _keys(self.wafs)
+        out, _ = ge.recode(self.wafs, {"tables": "4"}, labeled=True, mode="OACI")
+        for gid, _p, _s in wf.iter_messages(out):
+            try:
+                self.assertEqual(ec.codes_get(gid, "tablesVersion"), 4)
+                self.assertEqual(ec.codes_get(gid, "localTablesVersion"), 0)
+            finally:
+                ec.codes_release(gid)
+        self.assertEqual([(k["centre"], k["shortName"]) for k in _keys(out)],
+                         [(k["centre"], k["shortName"]) for k in src])
+        for a, b in zip(_messages(self.wafs), _messages(out)):
+            np.testing.assert_array_equal(a[3], b[3])
+        same, _ = ge.recode(out, {"tables": "4"}, labeled=True, mode="OACI")
+        self.assertEqual(same, out)
+
+    def test_jpeg_centro_y_subcentro(self):
+        """JPEG 2000 sin pérdida (plantilla 5.40) con los decimales pedidos,
+        como los boletines de WAFC London; centro y subcentro a elección."""
+        out, _ = ge.recode(self.wafs, {"packing": "jpeg", "dec_wind": 1, "dec_temp": 1,
+                                       "centre": "74", "sub_centre": 5}, labeled=True, mode="OACI")
+        ref, _ = ge.recode(self.wafs, {"packing": "simple", "dec_wind": 1, "dec_temp": 1},
+                           labeled=True, mode="OACI")
+        for gid, _p, _s in wf.iter_messages(out):
+            try:
+                self.assertEqual(ec.codes_get(gid, "dataRepresentationTemplateNumber"), 40)
+                self.assertEqual(ec.codes_get(gid, "typeOfCompressionUsed"), 0)
+                self.assertEqual(ec.codes_get(gid, "centre"), "egrr")
+                self.assertEqual(ec.codes_get(gid, "subCentre"), 5)
+            finally:
+                ec.codes_release(gid)
+        for a, b in zip(_messages(ref), _messages(out)):
+            np.testing.assert_allclose(a[3], b[3], atol=1e-6)          # sin pérdida
+        self.assertEqual([k["decimalScaleFactor"] for k in _keys(out)],
+                         [k["decimalScaleFactor"] for k in _keys(ref)])
+        # De JPEG a simple: los valores no cambian
+        back, _ = ge.recode(out, {"packing": "simple"}, labeled=True, mode="OACI")
+        for a, b in zip(_messages(out), _messages(back)):
+            np.testing.assert_allclose(a[3], b[3], atol=1e-6)
+        # Un campo constante (Generar GRIB) también
+        import datetime as _dt
+        from app import grib_generate as gg
+        data, _ = gg.generate_grib([{"fl": 100, "t_c": 0, "spd_kt": 30, "dir_deg": 250}],
+                                   (10, -10, -10, 10), 1.0, mode="OACI",
+                                   run=_dt.datetime(2026, 10, 24, tzinfo=_dt.timezone.utc), step_h=6)
+        cj, _ = ge.recode(data, {"packing": "jpeg"}, labeled=True, mode="OACI")
+        for a, b in zip(_messages(data), _messages(cj)):
+            np.testing.assert_allclose(a[3], b[3], atol=1e-6)
 
     def test_sin_cambios(self):
         out, info = ge.recode(self.raw, {}, labeled=False)
@@ -231,6 +404,23 @@ class TestRecodificar(unittest.TestCase):
             r = GribReader(paths[0])
             self.assertTrue(r.fl_labeled)
             self.assertEqual(r.wind_format, "dirspeed")
+        # Regrillar al bajar: la grilla de 1° sale a 0,5° y el nombre lo dice
+        with tempfile.TemporaryDirectory() as tmp:
+            job = DownloadJob(run_date=dt.date(2026, 10, 14), cycle=6, steps=[6],
+                              variables=["UGRD", "VGRD", "TMP"],
+                              levels=[1000, 850, 700, 500, 400, 300, 250, 200, 150, 100],
+                              region=None, dest_dir=tmp, merge=True, params={}, suffix="_wafs",
+                              save_opts={"regrid": "0.5", "scan": "sn_we"})
+            paths = src.download(job, fetch_fn=lambda url, **k: self.raw, retry_wait=0,
+                                 wafs={"mode": "OACI"})
+            self.assertIn("_a0p50_wafs", os.path.basename(paths[0]))
+            for gid, _p, _s in wf.iter_messages(open(paths[0], "rb").read()):
+                try:
+                    self.assertEqual((ec.codes_get(gid, "Ni"), ec.codes_get(gid, "Nj")), (9, 7))
+                    self.assertEqual(ec.codes_get(gid, "jScansPositively"), 1)
+                finally:
+                    ec.codes_release(gid)
+            self.assertIn("regrillado a 0,5°", read_provenance(paths[0])["guardado"]["descripcion"])
 
     def test_conversion_al_abrir_aplica_el_bloque(self):
         from app.sources.base import read_provenance
@@ -295,15 +485,43 @@ class TestDialogos(unittest.TestCase):
         v = self.w.values()
         self.assertEqual((v["wind"], v["dec_wind"], v["dec_temp"], v["centre"]), ("dirspeed", 1, None, "missing"))
         self.assertEqual(self.w.config_values()["save_dec_wind"], 1)
-        self.w.set_values({"label": "isa_int", "packing": "ieee"})
+        self.w.set_values({"label": "isa_int", "packing": "ieee", "lons": "0_360"})
         self.assertEqual(self.w.values()["label"], "isa_int")
+        self.assertEqual(self.w.values()["lons"], "0_360")
+        self.assertEqual(self.w.config_values()["save_lons"], "0_360")
         self.assertEqual(self.w.values()["wind"], "uv")
         self.w.set_labeled(False)
         self.assertFalse(self.w.cb_label.isEnabled())
         self.w.set_labeled(True)
         self.assertTrue(self.w.cb_label.isEnabled())
-        compact = SaveOptionsBox(cfg=cfg, show_decimals=False, show_centre=False, compact=True)
+        # Perfil: carga los valores; un cambio lo vuelve personalizado
+        self.assertEqual(self.w.profile(), None)
+        self.w.cb_profile.setCurrentIndex(self.w.cb_profile.findData("wafc_london"))
+        self.w.cb_profile.activated.emit(self.w.cb_profile.currentIndex())
+        v = self.w.values()
+        self.assertEqual((v["regrid"], v["scan"], v["lons"], v["packing"], v["tables"]),
+                         ("1.25", "sn_we", "0_360", "jpeg", "4"))
+        self.assertEqual(self.w.profile(), "wafc_london")
+        self.w.cb_dec_temp.setCurrentIndex(self.w.cb_dec_temp.findData(2))
+        self.assertIsNone(self.w.profile())
+        self.w.set_values({})
+        self.assertEqual(self.w.profile(), "origen")
+        # Centro de la tabla C-11 y subcentro
+        self.w.cb_centre.setCurrentIndex(self.w.cb_centre.findData("74"))
+        self.w.sp_sub_centre.setValue(5)
+        self.assertEqual((self.w.values()["centre"], self.w.values()["sub_centre"]), ("74", 5))
+        self.assertEqual(self.w.config_values()["save_sub_centre"], 5)
+        self.assertIsNone(self.w.profile())
+        self.w.sp_sub_centre.setValue(-1)
+        self.assertIsNone(self.w.values()["sub_centre"])
+        self.assertIn("U.K. Met Office", self.w.cb_centre.currentText())
+        compact = SaveOptionsBox(cfg=dict(cfg, save_regrid="0.5", save_centre="74"), show_decimals=False,
+                                 show_centre=False, compact=True, show_regrid=False)
         compact.show()
+        self.assertTrue(compact.cb_regrid.isHidden())
+        self.assertEqual(compact.values()["regrid"], "origen")          # Generar no regrilla
+        self.assertEqual(compact.config_values()["save_regrid"], "0.5")  # pero no pisa Preferencias
+        self.assertEqual(compact.values()["centre"], "origen")          # ni toca el centro
         self.assertTrue(compact.cb_dec_wind.isHidden())
         self.assertTrue(compact.cb_centre.isHidden())
         self.assertFalse(compact.cb_label.isHidden())

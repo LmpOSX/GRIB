@@ -267,6 +267,11 @@ class GenerateGribDialog(GlassDialog):
         self.lat_s = self._coord(g, "Lat S", 0, 2, "lat", float(mr[1]), fmt)
         self.lon_w = self._coord(g, "Lon W", 0, 4, "lon", float(mr[2]), fmt)
         self.lon_e = self._coord(g, "Lon E", 0, 6, "lon", float(mr[3]), fmt)
+        b = QPushButton("Global")
+        b.setToolTip("90N–90S, 180W–180E: la vuelta completa (con 1,25° son 288 × 145 puntos, "
+                     "como el WAFS clásico de WAFC London)")
+        b.clicked.connect(lambda: self.set_region(90.0, -90.0, -180.0, 180.0))
+        g.addWidget(b, 0, 8)
         zg.addWidget(self.manual_box, 0, 2)
         zg.addWidget(self.rb_fir, 1, 1)
         self.fir_box = QWidget()
@@ -345,7 +350,7 @@ class GenerateGribDialog(GlassDialog):
         lbl.setObjectName("SubHeading")
         srow.addWidget(lbl)
         self.save_box = SaveOptionsBox(cfg=self._cfg, show_decimals=False, show_centre=False,
-                                       compact=True, rows=True)
+                                       compact=True, rows=True, show_regrid=False)
         self.cb_wind = self.save_box.cb_wind
         self.cb_wind.setToolTip("La tabla se carga siempre en velocidad y dirección; el archivo se "
                                 "graba como U/V (UGRD/VGRD, como los modelos) o como dirección y "

@@ -113,10 +113,14 @@ DEFAULTS = {
     "save_dec_wind": None,              # decimales del viento: None (como el origen) | 0 | 1 | 2
     "save_dec_temp": None,              # decimales de la temperatura: ídem
     "save_label": "modo",               # etiqueta de capa por Nivel: 'modo' | 'nominal' | 'isa' | 'isa_int'
-    "save_packing": "origen",           # empaquetado: 'origen' | 'simple' | 'ieee' (un valor por celda)
-    "save_centre": "origen",            # centro generador: 'origen' | 'missing' (65535)
+    "save_packing": "origen",           # empaquetado: 'origen' | 'simple' | 'jpeg' | 'ieee' (un valor por celda)
+    "save_centre": "origen",            # centro generador: 'origen' | 'missing' (65535) | código C-11 ('74')
+    "save_sub_centre": None,            # subcentro: None (como el origen) | 0…65535
     "save_scan": "origen",              # orden de las celdas: 'origen' | 'ns_we' | 'ns_ew' | 'sn_we' | 'sn_ew'
     "save_rows": "origen",              # filas: 'origen' | 'consecutivas' | 'intercaladas' (bustrofedón)
+    "save_lons": "origen",              # longitudes de una grilla global: 'origen' | 'm180' | '0_360'
+    "save_tables": "origen",            # versión de la tabla maestra: 'origen' | '4' | '25'
+    "save_regrid": "origen",            # regrillado bilineal: 'origen' | '0.25' | '0.5' | '1.0' | '1.25'
     "generate_res_deg": 0.25,           # última resolución de «Generar GRIB…»
     # Formato WAFS (formato interno único del visor)
     "wafs_convert": True,               # valor inicial de «Convertir a WAFS» en el diálogo de descarga

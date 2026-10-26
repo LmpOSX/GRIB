@@ -118,6 +118,20 @@ PROJECTIONS = [
 WA_PROJECTIONS = {"stereo_wa": "stereo", "lambert_wa": "lambert"}
 
 
+def _max_arc_deg(extent, lat0, lon0):
+    """Mayor distancia angular (°) desde (lat0, lon0) al contorno del
+    recuadro [lonmin, lonmax, latmin, latmax], muestreado cada ~2°."""
+    lo0, lo1, la0, la1 = extent
+    lo = np.linspace(lo0, lo1, max(2, int((lo1 - lo0) / 2) + 2))
+    la = np.linspace(la0, la1, max(2, int((la1 - la0) / 2) + 2))
+    lon = np.concatenate([lo, lo, np.full(la.size, lo0), np.full(la.size, lo1)])
+    lat = np.concatenate([np.full(lo.size, la0), np.full(lo.size, la1), la, la])
+    p0, l0 = np.radians(lat0), np.radians(lon0)
+    p, l = np.radians(lat), np.radians(lon)
+    c = np.sin(p0) * np.sin(p) + np.cos(p0) * np.cos(p) * np.cos(l - l0)
+    return float(np.degrees(np.arccos(np.clip(c, -1.0, 1.0))).max())
+
+
 if HAVE_CARTOPY:
     class TangentStereographic(ccrs.Projection):
         """Estereográfica esférica tangente a un punto (la tangencia de una
@@ -636,6 +650,35 @@ class WindPlot:
             return [x0, x1, y0, y1]
         except Exception:
             return None
+
+    def wa_view_needed(self, lons, lats):
+        """True si la proyección es tangente a una WA y el dominio llega a
+        más de 80° de la tangencia (un global): ahí el contorno proyectado
+        del dominio no sirve de vista (cerca del antípoda se va al infinito)."""
+        t = self.tangent
+        if not t or t.get("ring") is None or self.proj_key not in WA_PROJECTIONS:
+            return False
+        ext = [float(np.min(lons)), float(np.max(lons)), float(np.min(lats)), float(np.max(lats))]
+        return _max_arc_deg(ext, t["lat"], t["lon"]) > 80.0
+
+    def show_default_view(self, lons, lats):
+        """Vista inicial: el dominio del archivo o, si no sirve (ver
+        wa_view_needed), la WA de tangencia y su punto de tangencia, con un
+        margen del 15 %."""
+        if not self.wa_view_needed(lons, lats):
+            self.set_extent([float(np.min(lons)), float(np.max(lons)),
+                             float(np.min(lats)), float(np.max(lats))])
+            return
+        ring = np.vstack([np.asarray(self.tangent["ring"], dtype=float),
+                          [[self.tangent["lon"], self.tangent["lat"]]]])
+        xy = self.proj.transform_points(self.data_crs, ring[:, 0], ring[:, 1])[:, :2]
+        x0, x1 = float(xy[:, 0].min()), float(xy[:, 0].max())
+        y0, y1 = float(xy[:, 1].min()), float(xy[:, 1].max())
+        mx, my = 0.15 * (x1 - x0), 0.15 * (y1 - y0)
+        self.ax.set_xlim(x0 - mx, x1 + mx)
+        self.ax.set_ylim(y0 - my, y1 + my)
+        self._fit_view_to_box()
+        self.canvas.draw_idle()
 
     def set_extent(self, extent):
         """Fija la extensión [lonmin, lonmax, latmin, latmax] y la amplía en
@@ -1340,7 +1383,9 @@ class WindPlot:
                 extent = opts.get("extent") or [float(lons.min()), float(lons.max()),
                                                 float(lats.min()), float(lats.max())]
                 lon0, lon1, lat0, lat1 = extent
-                if lon1 > lon0 and lat1 > lat0:
+                if not opts.get("extent") and self.use_cartopy and self.wa_view_needed(lons, lats):
+                    self.show_default_view(lons, lats)
+                elif lon1 > lon0 and lat1 > lat0:
                     if self.use_cartopy:
                         ax.set_extent([lon0, lon1, lat0, lat1], crs=self.data_crs)
                     else:

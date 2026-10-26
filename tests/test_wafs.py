@@ -361,6 +361,96 @@ class TestExportacion(unittest.TestCase):
         np.testing.assert_allclose(vals[0, 2], (vals[0, 0] + vals[0, 4]) / 2, atol=0.05)
         self.assertTrue(res["verificacion"][0]["ok"])
 
+    def test_regrillado_global_cierra_en_360(self):
+        """Una grilla global de 1,25° a 1°: 360 columnas y la última (359°)
+        se interpola entre 358,75° y 0° (la grilla se cierra); los puntos
+        comunes a las dos grillas conservan el valor."""
+        from app import regrid as rg
+        lat = -90 + 1.25 * np.arange(145)
+        lon = 1.25 * np.arange(288)
+        vals = np.cos(np.radians(lon))[None, :] * np.ones((145, 1)) + lat[:, None] / 100.0
+        lat_o = rg.target_axis(lat, 1.0)
+        lon_o = rg.target_axis(lon, 1.0, wrap=rg.is_global_lon(lon))
+        self.assertEqual(len(lon_o), 360)
+        self.assertEqual(float(lon_o[-1]), 359.0)
+        new = rg.bilinear_regrid(vals, lat, lon, lat_o, lon_o)
+        w = (359.0 - 358.75) / 1.25
+        exp_359 = (1 - w) * np.cos(np.radians(358.75)) + w * np.cos(np.radians(360.0))
+        j = int(np.where(np.isclose(lat_o, 10.0))[0][0])
+        self.assertAlmostEqual(new[j, -1], exp_359 + 0.1, places=9)
+        self.assertAlmostEqual(new[j, 5], np.cos(np.radians(5.0)) + 0.1, places=9)   # 5° está en las dos
+
+    def test_regrillado_con_wgrib2_igual_al_propio(self):
+        """1,25° → 1° / 0,5° / 0,25° con wgrib2 -new_grid y con el bilineal
+        propio: mismas grillas; T idéntica; el viento difiere apenas porque
+        wgrib2 lo interpola como vector. Si las U y V no van en pares se
+        interpolan como escalares y coinciden. Se saltea sin un wgrib2 con
+        la interpolación (IPOLATES)."""
+        from app import regrid as rg
+        if not rg.wgrib2_can_regrid():
+            self.skipTest("wgrib2 sin IPOLATES")
+        src = rg.regrid_bilinear_grib(_grib([850, 500], steps=(6,), ni=9, nj=7, lat0=-20.0, lon0=290.0,
+                                            dx=1.25), 1.25)
+
+        def fields(b):
+            out, meta = {}, None
+            for gid, _pos, _size in wf.iter_messages(b):
+                try:
+                    nj, ni = ec.codes_get(gid, "Nj"), ec.codes_get(gid, "Ni")
+                    meta = meta or (ni, nj, ec.codes_get(gid, "latitudeOfFirstGridPointInDegrees"),
+                                    ec.codes_get(gid, "longitudeOfFirstGridPointInDegrees"),
+                                    ec.codes_get(gid, "jScansPositively"))
+                    out[(ec.codes_get(gid, "shortName"), ec.codes_get(gid, "level"))] = \
+                        np.asarray(ec.codes_get_values(gid)).reshape(nj, ni)
+                finally:
+                    ec.codes_release(gid)
+            return out, meta
+        for res in (1.0, 0.5, 0.25):
+            a, ma = fields(rg.regrid_to(src, res, "eccodes"))
+            b, mb = fields(rg.regrid_to(src, res, "wgrib2"))
+            self.assertEqual(ma, mb, res)
+            for k in a:
+                tol = 1e-3 if k[0] == "t" else 0.5
+                self.assertLess(float(np.abs(a[k] - b[k]).max()), tol, (res, k))
+        # Sólo U (sin V): escalares, iguales al propio
+        only_u = rg.regrid_bilinear_grib(_grib([850], steps=(6,), variables=("u",), ni=9, nj=7,
+                                               lat0=-20.0, lon0=290.0, dx=1.25), 1.25)
+        self.assertFalse(rg._uv_paired(only_u))
+        a, _ = fields(rg.regrid_to(only_u, 0.5, "eccodes"))
+        b, _ = fields(rg.regrid_to(only_u, 0.5, "wgrib2"))
+        for k in a:
+            self.assertLess(float(np.abs(a[k] - b[k]).max()), 1e-3)
+
+    def test_exportar_con_motor_de_regrillado(self):
+        """Exportar a 0,50° y 1,25°; con un wgrib2 inexistente se regrilla
+        con el propio y queda avisado."""
+        res = wf.export_wafs(REF, self.tmp, steps=[6], fls=[300], regrid="0.5",
+                             regrid_engine="wgrib2", wgrib2_path="/no/existe/wgrib2")
+        self.assertIn("wafs_0p50", os.path.basename(res["archivos"][0]))
+        if res["regrillado_con"] == "eccodes":
+            self.assertTrue(any("bilineal propio" in a for a in res["avisos"]))
+        res = wf.export_wafs(REF, os.path.join(self.tmp, "b"), steps=[6], fls=[300], regrid="1.25")
+        self.assertIn("wafs_1p25", os.path.basename(res["archivos"][0]))
+        self.assertEqual(res["regrillado_con"], "eccodes")
+
+    def test_exportar_con_el_bloque(self):
+        """Exportar a WAFS aplica el bloque «Archivo a guardar»: el
+        regrillado del bloque manda y después van orden y decimales."""
+        from app import grib_encode as ge
+        opts = dict(ge.normalize({}), regrid="0.5", scan="sn_we", dec_wind=1, tables="4")
+        res = wf.export_wafs(REF, self.tmp, steps=[6], fls=[300], save_opts=opts)
+        self.assertIn("wafs_0p50", os.path.basename(res["archivos"][0]))
+        self.assertTrue(res["verificacion"][0]["ok"])
+        for gid, _p, _s in wf.iter_messages(open(res["archivos"][0], "rb").read()):
+            try:
+                self.assertEqual(ec.codes_get(gid, "jScansPositively"), 1)
+                self.assertEqual(ec.codes_get(gid, "tablesVersion"), 4)     # el bloque manda sobre la 25
+                self.assertEqual(float(ec.codes_get(gid, "iDirectionIncrementInDegrees")), 0.5)
+                if ec.codes_get(gid, "shortName") in ("u", "v"):
+                    self.assertEqual(ec.codes_get(gid, "decimalScaleFactor"), 1)
+            finally:
+                ec.codes_release(gid)
+
     def test_exporta_desde_niveles_de_presion(self):
         """Lo cargado que todavía no está etiquetado por FL se convierte al
         exportar (con el modo pedido); lo etiquetado se reetiqueta."""

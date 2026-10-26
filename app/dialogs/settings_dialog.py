@@ -600,8 +600,11 @@ class SettingsDialog(GlassDialog):
         w, lay = self._page()
         self._sub(lay, "Archivo a guardar: cómo se graba lo que escribe el visor")
         self._hint(lay, "Valores por defecto del bloque «Archivo a guardar» de Obtener datos…, "
-                        "Generar GRIB… y Guardar como…; también se aplican al convertir un archivo "
-                        "al abrirlo. Viento como U/V o como dirección y velocidad; decimales del "
+                        "Exportar a WAFS…, Generar GRIB… y Guardar como…; también se aplican al "
+                        "convertir un archivo al abrirlo. El perfil carga de una vez los valores de "
+                        "NOAA GFS, WAFC Washington o WAFC London clásico. Regrillado bilineal a "
+                        "0,25, 0,50, 1,00 o 1,25° (con wgrib2 si es el motor y tiene la "
+                        "interpolación). Viento como U/V o como dirección y velocidad; decimales del "
                         "viento y de la temperatura (factor decimal con escala binaria 0: se "
                         "respetan exactos); etiqueta de capa de los archivos por Nivel (nominal "
                         "850, ISA 843,1 o ISA entera 843); empaquetado simple o un valor IEEE por "

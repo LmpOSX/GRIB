@@ -1316,7 +1316,8 @@ class MainWindow(QMainWindow):
         if wa is None:
             return None
         return {"lat": wa.tangent_lat, "lon": wa.tangent_lon, "radius_km": wa.radius_km,
-                "up_bearing": wa.variation_deg, "code": wa.code, "variation_deg": wa.variation_deg}
+                "up_bearing": wa.variation_deg, "code": wa.code, "variation_deg": wa.variation_deg,
+                "ring": wa.ring()}
 
     def _set_plot_projection(self, key, lons=None, lats=None):
         """Fija la proyección del mapa con la tangencia de la WA si la hay."""
@@ -1426,8 +1427,7 @@ class MainWindow(QMainWindow):
         if self._reader is None:
             return
         r = self._reader
-        self.plot.set_extent([float(r.lons.min()), float(r.lons.max()),
-                              float(r.lats.min()), float(r.lats.max())])
+        self.plot.show_default_view(r.lons, r.lats)
         self._toolbar.update()
 
     def _on_draw(self, _event):

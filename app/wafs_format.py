@@ -675,13 +675,17 @@ def write_idx(path):
 BASIC_VARS = ("u", "v", "t", "wdir", "ws")   # el viento, en U/V o en dirección y velocidad
 EXPORT_REGRID = [("ninguno", "Sin regrillar (grilla del archivo)"),
                  ("0.25", "0,25° bilineal (como el producto operativo)"),
-                 ("1.0", "1,00° bilineal (para el FDP)")]
+                 ("0.5", "0,50° bilineal"),
+                 ("1.0", "1,00° bilineal (para el FDP)"),
+                 ("1.25", "1,25° bilineal (WAFS clásico, WAFC London)")]
+_REGRID_LABELS = {"0.25": "0p25", "0.5": "0p50", "1.0": "1p00", "1.25": "1p25"}
 
 
 def export_wafs(src, dest_dir, steps=None, fls=None, variables="basicas", region=None,
                 regrid="ninguno", per_step=True, model="gfs", basename=None,
                 tables_version=25, centre=None, sub_centre=None, idx=True, convert_opts=None,
-                progress_cb=None, provenance=None, mode=None):
+                progress_cb=None, provenance=None, mode=None, regrid_engine="eccodes",
+                wgrib2_path="", save_opts=None):
     """Escribe lo cargado como WAFS.
 
     src        ruta (o bytes) del archivo abierto en el visor; si no está en
@@ -690,18 +694,37 @@ def export_wafs(src, dest_dir, steps=None, fls=None, variables="basicas", region
     fls        FL a incluir (lista) o None = todos los del archivo.
     variables  'basicas' (UGRD/VGRD o WDIR/WIND, y TMP) o 'todas'.
     region     (top, bottom, left, right) para recortar, o None.
-    regrid     'ninguno', '0.25' o '1.0' (bilineal).
+    regrid     'ninguno', '0.25', '0.5', '1.0' o '1.25' (bilineal).
+    regrid_engine 'eccodes' (bilineal propio) o 'wgrib2' (`-new_grid`, si
+               ese wgrib2 tiene la interpolación; si no, el propio, avisado).
     per_step   True: un archivo por plazo con nombre gfs.tHHz.wafs_0p25.fFFF.grib2;
                False: un único archivo multi-plazo (`basename` o
                model.tHHz.wafs_RES.fFFF-FFF.grib2).
+    save_opts  bloque «Archivo a guardar» (grib_encode) o None: si trae
+               `regrid` manda sobre `regrid` (y su motor sobre `regrid_engine`);
+               el resto (viento, decimales, orden de las celdas, longitudes…)
+               se aplica a cada plazo después de regrillar.
     provenance procedencia del archivo de origen (dict) o None: si se da, se
                escribe `archivo.json` junto a cada salida (conserva fuente,
                corrida y el área de descarga con sus códigos de FIR).
     Devuelve un dict con 'archivos', 'verificacion' (por archivo) y 'avisos'
     del validador."""
-    from .regrid import crop_grib, regrid_bilinear_grib
+    from .regrid import crop_grib, regrid_to, wgrib2_can_regrid
+    from . import grib_encode as ge
     if ec is None:
         raise RuntimeError("la exportación requiere eccodes")
+    if save_opts is not None:
+        save_opts = ge.normalize(save_opts)
+        if save_opts["regrid"] != "origen":
+            regrid = save_opts["regrid"]
+        if save_opts.get("engine"):
+            regrid_engine = save_opts["engine"]
+            wgrib2_path = save_opts.get("wgrib2_path", wgrib2_path)
+        if save_opts["tables"] != "origen":
+            tables_version = None                          # manda la del bloque
+        save_opts = dict(save_opts, regrid="origen")      # el regrillado va aparte, por plazo
+        if ge.is_default(save_opts):
+            save_opts = None
     progress_cb = progress_cb or (lambda frac, msg: None)
     data = _load(src)
     convert_opts = dict(convert_opts or {})
@@ -741,7 +764,17 @@ def export_wafs(src, dest_dir, steps=None, fls=None, variables="basicas", region
     if not groups:
         raise ValueError("No queda ningún mensaje con la selección pedida.")
 
-    res_label = {"0.25": "0p25", "1.0": "1p00"}.get(str(regrid))
+    res_label = _REGRID_LABELS.get(str(regrid))
+    notes = []
+    engine_used = None
+    if res_label is not None:
+        engine_used = "eccodes"
+        if regrid_engine == "wgrib2":
+            if wgrib2_can_regrid(wgrib2_path):
+                engine_used = "wgrib2"
+            else:
+                notes.append("wgrib2 sin interpolación (IPOLATES) o no encontrado: se regrilló con el "
+                             "bilineal propio.")
     cycle = None
     files = []
     hours = sorted(groups)
@@ -752,8 +785,10 @@ def export_wafs(src, dest_dir, steps=None, fls=None, variables="basicas", region
         part = bytes(groups[h])
         if region is not None:
             part = crop_grib(part, region)
-        if str(regrid) in ("0.25", "1.0"):
-            part = regrid_bilinear_grib(part, float(regrid))
+        if engine_used is not None:
+            part = regrid_to(part, float(regrid), engine_used, wgrib2_path)
+        if save_opts is not None:
+            part, _ginfo = ge.recode(part, save_opts, labeled=True, mode=mode)
         if tables_version is not None or centre is not None or sub_centre is not None:
             part = _apply_identity(part, tables_version, centre, sub_centre)
         if cycle is None:
@@ -791,13 +826,19 @@ def export_wafs(src, dest_dir, steps=None, fls=None, variables="basicas", region
                                                 or (prov.get("wafs") or {}).get("convertido")))
             if region is not None:
                 prov["zona_exportada"] = list(region)
+            if save_opts is not None or engine_used is not None:
+                g = dict(save_opts or ge.normalize({}), regrid=str(regrid) if engine_used else "origen")
+                prov["guardado"] = dict({k: g[k] for k in ge.KEYS}, descripcion=ge.describe(g))
+                prov["viento"] = g["wind"]
             with open(path + ".json", "w", encoding="utf-8") as fh:
                 json.dump(prov, fh, ensure_ascii=False, indent=2)
         written.append(path)
         verification.append(verify_written(path, blob))
     val = validate_wafs(written[0]) if written else {"avisos": []}
-    return {"archivos": written, "verificacion": verification, "avisos": val["avisos"],
-            "plazos": hours, "resolucion": res_label, "ciclo": cycle, "modo": mode}
+    return {"archivos": written, "verificacion": verification, "avisos": notes + list(val["avisos"]),
+            "plazos": hours, "resolucion": res_label, "ciclo": cycle, "modo": mode,
+            "regrillado_con": engine_used,
+            "guardado": ge.describe(save_opts) if save_opts is not None else None}
 
 
 def _cycle_of(data):
