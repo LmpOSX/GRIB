@@ -48,6 +48,22 @@ MAP_MIN_WIDTH = 480             # el mapa nunca cede más que esto a los paneles
 HEX_SUB_MARGINS = 20            # márgenes laterales del recuadro del hexadecimal
 
 
+def confirm_incomplete(parent, report):
+    """Aviso amarillo de archivo incompleto: «Abrir de todos modos» o
+    «Cancelar». Devuelve True si se abre."""
+    box = QMessageBox(parent)
+    box.setIcon(QMessageBox.Icon.Warning)
+    box.setWindowTitle("Archivo incompleto")
+    box.setText("Al archivo le faltan datos para mostrarse completo.")
+    box.setInformativeText(report + "\n\n¿Abrirlo de todos modos?")
+    b_open = box.addButton("Abrir de todos modos", QMessageBox.ButtonRole.AcceptRole)
+    b_cancel = box.addButton("Cancelar", QMessageBox.ButtonRole.RejectRole)
+    box.setDefaultButton(b_open)
+    box.setEscapeButton(b_cancel)
+    box.exec()
+    return box.clickedButton() is b_open
+
+
 class MainWindow(QMainWindow):
     def __init__(self):
         super().__init__()
@@ -923,6 +939,9 @@ class MainWindow(QMainWindow):
             return
         if not self._accept_reader(reader):
             return
+        report = getattr(reader, "missing_report", lambda: None)()
+        if report is not None:
+            convert = False          # incompleto: se abre tal cual, sin escribir un convertido
         reader, path, converted = self._ensure_wafs(reader, path, convert)
         self.load_reader(reader, path, read_provenance(path))
         if converted:
@@ -930,7 +949,11 @@ class MainWindow(QMainWindow):
         push_recent_file(self._cfg, path)
         save_config(self._cfg)
         self._refresh_recent_menu()
-        self.set_status(f"Archivo cargado: {path}")
+        if report is not None:
+            self.set_status(f"Archivo cargado, incompleto ({report.splitlines()[0].rstrip('.')}; "
+                            f"ver el inventario): {path}")
+        else:
+            self.set_status(f"Archivo cargado: {path}")
 
     def _ensure_wafs(self, reader, path: str, convert=None):
         """El visor lee sólo WAFS: un archivo local en niveles de presión se
@@ -1040,25 +1063,21 @@ class MainWindow(QMainWindow):
                 self.set_status("Generado: " + dlg.generated_path)
 
     def _accept_reader(self, reader) -> bool:
-        """Valida el contenido: sin U/V se puede seguir sólo con temperatura;
-        sin nada útil no se abre."""
-        if "u" in reader.variables and "v" in reader.variables:
+        """Valida el contenido. Si al archivo le falta algo (una componente
+        del viento, la temperatura, o no trae nada dibujable) lo dice en un
+        aviso amarillo con lo que hay y lo que se supone, y deja abrirlo
+        igual o cancelar; nunca es un error rojo."""
+        report = getattr(reader, "missing_report", lambda: None)()
+        if report is None:
             if getattr(reader, "kind", "altura") == "superficie":
                 self.set_status("Archivo de superficie: viento a 10 m y temperatura a 2 m.")
             return True
-        if "t" in reader.variables:
-            QMessageBox.warning(
-                self, "Sin viento",
-                "El archivo no contiene componentes U/V del viento en niveles de "
-                "presión. Sólo se podrá mostrar temperatura.")
+        if not confirm_incomplete(self, report):
+            self.set_status("No se abrió el archivo (incompleto).")
+            return False
+        if "u" not in reader.variables and "t" in reader.variables:
             self.panel.set_mode("temperatura")
-            return True
-        QMessageBox.critical(
-            self, "Sin datos de viento",
-            "El archivo no contiene componentes U/V (UGRD/VGRD) ni temperatura "
-            "en niveles de presión.")
-        self.set_status("Archivo sin U/V.")
-        return False
+        return True
 
     def load_reader(self, reader, path: str, provenance: dict = None):
         """Instala un lector ya construido (también lo usan los tests con un
@@ -1105,6 +1124,12 @@ class MainWindow(QMainWindow):
             self.plot.draw_empty()
             return
         if not r.steps:
+            return
+        if not r.variables:
+            # Nada dibujable (sólo inventario y hexadecimal): mapa vacío con el aviso
+            self._current = None
+            self.plot.draw_empty("El archivo no trae viento ni temperatura en niveles de presión: "
+                                 "sólo inventario y panel hexadecimal")
             return
         step_idx = max(0, min(self.panel.step_index(), len(r.steps) - 1))
         step = r.steps[step_idx]

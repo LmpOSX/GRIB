@@ -119,6 +119,22 @@ python main.py FDP_MULTI.grib2        # abre directamente un archivo
 También se abre un `.grib2` con doble clic desde el Finder o el Explorador
 cuando la app está instalada (ver «Instaladores»).
 
+El visor necesita viento en niveles de presión (U/V, o WDIR/WIND) y, si
+hay, temperatura. Un archivo al que le falte algo no se rechaza: un aviso
+amarillo («Archivo incompleto») dice qué trae y qué falta, y deja **Abrir
+de todos modos** o **Cancelar** (no se lee nada). Si falta una de las dos
+componentes del viento en un nivel y plazo donde está la otra (un boletín
+GTS con los `YU…` de WAFC London sin sus `YV…`, por ejemplo), la que
+falta se toma como cero en ese nivel: viento sólo zonal o sólo meridional,
+avisado en el inventario (`INCOMPLETO`, `supuestos en cero`, AVISOS) y en la
+barra de estado. Sin temperatura no hay isotermas ni temperatura en la
+ficha. Si no trae nada dibujable (sólo otras variables u otros niveles)
+también se puede abrir: el mapa queda vacío y sirven el inventario y el
+panel hexadecimal. Un archivo incompleto se abre tal cual, sin convertirlo
+al formato WAFS. Los boletines GTS con cabecera WMO (`0003070700`, número
+de secuencia, `YUXM70 EGRR 240000`) delante de cada mensaje se leen igual:
+ecCodes y el panel hexadecimal saltan hasta el `GRIB` de cada uno.
+
 ### Obtener datos (fuentes)
 
 El visor obtiene datos de **fuentes** intercambiables. La fuente se elige en
@@ -718,7 +734,10 @@ ancho del árbol más el volcado y nunca más que el mapa, y el separador deja
 cambiar el reparto. Mostrar u ocultar paneles no cambia el tamaño de la
 ventana ni la escala del mapa (se ve más o menos región, el zoom queda). La
 elección se recuerda; el panel carga el archivo sólo mientras está a la
-vista y lo suelta al ocultarlo o al cerrar el archivo.
+vista y lo suelta al ocultarlo o al cerrar el archivo. Lo que hay entre
+mensajes sin ser GRIB (cabeceras WMO de un boletín GTS, fin de boletín,
+relleno) no se desarrolla, pero queda en el volcado y el rótulo dice
+cuántos bytes son.
 El árbol va mensaje → sección → campo → subcampo, con el valor decodificado
 de cada campo (centro generador con su nombre de la tabla C-11, hora de
 referencia, Ni/Nj y esquinas de la grilla en grados, parámetro con su

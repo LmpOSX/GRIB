@@ -516,6 +516,83 @@ class TestVentanaWAFS(_Base):
 
     DATA = os.path.join(os.path.dirname(os.path.abspath(__file__)), "data")
 
+    def test_archivo_incompleto_avisa_y_deja_abrir(self):
+        """Un boletín con sólo U (sin V ni T): aviso amarillo con lo que
+        falta y «Abrir de todos modos» / «Cancelar». Cancelar no lee nada;
+        abrir toma V como cero, no convierte a WAFS y lo dice en el estado.
+        Sin nada dibujable (sólo T en la tropopausa) también se abre, con el
+        mapa vacío, el inventario y el hexadecimal."""
+        import numpy as np
+        from app import main_window as mw
+        from app.main_window import MainWindow
+        from app.grib_reader import ec
+        from tests.test_grib_reader import _escribir_grib_sintetico
+        if ec is None:
+            self.skipTest("sin eccodes")
+        path = os.path.join(self._tmp.name, "solo_u.dat")
+        _escribir_grib_sintetico(path, steps=(6,), levels=(850, 700), variables=("u",), wmo_header=True)
+        self.w = MainWindow()
+        self.w.show()
+        _app.processEvents()
+        informes = []
+        old = mw.confirm_incomplete
+        mw.confirm_incomplete = lambda parent, report: (informes.append(report), False)[1]
+        try:
+            self.w.open_file(path)
+        finally:
+            mw.confirm_incomplete = old
+        self.assertIsNone(self.w._reader)                            # Cancelar: no se lee
+        self.assertIn("No se abrió", self.w.statusBar().currentMessage())
+        self.assertEqual(len(informes), 1)
+        self.assertIn("Falta VGRD (v) en 850, 700 hPa", informes[0])
+        self.assertIn("No hay temperatura", informes[0])
+        mw.confirm_incomplete = lambda parent, report: True
+        try:
+            self.w.set_hex_visible(True)
+            self.w.open_file(path)
+            _app.processEvents()
+        finally:
+            mw.confirm_incomplete = old
+        r = self.w._reader
+        self.assertIsNotNone(r)
+        self.assertEqual(r.path, path)                               # tal cual: sin convertir
+        self.assertFalse(os.path.exists(path + ".wafs.grib2"))
+        self.assertEqual(r.variables, ["u", "v"])
+        self.assertIn("incompleto", self.w.statusBar().currentMessage())
+        self.assertIn("Variables en niveles de presión: UGRD (u)", self.w.statusBar().currentMessage())
+        cur = self.w._current
+        self.assertIsNotNone(cur["u"])
+        self.assertEqual(float(np.abs(cur["v"]).max()), 0.0)
+        self.assertIsNone(cur["t"])
+        self.assertIn("INCOMPLETO", self.w.inventory.toPlainText())
+        self.assertEqual(self.w._hex.tree.topLevelItemCount(), 2)
+        self.assertIn("fuera de los mensajes", self.w._hex.lbl_info.text())
+        # Sólo T en niveles de presión: VARIABLE pasa a Temperatura
+        path_t = os.path.join(self._tmp.name, "solo_t.grib2")
+        _escribir_grib_sintetico(path_t, steps=(6,), levels=(850, 700), variables=("t",))
+        mw.confirm_incomplete = lambda parent, report: True
+        try:
+            self.w.open_file(path_t)
+            _app.processEvents()
+        finally:
+            mw.confirm_incomplete = old
+        self.assertEqual(self.w._reader.variables, ["t"])
+        self.assertEqual(self.w.panel.mode(), "temperatura")
+        # Nada dibujable: se abre con el mapa vacío, sin error
+        path_n = os.path.join(self._tmp.name, "tropo.grib2")
+        _escribir_grib_sintetico(path_n, steps=(6,), levels=(0,), variables=("t",), type_of_level="tropopause")
+        mw.confirm_incomplete = lambda parent, report: True
+        try:
+            self.w.open_file(path_n)
+            _app.processEvents()
+        finally:
+            mw.confirm_incomplete = old
+        self.assertIsNotNone(self.w._reader)
+        self.assertEqual(self.w._reader.variables, [])
+        self.assertIsNone(self.w._current)
+        self.assertEqual(self.w._hex.tree.topLevelItemCount(), 1)
+        self.assertFalse(self.w.plot.has_data)
+
     def test_abre_archivo_local_convertido(self):
         """Un archivo local en niveles de presión crudos se convierte al
         abrirlo (modo por defecto OACI, 17 FL; con OACI56 en la configuración,

@@ -194,6 +194,24 @@ class TestAnalisis(unittest.TestCase):
 
     def test_basura(self):
         self.assertEqual(gh.scan_messages(b"hola mundo, esto no es un GRIB"), [])
+
+    def test_cabeceras_wmo_entre_mensajes(self):
+        """Un boletín GTS: cabecera WMO antes de cada mensaje y fin de
+        boletín después; se saltean y los mensajes se encuentran igual."""
+        data = _grib([850], steps=(6,))
+        msgs = gh.scan_messages(data)
+        head = b"0003070700\x01\r\r\n23127\r\r\nYUXM70 EGRR 240000\r\r\n"
+        tail = b"\r\r\n\x03"
+        parts = [head + bytes(data[o:o + s]) + tail for o, s in msgs]
+        bulletin = b"".join(parts) + b"00000000"
+        found = gh.scan_messages(bulletin)
+        self.assertEqual(len(found), len(msgs))
+        self.assertEqual(found[0][0], len(head))
+        self.assertEqual([s for _o, s in found], [s for _o, s in msgs])
+        self.assertEqual(sum(s for _o, s in found), sum(s for _o, s in msgs))
+        m = gh.parse_message(bulletin, found[1][0], 1, len(found))
+        self.assertEqual(m.offset, found[1][0])
+        self.assertEqual(gh.scan_messages(bulletin, limit=1), found[:1])
         with self.assertRaises(ValueError):
             gh.parse_message(b"xxxxxxxxxxxxxxxxxxxx", 0)
 

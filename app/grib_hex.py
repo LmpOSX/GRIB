@@ -186,14 +186,21 @@ def _fmt_deg(micro):
 # ── Mensajes ──────────────────────────────────────────────────────────────
 
 def scan_messages(data, limit=None):
-    """[(offset, tamaño)] de cada mensaje GRIB2 del archivo. Se detiene en el
-    primer tramo que no empieza por «GRIB» (o en `limit` mensajes)."""
+    """[(offset, tamaño)] de cada mensaje GRIB2 del archivo. Lo que hay entre
+    mensajes sin ser «GRIB» (cabeceras WMO de un boletín GTS, relleno, un
+    fin de boletín) se saltea hasta el próximo «GRIB»; se detiene cuando no
+    queda ninguno (o en `limit` mensajes)."""
     out = []
     pos = 0
     n = len(data)
+    data = bytes(data) if not isinstance(data, (bytes, bytearray)) and not hasattr(data, "find") else data
     while pos + 16 <= n:
         if bytes(data[pos:pos + 4]) != b"GRIB":
-            break
+            nxt = data.find(b"GRIB", pos)
+            if nxt < 0:
+                break
+            pos = nxt
+            continue
         if data[pos + 7] != 2:
             # Edición 1: longitud en 3 bytes
             size = _uint(data[pos + 4:pos + 7])

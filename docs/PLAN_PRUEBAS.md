@@ -1,4 +1,4 @@
-# Plan de pruebas manual – Visor GRIB 0.5.3 (PyQt6)
+# Plan de pruebas manual – Visor GRIB 0.5.4 (PyQt6)
 
 Entorno: pyenv `Grib` (Python 3.14.3), macOS. Antes de empezar:
 
@@ -33,7 +33,9 @@ detalle.
 | B4 | Recientes en el menú | Archivo ▸ Recientes | Lista con el archivo; "Vaciar lista" la limpia. |
 | B5 | Reciente faltante | Mover el archivo y abrirlo desde Recientes | Aviso "Archivo no encontrado" y se elimina de la lista. |
 | B6 | Archivo inválido | Abrir un archivo que no es GRIB | Diálogo "Error al abrir el archivo"; la app sigue en el estado anterior. |
-| B7 | Archivo sin U/V | Abrir un GRIB sólo con TMP | Aviso "Sin viento"; VARIABLE queda en Temperatura; el mapa muestra contornos. |
+| B7 | Archivo sin U/V | Abrir un GRIB sólo con TMP | Aviso amarillo «Archivo incompleto» con «No hay viento: sólo se podrá mostrar temperatura» y los botones `Abrir de todos modos` / `Cancelar`; al abrir, VARIABLE queda en Temperatura y el mapa muestra contornos. |
+| B7b | Boletín con sólo U | Abrir un boletín GTS con cabeceras WMO y sólo UGRD (p. ej. `grib.261024074630_6693.dat`, YUXM70/75/85 EGRR + un TMP en la tropopausa) | Aviso amarillo: `Variables en niveles de presión: UGRD (u).`, `Falta VGRD (v) en 850, 750, 700 hPa: si se abre, se toma como cero (viento sólo zonal).`, `No hay temperatura…`. `Cancelar` no lee nada (estado «No se abrió el archivo (incompleto)»). `Abrir de todos modos`: barbas del oeste o del este (V = 0), sin isotermas, STATUS «sin datos de: T», el inventario dice `Mensajes: 5 (útiles: 4; supuestos en cero: 4)`, `VGRD (v) (faltante: se toma como cero)`, `INCOMPLETO…` y el aviso en AVISOS; la barra de estado dice «Archivo cargado, incompleto (…)»; no se escribe ningún convertido. El panel hexadecimal lista los 5 mensajes (el primero en el byte 43, tras la cabecera `YUXM70 EGRR 240000`) y el rótulo dice `243 bytes fuera de los mensajes (cabeceras WMO o relleno)`. |
+| B7c | Nada dibujable | Abrir un GRIB con sólo TMP en la tropopausa | Aviso amarillo «no hay nada que dibujar» con `Mensajes que trae: t en tropopause`; al abrir, mapa vacío con ese texto, inventario con `VARIABLES: ninguna de U/V/T` y el hexadecimal con el mensaje. |
 | B8 | Doble clic en el Finder (app empaquetada) | `scripts/build.sh`, instalar, doble clic en un `.grib2` | La app abre con ese archivo. |
 | B9 | Viento como dirección y velocidad | Abrir un GRIB bajado con «Viento en el archivo: dirección y velocidad» (`…_dirvel.grib2`), con ecCodes y con wgrib2 | Abre igual que su gemelo en U/V: mismas barbas, STATUS y ficha del punto; el inventario dice `VARIABLES: UGRD (u), VGRD (v), TMP (t)` y `VIENTO: dirección y velocidad (WDIR/WIND); se combinan en U/V al leer`; FUENTE agrega `viento: dirección y velocidad (WDIR/WIND)`; `wgrib2 -s` lista `WDIR` y `WIND` en vez de `UGRD` y `VGRD`. |
 

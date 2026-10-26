@@ -1,7 +1,18 @@
 # Cambios
 
-## Sin publicar
+## 0.5.4 — 2026-10-26
 
+- Archivos incompletos: lo que le falte a un GRIB para dibujarse (una
+  componente del viento, la temperatura, o nada dibujable) ya no es un
+  error rojo que lo rechaza sino un aviso amarillo que dice qué trae y qué
+  falta, con «Abrir de todos modos» o «Cancelar». Si falta U o V donde
+  está la otra, se toma como cero en ese nivel (viento sólo zonal o sólo
+  meridional), avisado en el inventario y en la barra de estado; sin nada
+  dibujable se abre con el mapa vacío para el inventario y el hexadecimal.
+  Un archivo incompleto no se convierte al formato WAFS.
+- Boletines GTS: las cabeceras WMO (`0003070700`, secuencia, `YUXM70 EGRR
+  240000`) delante de cada mensaje ya no dejan al panel hexadecimal sin
+  mensajes; se saltean hasta el `GRIB` y el rótulo cuenta esos bytes.
 - Ficha del punto: si el mapa cambia de alto con la ficha abierta (la
   ventana se achica, o el mapa termina de acomodarse justo después del
   clic, que en Linux la dejaba un píxel afuera), se vuelve a ajustar al

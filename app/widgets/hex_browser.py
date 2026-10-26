@@ -231,7 +231,11 @@ class HexBrowser(QWidget):
     def _fill_messages(self):
         total = len(self._messages)
         n = len(self._data)
-        self.lbl_info.setText(f"{n:,} bytes · {total} mensajes".replace(",", "."))
+        outside = n - sum(size for _o, size in self._messages)
+        txt = f"{n:,} bytes · {total} mensajes".replace(",", ".")
+        if total and outside > 0:
+            txt += f" · {outside:,} bytes fuera de los mensajes".replace(",", ".") + " (cabeceras WMO o relleno)"
+        self.lbl_info.setText(txt)
         for i, (off, size) in enumerate(self._messages):
             it = QTreeWidgetItem([gh._msg_name(i, total), "", f"{off} +{size}"])
             it.setData(0, _ROLE_NODE, i)

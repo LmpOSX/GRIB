@@ -119,6 +119,7 @@ def _reader_sintetico(levels, shape=(3, 4)):
     r.path = "<sintetico>"
     r.messages, r.other_messages, r.warnings = [], [], []
     r.index, r.cache = {}, {}
+    r.present_variables, r.assumed_zero = ["u", "v", "t"], []
     r.lats = np.linspace(-10, 10, shape[0])
     r.lons = np.linspace(-60, -30, shape[1])
     r.grid = {"grid_type": "regular_ll", "ni": shape[1], "nj": shape[0],
@@ -209,14 +210,19 @@ class TestVentanas(unittest.TestCase):
         self.assertEqual(r.steps[0].label(), "+9h  21:00 13/10 UTC")
 
 
-def _escribir_grib_sintetico(path, steps=(6, 9), levels=(850, 700, 500), ni=8, nj=6):
+def _escribir_grib_sintetico(path, steps=(6, 9), levels=(850, 700, 500), ni=8, nj=6,
+                             variables=("u", "v", "t"), wmo_header=False, type_of_level="isobaricInhPa"):
     """GRIB2 chico con u, v, t en niveles de presión, latitudes decrecientes y
-    longitudes 0–360, como los archivos GFS del caso de uso."""
+    longitudes 0–360, como los archivos GFS del caso de uso. `variables`
+    elige cuáles se escriben (un boletín con sólo U, por ejemplo) y
+    `wmo_header` antepone a cada mensaje una cabecera de boletín GTS como
+    la de los YUXM de WAFC London, con su fin de boletín."""
     import eccodes as ec
     lats = np.linspace(4, -16, nj)
     lons = np.linspace(270, 298, ni)
     LON, LAT = np.meshgrid(lons, lats)
-    params = {"u": (0, 2, 2), "v": (0, 2, 3), "t": (0, 0, 0)}
+    params = {k: v for k, v in {"u": (0, 2, 2), "v": (0, 2, 3), "t": (0, 0, 0)}.items() if k in variables}
+    seq = 23127
     with open(path, "wb") as out:
         for st in steps:
             for lv in levels:
@@ -225,7 +231,7 @@ def _escribir_grib_sintetico(path, steps=(6, 9), levels=(850, 700, 500), ni=8, n
                     ec.codes_set(gid, "discipline", d)
                     ec.codes_set(gid, "parameterCategory", c)
                     ec.codes_set(gid, "parameterNumber", n)
-                    ec.codes_set(gid, "typeOfLevel", "isobaricInhPa")
+                    ec.codes_set(gid, "typeOfLevel", type_of_level)
                     ec.codes_set(gid, "level", lv)
                     ec.codes_set(gid, "dataDate", 20261013)
                     ec.codes_set(gid, "dataTime", 1200)
@@ -247,7 +253,16 @@ def _escribir_grib_sintetico(path, steps=(6, 9), levels=(850, 700, 500), ni=8, n
                     else:
                         vals = np.full(LAT.shape, 250.0 + lv / 10.0)
                     ec.codes_set_values(gid, vals.ravel())
-                    ec.codes_write(gid, out)
+                    if wmo_header:
+                        msg = ec.codes_get_message(gid)
+                        t2 = {"u": "U", "v": "V", "t": "T"}[var]
+                        out.write(f"{len(msg) + 36:010d}".encode() + b"\x01\r\r\n" + f"{seq}".encode()
+                                  + b"\r\r\n" + f"Y{t2}XM{lv // 10:02d} EGRR 240000".encode() + b"\r\r\n")
+                        out.write(msg)
+                        out.write(b"\r\r\n\x03")
+                        seq += 1
+                    else:
+                        ec.codes_write(gid, out)
                     ec.codes_release(gid)
 
 
@@ -286,6 +301,83 @@ class TestLecturaGrib(unittest.TestCase):
         np.testing.assert_allclose(v[:, 0], -21.0)
         self.assertIs(r.get_field(0, "u", 850.0), u)      # cache
         self.assertIsNone(r.get_field(0, "u", 999.0))
+
+    def test_boletin_con_solo_u(self):
+        """Un boletín GTS con cabeceras WMO y sólo la componente U (los YUXM
+        de WAFC London sin sus YV): se abre, V se toma como cero en cada
+        nivel y plazo, el inventario y `missing_report` lo dicen, y la
+        cabecera no estorba ni a ecCodes ni al hexadecimal."""
+        from app import grib_hex as gh
+        path = os.path.join(self.tmp.name, "solo_u.dat")
+        _escribir_grib_sintetico(path, steps=(6,), levels=(850, 700), variables=("u",), wmo_header=True)
+        data = open(path, "rb").read()
+        self.assertTrue(data.startswith(b"00000"))                 # cabecera antes del GRIB
+        self.assertNotIn(b"GRIB", data[:40])
+        r = GribReader(path)
+        self.assertEqual(len(r.messages), 2)
+        self.assertEqual(r.present_variables, ["u"])
+        self.assertEqual(r.variables, ["u", "v"])
+        self.assertEqual(sorted(r.assumed_zero), [("v", 700.0, 0), ("v", 850.0, 0)])
+        self.assertEqual(r.levels, [850.0, 700.0])
+        u, v, t, _ = r.get_level_fields(0, 700.0)
+        self.assertIsNotNone(u)
+        self.assertEqual(v.shape, u.shape)
+        self.assertEqual(float(np.abs(v).max()), 0.0)
+        self.assertIsNone(t)
+        rep = r.missing_report()
+        self.assertIn("UGRD (u)", rep)
+        self.assertIn("Falta VGRD (v) en 850, 700 hPa", rep)
+        self.assertIn("se toma como cero", rep)
+        self.assertIn("No hay temperatura", rep)
+        inv = r.inventory_text()
+        self.assertIn("útiles: 2; supuestos en cero: 2", inv)
+        self.assertIn("VGRD (v) (faltante: se toma como cero)", inv)
+        self.assertIn("INCOMPLETO", inv)
+        self.assertTrue(any("se toma como cero" in w for w in r.warnings))
+        # El hexadecimal encuentra los dos mensajes saltando las cabeceras
+        msgs = gh.scan_messages(data)
+        self.assertEqual(len(msgs), 2)
+        self.assertEqual([m.offset for m in r.messages], [o for o, _s in msgs])
+        self.assertLess(sum(s for _o, s in msgs), len(data))
+        # Un archivo completo no informa nada
+        full = os.path.join(self.tmp.name, "completo.grib2")
+        _escribir_grib_sintetico(full, steps=(6,), levels=(850, 700))
+        rc = GribReader(full)
+        self.assertIsNone(rc.missing_report())
+        self.assertEqual(rc.assumed_zero, [])
+        self.assertIn("útiles: 6)", rc.inventory_text())
+        # V en un nivel y U en otro: se completa cada uno con cero
+        mixed = os.path.join(self.tmp.name, "mixto.grib2")
+        _escribir_grib_sintetico(mixed, steps=(6,), levels=(850,), variables=("u",))
+        with open(mixed, "ab") as fh:
+            tmp2 = os.path.join(self.tmp.name, "v700.grib2")
+            _escribir_grib_sintetico(tmp2, steps=(6,), levels=(700,), variables=("v",))
+            fh.write(open(tmp2, "rb").read())
+        rm = GribReader(mixed)
+        self.assertEqual(sorted(rm.assumed_zero), [("u", 700.0, 0), ("v", 850.0, 0)])
+        self.assertIn("Falta UGRD (u) en 700 hPa", rm.missing_report())
+        self.assertIn("Falta VGRD (v) en 850 hPa", rm.missing_report())
+
+    def test_sin_nada_dibujable(self):
+        """Sólo temperatura fuera de los niveles de presión (tropopausa): el
+        lector abre igual, sin variables, y el informe lo dice."""
+        path = os.path.join(self.tmp.name, "tropo.grib2")
+        _escribir_grib_sintetico(path, steps=(6,), levels=(0,), variables=("t",), type_of_level="tropopause")
+        r = GribReader(path)
+        self.assertEqual(r.variables, [])
+        self.assertEqual(r.levels, [])
+        self.assertEqual(len(r.other_messages), 1)
+        rep = r.missing_report()
+        self.assertIn("no hay nada que dibujar", rep)
+        self.assertIn("Mensajes que trae: t en tropopause", rep)
+        self.assertIn("VARIABLES: ninguna de U/V/T", r.inventory_text())
+        # Sólo temperatura en niveles de presión: se abre, sin viento
+        path = os.path.join(self.tmp.name, "solo_t.grib2")
+        _escribir_grib_sintetico(path, steps=(6,), levels=(850, 700), variables=("t",))
+        r = GribReader(path)
+        self.assertEqual(r.variables, ["t"])
+        self.assertEqual(r.assumed_zero, [])
+        self.assertIn("No hay viento: sólo se podrá mostrar temperatura", r.missing_report())
 
     def test_archivo_invalido(self):
         bad = os.path.join(self.tmp.name, "malo.grib2")

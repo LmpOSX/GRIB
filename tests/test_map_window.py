@@ -593,25 +593,36 @@ class TestCierreYValidacion(_MapBase):
         self.assertFalse(self.w._act_close.isEnabled())
 
     def test_sin_viento_solo_temperatura(self):
+        """Sólo temperatura: aviso amarillo (no error); al abrir igual,
+        VARIABLE pasa a Temperatura."""
+        from app import main_window as mw
         r = _reader_sintetico([850, 700])
         r.variables = ["t"]
-        old = QMessageBox.warning
-        QMessageBox.warning = staticmethod(lambda *a, **k: None)
+        informes = []
+        old = mw.confirm_incomplete
+        mw.confirm_incomplete = lambda parent, report: (informes.append(report), True)[1]
         try:
             self.assertTrue(self.w._accept_reader(r))
         finally:
-            QMessageBox.warning = old
+            mw.confirm_incomplete = old
         self.assertEqual(self.w.panel.mode(), "temperatura")
+        self.assertIn("No hay viento: sólo se podrá mostrar temperatura", informes[0])
 
     def test_sin_datos_no_abre(self):
+        """Sin nada dibujable: el aviso deja cancelar (no se abre) o abrir
+        igual, para el inventario y el hexadecimal."""
+        from app import main_window as mw
         r = _reader_sintetico([850])
         r.variables = []
-        old = QMessageBox.critical
-        QMessageBox.critical = staticmethod(lambda *a, **k: None)
+        r.levels = []
+        old = mw.confirm_incomplete
+        mw.confirm_incomplete = lambda parent, report: False
         try:
             self.assertFalse(self.w._accept_reader(r))
+            mw.confirm_incomplete = lambda parent, report: True
+            self.assertTrue(self.w._accept_reader(r))
         finally:
-            QMessageBox.critical = old
+            mw.confirm_incomplete = old
 
 
 if __name__ == "__main__":

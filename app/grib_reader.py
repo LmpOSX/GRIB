@@ -180,6 +180,22 @@ class DerivedField:
         self.ni, self.nj = wdir_msg.ni, wdir_msg.nj
 
 
+class ZeroField:
+    """U o V que el archivo no trae en un nivel y plazo donde sí está la otra
+    componente: se toma como cero (viento sólo zonal o sólo meridional), y
+    el lector lo avisa (`assumed_zero`, `missing_report`)."""
+
+    def __init__(self, var, like):
+        self.var = var
+        self.like = like
+        self.level_hpa = like.level_hpa
+        self.step_range = like.step_range
+        self.valid = like.valid
+        self.run = like.run
+        self.index = like.index
+        self.ni, self.nj = like.ni, like.nj
+
+
 class GribReader:
     """Lee un archivo GRIB2 con ecCodes, construye el inventario y entrega
     campos (u, v, t) en niveles de presión, con cache en memoria e
@@ -206,6 +222,8 @@ class GribReader:
         self.lons = None            # longitudes 1D ascendentes (-180..180)
         self.grid = {}              # información de la grilla original
         self.warnings = []
+        self.present_variables = []  # u/v/t que el archivo trae de verdad
+        self.assumed_zero = []      # [(var, level_hpa, step_idx)] tomados como cero
         self._lon_order = None
         self._flip_lat = False
         self._scan()
@@ -278,6 +296,27 @@ class GribReader:
             derived += 1
         if derived:
             self.wind_format = "dirspeed" if not ({"u", "v"} & {m.var for m in self.messages}) else "mixto"
+        self.present_variables = [v for v in ("u", "v", "t") if v in variables]
+        # Una componente sola (un boletín GTS con los YU pero sin los YV, por
+        # ejemplo): la que falta se toma como cero en ese nivel y plazo, y
+        # queda avisado; el archivo se abre igual
+        for (s, var, lv) in sorted(list(self.index), key=lambda k: (k[0], -k[2], k[1])):
+            if var not in ("u", "v"):
+                continue
+            other = "v" if var == "u" else "u"
+            if (s, other, lv) in self.index:
+                continue
+            self.index[(s, other, lv)] = ZeroField(other, self.index[(s, var, lv)])
+            self.assumed_zero.append((other, lv, s))
+            variables.add(other)
+        if self.assumed_zero:
+            by_var = {}
+            for var, lv, s in self.assumed_zero:
+                by_var.setdefault(var, set()).add(lv)
+            for var, lvs in by_var.items():
+                self.warnings.append(
+                    f"Falta {self.VAR_NAMES[var]} en {', '.join(f'{lv:g}' for lv in sorted(lvs, reverse=True))} "
+                    f"hPa: se toma como cero (viento sólo {'meridional' if var == 'u' else 'zonal'}).")
 
         # Niveles de presión descendentes; la superficie (SURFACE_LEVEL) aparte
         self.levels = sorted((lv for lv in levels if lv != SURFACE_LEVEL), reverse=True)
@@ -291,11 +330,54 @@ class GribReader:
         # nivel exacto, sin interpolar. Si no, es crudo y se interpola.
         self._classify_fl_levels()
         self.variables = [v for v in ("u", "v", "t") if v in variables]
-        if not any(k[1] in ("u", "v", "t") for k in self.index):
-            raise ValueError(
-                "El archivo no contiene campos U/V/T en niveles de presión "
-                "(typeOfLevel isobaricInhPa) ni de superficie (10 m / 2 m) sobre la "
-                "grilla principal.")
+        if not self.variables:
+            # Nada que dibujar (otros niveles, otras variables): el archivo se
+            # abre igual para el inventario y el panel hexadecimal
+            self.warnings.append(
+                "El archivo no contiene campos U/V/T en niveles de presión (typeOfLevel "
+                "isobaricInhPa) ni de superficie (10 m / 2 m) sobre la grilla principal: "
+                "no hay nada que dibujar.")
+
+    def missing_report(self):
+        """Texto con lo que le falta al archivo para dibujarse completo, o
+        None si tiene viento U/V (o WDIR/WIND) y no hubo que suponer nada.
+        Lo muestra la ventana antes de abrirlo, para abrir igual o no."""
+        # (el lector sintético de los tests se arma sin pasar por _scan)
+        present = [v for v in (getattr(self, "present_variables", None) or self.variables) if v in self.variables]
+        zero = getattr(self, "assumed_zero", [])
+        if "u" in present and "v" in present and not zero:
+            return None
+        if getattr(self, "wind_format", "uv") in ("dirspeed", "mixto") and not zero and "u" in self.variables:
+            return None
+        lines = []
+        if not self.variables:
+            others = sorted({(f"{getattr(m, 'short_name', None) or m.var or '?'}"
+                              + (f" en {m.type_of_level}" if getattr(m, "type_of_level", None) else "")
+                              + (f" {m.level:g}" if isinstance(getattr(m, "level", None), (int, float))
+                                 and m.level else ""))
+                             for m in self.other_messages})
+            lines.append("No tiene componentes U/V del viento (UGRD/VGRD ni WDIR/WIND) ni "
+                         "temperatura en niveles de presión ni de superficie: no hay nada que "
+                         "dibujar. Se puede abrir igual para ver el inventario y el panel "
+                         "hexadecimal.")
+            if others:
+                lines.append("Mensajes que trae: " + "; ".join(others) + ".")
+            return "\n".join(lines)
+        have = ", ".join(self.VAR_NAMES[v] for v in present) or "ninguna de U/V/T"
+        lines.append(f"Variables en niveles de presión: {have}.")
+        if zero:
+            by_var = {}
+            for var, lv, s in zero:
+                by_var.setdefault(var, set()).add(lv)
+            for var, lvs in by_var.items():
+                lines.append(f"Falta {self.VAR_NAMES[var]} en {', '.join(f'{lv:g}' for lv in sorted(lvs, reverse=True))} "
+                             f"hPa: si se abre, se toma como cero (viento sólo "
+                             f"{'meridional' if var == 'u' else 'zonal'}).")
+        elif "u" not in self.variables:
+            lines.append("No hay viento: sólo se podrá mostrar temperatura.")
+        if "t" not in present:
+            lines.append("No hay temperatura: ni isotermas ni temperatura en la ficha del punto.")
+        return "\n".join(lines)
 
     def _classify_fl_levels(self):
         """Clasifica `self.levels` con la tabla de FL (ver fl_table.classify)
@@ -370,6 +452,8 @@ class GribReader:
             spd = self._read_values(msg.ws)
             u, v = dirspeed_to_uv(direc, spd)
             return u if msg.var == "u" else v
+        if isinstance(msg, ZeroField):
+            return np.zeros((self.grid["nj"], self.grid["ni"]), dtype=float)
         values = self.backend.read(self.path, msg)
         return orient_values(values, self.grid["nj"], self.grid["ni"],
                              self._flip_lat, self._lon_order, bool(self.grid.get("alt_rows")))
@@ -694,7 +778,9 @@ class GribReader:
         backend = getattr(self, "backend", None)      # el lector sintético de tests no tiene
         if backend is not None:
             lines.append(f"Motor: {backend.label()}")
-        lines.append(f"Mensajes: {len(self.messages)}  (útiles: {len(self.index)})")
+        n_zero = sum(1 for m in self.index.values() if isinstance(m, ZeroField))
+        lines.append(f"Mensajes: {len(self.messages)}  (útiles: {len(self.index) - n_zero}"
+                     + (f"; supuestos en cero: {n_zero}" if n_zero else "") + ")")
         run = self.run_time()
         lines.append(f"Corrida: {fmt_dt(run)} UTC" if run else "Corrida: desconocida")
         lines.append("")
@@ -703,7 +789,13 @@ class GribReader:
             lines.append(f"  [{i}] stepRange={s.step_range:<6} validez {fmt_dt(s.valid)} UTC  "
                          f"ventana [{fmt_dt(s.window_start, False)}–{fmt_dt(s.window_end, False)}]")
         lines.append("")
-        lines.append("VARIABLES: " + ", ".join(self.VAR_NAMES[v] for v in self.variables))
+        zero = {var for var, _lv, _s in getattr(self, "assumed_zero", [])}
+        present = getattr(self, "present_variables", None) or self.variables
+        lines.append("VARIABLES: " + (", ".join(self.VAR_NAMES[v] + ("" if v in present else " (faltante: se toma como cero)")
+                                                for v in self.variables) or "ninguna de U/V/T"))
+        if zero:
+            lines.append("INCOMPLETO: falta " + " y ".join(self.VAR_NAMES[v] for v in sorted(zero))
+                         + " en algunos niveles (ver AVISOS)")
         wf = getattr(self, "wind_format", "uv")
         if wf == "dirspeed":
             lines.append("VIENTO: dirección y velocidad (WDIR/WIND); se combinan en U/V al leer")
