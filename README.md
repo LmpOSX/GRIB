@@ -983,7 +983,8 @@ junto con los avisos del validador.
 **Generar GRIB…** (Archivo, ⌘G; también el botón de la barra junto a
 `Obtener datos…` y el de la pantalla de inicio junto a `Abrir GRIB…`)
 fabrica un GRIB2 a mano, sin modelo: un
-perfil vertical uniforme en toda la grilla, para pruebas, simulaciones o
+perfil vertical uniforme en toda la grilla (o, por capa, en aumento por
+grado desde la primera celda), para pruebas, simulaciones o
 para alimentar otro sistema con un viento conocido. El formulario tiene
 cuatro recuadros: **Corrida y plazo** (fecha, ciclo 00/06/12/18 y plazos
 desde / hasta / cada como en la descarga, con la cantidad y la validez
@@ -996,7 +997,18 @@ resultante); **Niveles y valores**, con los botones **INDRA (14)**, **OACI
 modo y fijan cómo se etiquetan los niveles (nominal hPa×100, o la ISA en Pa
 en WAFS), y una tabla con una fila por FL: presión (etiqueta), temperatura
 en °C (arranca en la ISA del FL), velocidad en kt y dirección verdadera en
-grados, de dónde sopla (la tabla se carga siempre así; debajo de los
+grados, de dónde sopla, cada una con su columna **Aumento**: una casilla y
+`+5/°` con flechas (de 1 a 100 kt, de 1 a 180°), por fila y sin tildar por
+defecto. Con la casilla esa capa deja de ser uniforme: la velocidad (o la
+dirección) vale lo de la fila en la primera celda del archivo, la esquina
+que fija «Orden de las celdas» del bloque **Archivo a guardar** (N→S, O→E
+o «como el origen»: la más al norte y al oeste; S→N, E→O: la más al sur y
+al este), y suma el aumento por cada grado de latitud y por cada grado de
+longitud que la separa de ella (a 0,25° cada celda suma un cuarto). Con
+50S–64S, 30W–40W, orden N→S, O→E y una fila de 40 kt / 30° con `+5/°` en
+las dos, 50S/40W vale 40 kt / 30°, 51S/40W y 50S/39W 45 / 35, y 51S/39W
+50 / 40; la dirección da la vuelta en 360. Cada capa decide por su cuenta:
+una puede ser uniforme y otra en aumento (la tabla se carga siempre así; debajo de los
 botones de modo, el bloque **Archivo a guardar** decide si el viento se
 graba como U/V o como dirección y velocidad, la etiqueta de capa y el
 empaquetado; los campos son constantes y se graban exactos, así que no hay
@@ -1007,8 +1019,9 @@ elegida: al entrar, la
 corregirlo), la T ISA y el viento de la elegida, que sigue elegida;
 `Quitar FL` saca la elegida y pasa a la de abajo (si era la última, a la
 nueva última; sin filas no queda nada, y Agregar vuelve a poner FL050);
-`Temperatura ISA` y `Copiar hacia abajo` (T, viento y dirección de la
-elegida a todas las de abajo). Edición a la vista: un clic, Tab o las
+`Temperatura ISA` y `Copiar hacia abajo` (T, viento, dirección y sus
+aumentos de la elegida a todas las de abajo; Agregar también hereda los
+aumentos). Edición a la vista: un clic, Tab o las
 flechas ponen la celda en edición como un campo normal que ocupa la celda
 entera, opaco (el valor de la celda no se dibuja debajo), alineado a la
 derecha con lugar libre a la izquierda para hasta cuatro cifras, con el
@@ -1017,7 +1030,8 @@ suelta la selección y mueve el cursor para insertar, y Backspace / Supr
 borran de a un carácter; la celda actual lleva un marco de acento. Enter
 aplica, Esc sale sin cambiar y deja la fila elegida (con el foco en la tabla
 Esc nunca cierra el diálogo: para eso está `Cerrar`), Tab recorre celdas y
-filas salteando Presión; la tabla tiene scroll y puede salirse del
+filas salteando Presión y las dos columnas Aumento (tras la última, pasa
+al FL de la fila siguiente); la tabla tiene scroll y puede salirse del
 modo (los botones se destildan, el etiquetado sigue siendo el del último
 modo); y **Archivo** (carpeta, nombre automático
 `generado_<corrida>_<plazo>_<res>_<área>_<modo>[_dirvel]` y abrir al
@@ -1025,9 +1039,14 @@ terminar). Escribe TMP
 en K y UGRD/VGRD en m/s (o WDIR/WIND), los plazos pedidos, grilla regular
 lat/lon con latitudes descendentes, centro 255 (sin modelo) y, como los
 campos son constantes, 0 bits por punto con el dato en el valor de
-referencia y factor decimal 0 (así `wgrib2` no avisa de la codificación), más el `.idx` y un `.json` de procedencia con `fuente:
-generado`, el área y la tabla usada; en el visor abre ya etiquetado por FL
-(no se convierte) y FUENTE dice `Generado a mano (perfil uniforme)`. Al
+referencia y factor decimal 0 (así `wgrib2` no avisa de la codificación;
+una capa en aumento no es constante y va con los bits que elige ecCodes,
+24, y factor decimal 0), más el `.idx` y un `.json` de procedencia con `fuente:
+generado`, el área y la tabla usada (con `spd_inc` / `dir_inc` por fila y,
+si alguna capa aumenta, `aumento` con sus FL, la esquina y la coordenada
+de la primera celda); en el visor abre ya etiquetado por FL
+(no se convierte) y FUENTE dice `Generado a mano (perfil uniforme)` o
+`(perfil en aumento por grado)`. Al
 entrar, y después de Agregar, Quitar o un botón de modo, la fila queda
 elegida pero sin edición; el nombre automático lleva `f006-f024` con varios
 plazos.

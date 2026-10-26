@@ -1,10 +1,26 @@
 # Cambios
 
-## Sin publicar
+## 0.5.3 — 2026-10-25
 
+- Generar GRIB: junto a la velocidad y a la dirección de cada fila, una
+  columna «Aumento» con una casilla y «+5/°» (flechas, de 1 a 100 kt o de
+  1 a 180°), sin tildar por defecto. Con la casilla esa capa vale lo de la
+  fila en la primera celda del archivo (la esquina que fija «Orden de las
+  celdas») y suma el aumento por cada grado de latitud y de longitud; la
+  dirección da la vuelta en 360. Es por capa: una puede ser uniforme y otra
+  en aumento. Copiar hacia abajo y Agregar FL llevan los aumentos, Tab
+  saltea esas columnas, el `.json` guarda `spd_inc` / `dir_inc` por fila y
+  `aumento` (FL, esquina y coordenada de origen), y FUENTE dice «perfil en
+  aumento por grado».
+- Las flechas de todos los campos numéricos con incremento (plazos, margen,
+  grosor y tamaños de FIR, ancho / alto / radio de la Working Area, los
+  aumentos de Generar GRIB) no se dibujaban: con el botón estilizado Qt
+  omite la flecha nativa. Van ahora como imagen propia, atenuada cuando el
+  campo está inhabilitado y con fondo al pasar el puntero.
 - Ficha del punto: con un perfil muy denso en un mapa muy bajo, las filas
   bajan del mínimo de 8 px hasta 5 px antes que la ficha se salga del mapa
-  (con las fuentes de Linux quedaba un píxel afuera).
+  (con las fuentes de Linux quedaba un píxel afuera); si ni así entra, la
+  ficha pasa a márgenes y espacios compactos y se vuelve a ajustar.
 
 ## 0.5.2 — 2026-10-23
 

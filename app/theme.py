@@ -352,6 +352,40 @@ QDateEdit::up-button, QDateEdit::down-button, QDateEdit::drop-down {{
     background: transparent;
     border: none;
     width: 14px;
+    subcontrol-origin: border;
+}}
+QDoubleSpinBox::up-button, QSpinBox::up-button, QDateEdit::up-button {{
+    subcontrol-position: top right;
+    margin: 2px 2px 0 0;
+}}
+QDoubleSpinBox::down-button, QSpinBox::down-button, QDateEdit::down-button {{
+    subcontrol-position: bottom right;
+    margin: 0 2px 2px 0;
+}}
+QDoubleSpinBox::up-button:hover, QSpinBox::up-button:hover, QDateEdit::up-button:hover,
+QDoubleSpinBox::down-button:hover, QSpinBox::down-button:hover, QDateEdit::down-button:hover {{
+    background: {mid};
+    border-radius: 3px;
+}}
+/* Las flechas: con el botón estilizado Qt no dibuja las del estilo nativo,
+   así que van como imagen (y apagadas cuando el campo está inhabilitado) */
+QDoubleSpinBox::up-arrow, QSpinBox::up-arrow, QDateEdit::up-arrow {{
+    image: url("{_RESOURCES}/spin_up.svg");
+    width: 10px;
+    height: 7px;
+}}
+QDoubleSpinBox::down-arrow, QSpinBox::down-arrow, QDateEdit::down-arrow {{
+    image: url("{_RESOURCES}/spin_down.svg");
+    width: 10px;
+    height: 7px;
+}}
+QDoubleSpinBox::up-arrow:disabled, QSpinBox::up-arrow:disabled, QDateEdit::up-arrow:disabled,
+QDoubleSpinBox::up-arrow:off, QSpinBox::up-arrow:off, QDateEdit::up-arrow:off {{
+    image: url("{_RESOURCES}/spin_up_dis.svg");
+}}
+QDoubleSpinBox::down-arrow:disabled, QSpinBox::down-arrow:disabled, QDateEdit::down-arrow:disabled,
+QDoubleSpinBox::down-arrow:off, QSpinBox::down-arrow:off, QDateEdit::down-arrow:off {{
+    image: url("{_RESOURCES}/spin_down_dis.svg");
 }}
 
 /* ── Labels ── */

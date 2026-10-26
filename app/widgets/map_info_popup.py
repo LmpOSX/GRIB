@@ -90,6 +90,20 @@ class MapInfoPopup(QFrame):
         parts += [f"{t}\n{x}" for t, x in self._sections]
         return "\n".join(parts)
 
+    def _set_compact(self, on):
+        """Márgenes y espacios normales (14/10 y 4) o compactos (10/4 y 2)."""
+        lay = self.layout()
+        if on:
+            lay.setContentsMargins(10, 4, 10, 4)
+            lay.setSpacing(2)
+            self._body.setSpacing(2)
+            self.query.layout().setSpacing(2)
+        else:
+            lay.setContentsMargins(14, 10, 14, 10)
+            lay.setSpacing(4)
+            self._body.setSpacing(4)
+            self.query.layout().setSpacing(4)
+
     def show_at(self, pos: QPoint):
         """Muestra la ficha junto a `pos` (coordenadas del padre), dentro de
         los límites del padre."""
@@ -110,6 +124,7 @@ class MapInfoPopup(QFrame):
 
         # El perfil se achica para que la ficha entera entre en el mapa: el
         # alto que ocupa todo lo demás se mide con el sizeHint al día
+        self._set_compact(False)
         refresh_layouts()
         other = self.sizeHint().height() - (prof.sizeHint().height() if prof.isVisibleTo(self) else 0)
         prof.set_max_height(ph - other - 16)
@@ -123,6 +138,15 @@ class MapInfoPopup(QFrame):
                 break
             other = self.sizeHint().height() - prof.sizeHint().height()
             prof.set_max_height(ph - other - 16 - (self.height() - ph))
+            refresh_layouts()
+            self.adjustSize()
+        if self.height() > ph and prof.isVisibleTo(self):
+            # Ni con el perfil en su piso entra (mapa muy bajo, fuentes altas):
+            # márgenes y espacios compactos, y otra vuelta de ajuste
+            self._set_compact(True)
+            refresh_layouts()
+            other = self.sizeHint().height() - prof.sizeHint().height()
+            prof.set_max_height(ph - other - 8)
             refresh_layouts()
             self.adjustSize()
         if self.height() > ph:

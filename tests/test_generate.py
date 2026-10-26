@@ -67,6 +67,110 @@ class TestGenerador(unittest.TestCase):
         self.assertIn("dirección", gg.validate_rows([{"fl": 300, "t_c": 0, "spd_kt": 5, "dir_deg": 370}])[1])
         self.assertIn("no son números", gg.validate_rows([{"fl": 300, "t_c": "x", "spd_kt": 5, "dir_deg": 0}])[1])
         self.assertIn("al menos un FL", gg.validate_rows([])[1])
+        # Aumentos por grado: optativos (0), acotados
+        self.assertEqual((ok[0]["spd_inc"], ok[0]["dir_inc"]), (0.0, 0.0))
+        ok, err = gg.validate_rows([{"fl": 300, "t_c": 0, "spd_kt": 40, "dir_deg": 30, "spd_inc": 5, "dir_inc": None}])
+        self.assertIsNone(err)
+        self.assertEqual((ok[0]["spd_inc"], ok[0]["dir_inc"]), (5.0, 0.0))
+        self.assertIn("kt por grado", gg.validate_rows([{"fl": 300, "t_c": 0, "spd_kt": 0, "dir_deg": 0, "spd_inc": 101}])[1])
+        self.assertIn("° por grado", gg.validate_rows([{"fl": 300, "t_c": 0, "spd_kt": 0, "dir_deg": 0, "dir_inc": -1}])[1])
+
+    def test_aumento_por_grado(self):
+        """«+5/°»: el valor de la fila en la primera celda del archivo y 5 más
+        por cada grado de latitud y de longitud; la esquina la fija el orden
+        de las celdas. El ejemplo: 50S–64S, 30W–40W, N→S O→E → 50S/40W vale
+        40/30, 51S/40W y 50S/39W 45/35, 51S/39W 50/40."""
+        lats, lons, _ = gg.grid_axes((-50, -64, -40, -30), 1.0)
+        spd = gg.gradient_values(40, 5, lats, lons, "ns_we")
+        self.assertEqual(spd.shape, (15, 11))
+        self.assertEqual(spd[0, 0], 40.0)                           # 50S/40W
+        self.assertEqual((spd[1, 0], spd[0, 1], spd[1, 1]), (45.0, 45.0, 50.0))
+        self.assertEqual(spd[-1, -1], 40.0 + 5 * (14 + 10))         # 64S/30W
+        self.assertEqual(gg.gradient_values(40, 5, lats, lons, "origen")[0, 0], 40.0)   # «como el origen» = N→S, O→E
+        self.assertEqual(gg.gradient_values(40, 5, lats, lons, "sn_ew")[-1, -1], 40.0)  # S→N, E→O: 64S/30W
+        self.assertEqual(gg.gradient_values(40, 5, lats, lons, "sn_we")[-1, 0], 40.0)   # 64S/40W
+        self.assertEqual(gg.gradient_values(40, 5, lats, lons, "ns_ew")[0, -1], 40.0)   # 50S/30W
+        self.assertTrue(np.all(gg.gradient_values(40, 0, lats, lons, "sn_ew") == 40.0))  # sin aumento, uniforme
+        # A 0,25° cada celda suma un cuarto: sigue siendo por grado
+        lats, lons, _ = gg.grid_axes((-50, -64, -40, -30), 0.25)
+        self.assertEqual(gg.gradient_values(40, 5, lats, lons)[0, 1], 41.25)
+        self.assertEqual(gg.gradient_values(40, 5, lats, lons)[4, 4], 50.0)
+        self.assertEqual(gg.origin_corner("sn_ew"), ("S", "E"))
+        self.assertEqual(gg.origin_corner(None), ("N", "O"))
+
+    @unittest.skipIf(ec is None, "sin eccodes")
+    def test_aumento_en_el_archivo(self):
+        """Por capa: una fila uniforme y otra en aumento; con otro orden de
+        celdas, tras `recode`, la primera celda del archivo sigue siendo la
+        del valor de la fila. La dirección da la vuelta en 360."""
+        from app import grib_encode as ge
+        from app.wafs_format import iter_messages
+        rows = [{"fl": 300, "t_c": -40, "spd_kt": 40, "dir_deg": 30, "spd_inc": 5, "dir_inc": 5},
+                {"fl": 200, "t_c": -20, "spd_kt": 20, "dir_deg": 350, "dir_inc": 5},
+                {"fl": 100, "t_c": 0, "spd_kt": 10, "dir_deg": 90}]
+        zone = (-50, -64, -40, -30)
+        for scan in ("origen", "sn_ew"):
+            data, info = gg.generate_grib(rows, zone, 1.0, mode="OACI", run=RUN, step_h=6,
+                                          wind_format="dirspeed", scan=scan)
+            self.assertEqual(info["aumento"]["fls"], [300, 200])
+            self.assertEqual(info["aumento"]["esquina"], "NO" if scan == "origen" else "SE")
+            self.assertEqual(info["aumento"]["origen"], [-50.0, -40.0] if scan == "origen" else [-64.0, -30.0])
+            if scan != "origen":
+                data, _ = ge.recode(data, {"wind": "dirspeed", "scan": scan}, labeled=True, mode="OACI")
+            got = {}
+            for gid, _pos, _size in iter_messages(data):
+                try:
+                    key = (ec.codes_get(gid, "shortName"), ec.codes_get(gid, "scaledValueOfFirstFixedSurface"))
+                    got[key] = (np.asarray(ec.codes_get_values(gid)).reshape(15, 11), ec.codes_get(gid, "bitsPerValue"),
+                                ec.codes_get(gid, "latitudeOfFirstGridPointInDegrees"))
+                finally:
+                    ec.codes_release(gid)
+            self.assertEqual(len(got), 9)
+            pa = {fl: flt.label_pa(fl, "OACI") for fl in (300, 200, 100)}
+            lat0 = -50.0 if scan == "origen" else -64.0
+            ws, bits, lat = got[("ws", pa[300])]
+            self.assertEqual(lat, lat0)
+            self.assertGreater(bits, 0)                             # ya no es constante
+            self.assertAlmostEqual(ws[0, 0] / gg.KT_TO_MS, 40.0, places=3)
+            self.assertAlmostEqual(ws[1, 0] / gg.KT_TO_MS, 45.0, places=3)
+            self.assertAlmostEqual(ws[0, 1] / gg.KT_TO_MS, 45.0, places=3)
+            self.assertAlmostEqual(ws[1, 1] / gg.KT_TO_MS, 50.0, places=3)
+            wdir = got[("wdir", pa[300])][0]
+            self.assertAlmostEqual(wdir[0, 0], 30.0, places=3)
+            self.assertAlmostEqual(wdir[1, 1], 40.0, places=3)
+            # FL200: sólo la dirección aumenta, y da la vuelta (350 + 10 → 0)
+            ws2, bits2, _ = got[("ws", pa[200])]
+            self.assertEqual(bits2, 0)                              # uniforme: exacto, 0 bits
+            self.assertAlmostEqual(float(ws2[3, 3]) / gg.KT_TO_MS, 20.0, places=3)
+            wdir2 = got[("wdir", pa[200])][0]
+            self.assertAlmostEqual(wdir2[0, 0], 350.0, places=3)
+            self.assertAlmostEqual(wdir2[1, 1], 0.0, places=3)
+            self.assertAlmostEqual(wdir2[2, 1], 5.0, places=3)
+            # FL100: uniforme del todo
+            self.assertEqual(got[("ws", pa[100])][1], 0)
+            self.assertEqual(got[("wdir", pa[100])][1], 0)
+        # Sin aumentos, `info` no lo menciona y la procedencia tampoco
+        data, info = gg.generate_grib(rows[2:], zone, 1.0, mode="OACI", run=RUN, step_h=6)
+        self.assertNotIn("aumento", info)
+        self.assertNotIn("aumento", gg.provenance(rows[2:], info))
+        # Con U/V el visor recupera velocidad y dirección en cada celda
+        from app.grib_reader import GribReader, speed_dir_from_uv
+        data, info = gg.generate_grib(rows, zone, 1.0, mode="OACI", run=RUN, step_h=6, scan="ns_we")
+        prov = gg.provenance(rows, info)
+        self.assertEqual(prov["aumento"]["fls"], [300, 200])
+        self.assertEqual(prov["tabla"][0]["spd_inc"], 5.0)
+        with tempfile.TemporaryDirectory() as tmp:
+            p = os.path.join(tmp, "g.grib2")
+            gg.write_generated(p, data, prov)
+            r = GribReader(p)
+            u, v, _t, _ = r.get_level_fields(0, 300.0)
+            # el visor normaliza las latitudes ascendentes: 50S/40W es la última fila
+            s00, d00 = speed_dir_from_uv(float(u[-1, 0]), float(v[-1, 0]))
+            s11, d11 = speed_dir_from_uv(float(u[-2, 1]), float(v[-2, 1]))
+            self.assertAlmostEqual(s00, 40.0, delta=0.01)
+            self.assertAlmostEqual(d00, 30.0, delta=0.01)
+            self.assertAlmostEqual(s11, 50.0, delta=0.01)
+            self.assertAlmostEqual(d11, 40.0, delta=0.01)
 
     def test_nombre_y_procedencia(self):
         self.assertEqual(gg.default_basename(RUN, 6, 0.25, "SAEF+SACF", "uv", "OACI"),
@@ -230,7 +334,7 @@ class TestDialogoGenerar(unittest.TestCase):
         d.table.selectRow(2)
         d.table.item(2, 2).setText("-33.3")
         d.table.item(2, 3).setText("45")
-        d.table.item(2, 4).setText("250")
+        d.table.item(2, 5).setText("250")
         d._copy_down()
         rows = d._rows()
         self.assertTrue(all(r["spd_kt"] == 45.0 and r["dir_deg"] == 250.0 and r["t_c"] == -33.3
@@ -277,6 +381,65 @@ class TestDialogoGenerar(unittest.TestCase):
         d._add_row()                                                # sin filas: FL050 elegida
         self.assertEqual(self._fls(), [50])
         self.assertEqual(d._selected_row(), 0)
+
+    def test_aumento_en_la_tabla(self):
+        """Columnas «Aumento»: casilla + «+5/°» con flechas, por fila; por
+        defecto sin tildar (0). Copiar hacia abajo y Agregar FL las llevan;
+        el modo las conserva; Tab saltea esas columnas."""
+        from app.dialogs.generate_dialog import (_IncCell, COL_SPD, COL_SPD_INC, COL_DIR, COL_DIR_INC,
+                                                 COL_FL)
+        d = self._dialog(wafs_mode="INDRA")
+        cell = d.table.cellWidget(0, COL_SPD_INC)
+        self.assertIsInstance(cell, _IncCell)
+        self.assertFalse(cell.chk.isChecked())
+        self.assertFalse(cell.spin.isEnabled())
+        self.assertEqual(cell.spin.value(), 5)
+        self.assertEqual(cell.spin.text(), "+5/°")
+        self.assertEqual(cell.spin.maximum(), 100)
+        self.assertEqual(d.table.cellWidget(0, COL_DIR_INC).spin.maximum(), 180)
+        self.assertTrue(all(r["spd_inc"] == 0.0 and r["dir_inc"] == 0.0 for r in d._rows()))
+        cell.chk.setChecked(True)
+        self.assertTrue(cell.spin.isEnabled())
+        self.assertEqual(d._rows()[0]["spd_inc"], 5.0)
+        cell.spin.setValue(8)
+        self.assertEqual(d._rows()[0]["spd_inc"], 8.0)
+        cell.chk.setChecked(False)
+        self.assertEqual(d._rows()[0]["spd_inc"], 0.0)
+        self.assertEqual(cell.spin.value(), 8)                      # destildar no borra el número
+        cell.set_value(5)
+        d.table.cellWidget(0, COL_DIR_INC).set_value(10)
+        self.assertEqual((d._rows()[0]["spd_inc"], d._rows()[0]["dir_inc"]), (5.0, 10.0))
+        self.assertEqual(d._rows()[1]["spd_inc"], 0.0)              # por capa
+        d._select_row(0)
+        d._copy_down()
+        self.assertTrue(all(r["spd_inc"] == 5.0 and r["dir_inc"] == 10.0 for r in d._rows()))
+        d.table.cellWidget(3, COL_DIR_INC).set_value(0)
+        d._select_row(3)
+        d._add_row()                                                # hereda el viento y sus aumentos
+        self.assertEqual((d._rows()[3]["spd_inc"], d._rows()[3]["dir_inc"]), (5.0, 0.0))
+        d.mode_buttons["OACI"].click()                              # se conservan por FL
+        self.assertEqual(d._rows()[0]["dir_inc"], 10.0)
+        self.assertEqual(d._rows()[0]["spd_inc"], 5.0)
+        # Tab: Viento → Aumento se saltea hasta Dir; tras el último Aumento, FL de la fila siguiente
+        d.table.setCurrentCell(2, COL_SPD)
+        _app.processEvents(); _app.processEvents()
+        d.table.setCurrentCell(2, COL_SPD_INC)
+        _app.processEvents(); _app.processEvents()
+        self.assertEqual((d.table.currentRow(), d.table.currentColumn()), (2, COL_DIR))
+        d.table.setCurrentCell(2, COL_DIR_INC)
+        _app.processEvents(); _app.processEvents()
+        self.assertEqual((d.table.currentRow(), d.table.currentColumn()), (3, COL_FL))
+        d.table.setCurrentCell(3, COL_DIR)
+        _app.processEvents(); _app.processEvents()
+        d.table.setCurrentCell(3, COL_SPD_INC)                      # hacia atrás: Viento
+        _app.processEvents(); _app.processEvents()
+        self.assertEqual((d.table.currentRow(), d.table.currentColumn()), (3, COL_SPD))
+        last = d.table.rowCount() - 1
+        d.table.setCurrentCell(last, COL_DIR)
+        _app.processEvents(); _app.processEvents()
+        d.table.setCurrentCell(last, COL_DIR_INC)                   # última fila: se queda en Dir
+        _app.processEvents(); _app.processEvents()
+        self.assertEqual((d.table.currentRow(), d.table.currentColumn()), (last, COL_DIR))
 
     def test_edicion_de_celdas(self):
         """Clic o Tab ponen la celda en edición con el valor preseleccionado;
@@ -407,7 +570,7 @@ class TestDialogoGenerar(unittest.TestCase):
             d.mode_buttons["OACI"].click()
             d.table.selectRow(0)
             d.table.item(0, 3).setText("30")
-            d.table.item(0, 4).setText("270")
+            d.table.item(0, 5).setText("270")
             d._copy_down()
             d.rb_fir.setChecked(True)
             d._set_all_areas(False)
@@ -425,6 +588,8 @@ class TestDialogoGenerar(unittest.TestCase):
             self.assertEqual(prov["fuente"], "generado")
             self.assertEqual(prov["area"]["codigos"], ["SAEF"])
             self.assertEqual(len(prov["tabla"]), 17)
+            self.assertEqual(prov["tabla"][0]["spd_inc"], 0.0)
+            self.assertNotIn("aumento", prov)
             self.assertEqual(win._cfg["generate_res_deg"], 1.0)
             self.assertEqual(win._cfg["download_area_codes"], ["SAEF"])
             win.open_file(d.generated_path)
@@ -442,6 +607,36 @@ class TestDialogoGenerar(unittest.TestCase):
             spd, direc = speed_dir_from_uv(float(u.mean()), float(v.mean()))
             self.assertAlmostEqual(spd, 30.0, delta=0.05)
             self.assertAlmostEqual(direc, 270.0, delta=0.1)
+            # Con aumento en una capa y orden S→N, O→E: la esquina SO vale lo de la fila
+            from app.dialogs.generate_dialog import COL_SPD_INC
+            d.table.cellWidget(0, COL_SPD_INC).set_value(5)         # FL530
+            d.save_box.cb_scan.setCurrentIndex(d.save_box.cb_scan.findData("sn_we"))
+            d.name.setText("aumento")
+            d._generate()
+            _app.processEvents()
+            prov = read_provenance(d.generated_path)
+            self.assertEqual(prov["aumento"]["fls"], [530])
+            self.assertEqual(prov["aumento"]["esquina"], "SO")
+            self.assertEqual(prov["guardado"]["scan"], "sn_we")
+            win.open_file(d.generated_path)
+            _app.processEvents()
+            r = win._reader
+            self.assertEqual(len(r.levels), 17)
+            u, v, _t, _ = r.get_level_fields(0, 100.0)              # FL530 = 100 hPa nominal
+            zone = prov["zona"]
+            lat_sw, lon_sw = zone[1], zone[2]
+            lats_r, lons_r = r.lats, r.lons
+            j = int(np.argmin(np.abs(np.asarray(lats_r) - lat_sw)))
+            i = int(np.argmin(np.abs(np.asarray(lons_r) - lon_sw)))
+            s_sw, _ = speed_dir_from_uv(float(u[j, i]), float(v[j, i]))
+            self.assertAlmostEqual(s_sw, 30.0, delta=0.05)
+            j2 = int(np.argmin(np.abs(np.asarray(lats_r) - (lat_sw + 2.0))))
+            i2 = int(np.argmin(np.abs(np.asarray(lons_r) - (lon_sw + 1.0))))
+            s2, d2 = speed_dir_from_uv(float(u[j2, i2]), float(v[j2, i2]))
+            self.assertAlmostEqual(s2, 45.0, delta=0.05)            # 2° de latitud y 1° de longitud: +15
+            self.assertAlmostEqual(d2, 270.0, delta=0.1)
+            u, v, _t, _ = r.get_level_fields(0, 300.0)
+            self.assertLess(float(np.ptp(np.hypot(u, v))), 1e-6)    # las demás capas, uniformes
         finally:
             win.close()
             win.deleteLater()

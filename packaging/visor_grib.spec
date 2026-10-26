@@ -34,6 +34,10 @@ datas = [
     (os.path.join(RES, "radio_dot.svg"), "resources"),
     (os.path.join(RES, "tree_plus.svg"), "resources"),
     (os.path.join(RES, "tree_minus.svg"), "resources"),
+    (os.path.join(RES, "spin_up.svg"), "resources"),
+    (os.path.join(RES, "spin_down.svg"), "resources"),
+    (os.path.join(RES, "spin_up_dis.svg"), "resources"),
+    (os.path.join(RES, "spin_down_dis.svg"), "resources"),
     (os.path.join(RES, "app_icon.png"), "resources"),
     (os.path.join(RES, "fir"), os.path.join("resources", "fir")),
 ]

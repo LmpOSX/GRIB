@@ -7,8 +7,12 @@ alimentar otro sistema.
 * ``isa_temp_c``: temperatura ISA de un FL (para rellenar la tabla).
 * ``grid_axes``: latitudes y longitudes de la grilla para una zona y una
   resolución (la zona se redondea hacia afuera a la resolución).
-* ``generate_grib``: filas [{fl, t_c, spd_kt, dir_deg}] → bytes GRIB2 con
-  TMP y UGRD/VGRD (o WDIR/WIND) por nivel, el mismo perfil en cada plazo.
+* ``generate_grib``: filas [{fl, t_c, spd_kt, dir_deg, spd_inc, dir_inc}]
+  → bytes GRIB2 con TMP y UGRD/VGRD (o WDIR/WIND) por nivel, el mismo
+  perfil en cada plazo. Con `spd_inc` / `dir_inc` (kt y grados por grado
+  de latitud o longitud) el viento de esa capa crece desde la primera
+  celda del archivo (la esquina que fija el orden de las celdas).
+* ``gradient_values``: la grilla de una capa con ese aumento.
 * ``write_generated``: escribe el archivo con su `.json` de procedencia.
 """
 import datetime as dt
@@ -38,6 +42,36 @@ TABLES_VERSION = 25             # tabla maestra, como la exportación WAFS (el s
 # (disciplina, categoría, número) y unidad de cada campo que se escribe
 _PARAM = {"t": (0, 0, 0), "u": (0, 2, 2), "v": (0, 2, 3), "wdir": (0, 2, 0), "ws": (0, 2, 1)}
 
+# Esquina de la primera celda del archivo según el orden de las celdas
+# («scan» del bloque «Archivo a guardar»): (lado de la latitud, lado de la
+# longitud). «origen» es el orden natural del generador, N→S, O→E.
+INC_DEFAULT = 5.0               # kt o grados por grado, lo que propone la casilla
+INC_MAX_KT, INC_MAX_DEG = 100.0, 180.0
+_ORIGINS = {"ns_we": ("N", "O"), "ns_ew": ("N", "E"), "sn_we": ("S", "O"), "sn_ew": ("S", "E")}
+
+
+def origin_corner(scan):
+    """(latitud, longitud) → ("N"|"S", "O"|"E") de la primera celda del
+    archivo en el orden `scan`; «origen» (o nada) es N→S, O→E."""
+    return _ORIGINS.get(str(scan or "origen"), _ORIGINS["ns_we"])
+
+
+def gradient_values(base, inc, lats, lons, scan="ns_we"):
+    """Grilla (nj, ni) de una capa: `base` en la primera celda del archivo
+    (la esquina de `scan`) y `inc` más por cada grado de latitud y por cada
+    grado de longitud que la separa de ella (a 0,25° cada celda suma un
+    cuarto de `inc`). Con `inc` 0, toda la grilla vale `base`."""
+    lats = np.asarray(lats, dtype=float)
+    lons = np.asarray(lons, dtype=float)
+    if not inc:
+        return np.full((len(lats), len(lons)), float(base))
+    side_lat, side_lon = origin_corner(scan)
+    lat0 = lats.max() if side_lat == "N" else lats.min()
+    lon0 = lons.min() if side_lon == "O" else lons.max()
+    dlat = np.abs(lats - lat0)[:, None]
+    dlon = np.abs(lons - lon0)[None, :]
+    return float(base) + float(inc) * (dlat + dlon)
+
 
 def isa_temp_c(fl):
     """Temperatura ISA (°C) a la altura del FL: −6,5 °C/km hasta 11 km,
@@ -61,8 +95,9 @@ def grid_axes(region, res_deg):
 
 
 def validate_rows(rows):
-    """Normaliza y valida las filas: devuelve ([{fl, t_c, spd_kt, dir_deg}]
-    ordenadas por FL descendente, error o None)."""
+    """Normaliza y valida las filas: devuelve ([{fl, t_c, spd_kt, dir_deg,
+    spd_inc, dir_inc}] ordenadas por FL descendente, error o None). Los
+    aumentos por grado son optativos (0 si faltan)."""
     out = []
     seen = set()
     for i, r in enumerate(rows or []):
@@ -71,7 +106,9 @@ def validate_rows(rows):
             t_c = float(r["t_c"])
             spd = float(r["spd_kt"])
             direc = float(r["dir_deg"])
-        except (KeyError, TypeError, ValueError):
+            spd_inc = float(r.get("spd_inc") or 0.0)
+            dir_inc = float(r.get("dir_inc") or 0.0)
+        except (KeyError, TypeError, ValueError, AttributeError):
             return [], f"fila {i + 1}: faltan valores o no son números"
         if fl not in flt.FL_TABLE:
             return [], (f"fila {i + 1}: FL{fl:03d} no está en la tabla (FL{flt.FL_LOWEST:03d} a "
@@ -84,8 +121,13 @@ def validate_rows(rows):
             return [], f"fila {i + 1}: velocidad {spd:g} kt fuera de rango (0 a 400)"
         if not (0.0 <= direc <= 360.0):
             return [], f"fila {i + 1}: dirección {direc:g}° fuera de rango (0 a 360)"
+        if not (0.0 <= spd_inc <= INC_MAX_KT):
+            return [], f"fila {i + 1}: aumento de {spd_inc:g} kt por grado fuera de rango (0 a {INC_MAX_KT:g})"
+        if not (0.0 <= dir_inc <= INC_MAX_DEG):
+            return [], f"fila {i + 1}: aumento de {dir_inc:g}° por grado fuera de rango (0 a {INC_MAX_DEG:g})"
         seen.add(fl)
-        out.append({"fl": fl, "t_c": t_c, "spd_kt": spd, "dir_deg": direc % 360.0})
+        out.append({"fl": fl, "t_c": t_c, "spd_kt": spd, "dir_deg": direc % 360.0,
+                    "spd_inc": spd_inc, "dir_inc": dir_inc})
     if not out:
         return [], "no hay niveles: agregá al menos un FL"
     out.sort(key=lambda r: -r["fl"])
@@ -121,7 +163,9 @@ def _new_message(var, lats, lons, pa, run, step_h, values, centre):
         # Campo constante: ecCodes lo graba con 0 bits por punto y sólo el valor
         # de referencia (float32). Con factor decimal 0 ese valor es el dato tal
         # cual; con otro factor wgrib2 avisa «simple encode/decode may differ
-        # from WMO standard» en cada mensaje.
+        # from WMO standard» en cada mensaje. Un campo con aumento por grado
+        # no es constante: ecCodes elige los bits por punto (24) y la escala
+        # binaria para cubrir su rango.
         ec.codes_set(gid, "decimalScaleFactor", 0)
         ec.codes_set_values(gid, np.asarray(values, dtype=float).ravel())
         return ec.codes_get_message(gid)
@@ -138,12 +182,18 @@ def steps_from(h_from, h_to, h_step):
 
 
 def generate_grib(rows, region, res_deg, mode=flt.DEFAULT_MODE, run=None, step_h=0,
-                  wind_format="uv", centre=CENTRE_MISSING, steps=None):
+                  wind_format="uv", centre=CENTRE_MISSING, steps=None, scan="origen"):
     """Bytes GRIB2 con, por cada plazo y cada fila (FL), TMP en K y el viento
     como U/V en m/s (o WDIR en grados y WIND en m/s), uniformes en toda la
     grilla y iguales en todos los plazos. `steps` (horas) o, si no, el único
     `step_h`. El nivel se graba con la etiqueta del modo (nominal hPa×100, o
-    la ISA en Pa en WAFS). Devuelve (bytes, info)."""
+    la ISA en Pa en WAFS). En una fila con `spd_inc` / `dir_inc` la velocidad
+    o la dirección valen lo de la fila en la primera celda del archivo (la
+    esquina que fija `scan`, el orden de las celdas con que se va a guardar)
+    y suman eso por cada grado de latitud y de longitud; la dirección da la
+    vuelta en 360. El archivo sale siempre N→S, O→E: el reordenamiento lo
+    hace después `grib_encode.recode`, y mueve la esquina con el dato.
+    Devuelve (bytes, info)."""
     if ec is None:
         raise RuntimeError("generar un GRIB requiere eccodes")
     rows, err = validate_rows(rows)
@@ -159,23 +209,35 @@ def generate_grib(rows, region, res_deg, mode=flt.DEFAULT_MODE, run=None, step_h
     npts = len(lats) * len(lons)
     out = bytearray()
     n = 0
+    per_row = {}
+    for r in rows:
+        spd_kt = gradient_values(r["spd_kt"], r.get("spd_inc", 0.0), lats, lons, scan)
+        direc = gradient_values(r["dir_deg"], r.get("dir_inc", 0.0), lats, lons, scan) % 360.0
+        spd_ms = spd_kt * KT_TO_MS
+        rad = np.radians(direc)
+        fields = [("t", np.full((len(lats), len(lons)), r["t_c"] + KELVIN))]
+        if wind_format == "uv":
+            fields += [("u", -spd_ms * np.sin(rad)), ("v", -spd_ms * np.cos(rad))]
+        else:
+            fields += [("wdir", direc), ("ws", spd_ms)]
+        per_row[r["fl"]] = fields
     for step in steps:
         for r in rows:
             pa = flt.label_pa(r["fl"], mode)
-            spd_ms = r["spd_kt"] * KT_TO_MS
-            rad = np.radians(r["dir_deg"])
-            fields = [("t", r["t_c"] + KELVIN)]
-            if wind_format == "uv":
-                fields += [("u", -spd_ms * np.sin(rad)), ("v", -spd_ms * np.cos(rad))]
-            else:
-                fields += [("wdir", r["dir_deg"]), ("ws", spd_ms)]
-            for var, val in fields:
-                out += _new_message(var, lats, lons, pa, run, step, np.full(npts, float(val)), centre)
+            for var, vals in per_row[r["fl"]]:
+                out += _new_message(var, lats, lons, pa, run, step, vals, centre)
                 n += 1
+    grad = [r["fl"] for r in rows if r.get("spd_inc") or r.get("dir_inc")]
+    side_lat, side_lon = origin_corner(scan)
     info = {"mensajes": n, "niveles": len(rows), "fls": [r["fl"] for r in rows],
             "modo": mode, "viento": wind_format, "grilla": {"ni": len(lons), "nj": len(lats),
             "resolucion_deg": float(res_deg)}, "zona": list(zone),
             "corrida": run.strftime("%Y-%m-%dT%H:%MZ"), "plazos_h": steps, "plazo_h": steps[0]}
+    if grad:
+        lat0 = zone[0] if side_lat == "N" else zone[1]
+        lon0 = zone[2] if side_lon == "O" else zone[3]
+        info["aumento"] = {"fls": grad, "origen": [float(lat0), float(lon0)],
+                           "esquina": side_lat + side_lon, "orden": scan}
     return bytes(out), info
 
 
@@ -195,7 +257,8 @@ def default_basename(run, step_h, res_deg, area_tag, wind_format="uv", mode=flt.
 def provenance(rows, info, area_mode="manual", area_codes=None, area_margin=0.0, region=None):
     """Procedencia (`archivo.json`) de un GRIB generado: lo que la ventana
     muestra en FUENTE más la tabla con la que se generó."""
-    d = {"fuente": "generado", "nombre": "Generado a mano", "modelo": "perfil uniforme",
+    modelo = "perfil en aumento por grado" if info.get("aumento") else "perfil uniforme"
+    d = {"fuente": "generado", "nombre": "Generado a mano", "modelo": modelo,
          "tipo": "altura", "corrida": info["corrida"],
          "plazos_h": list(info.get("plazos_h") or [info["plazo_h"]]),
          "variables": ["TMP", "WDIR", "WIND"] if info["viento"] == "dirspeed" else ["TMP", "UGRD", "VGRD"],
@@ -207,6 +270,8 @@ def provenance(rows, info, area_mode="manual", area_codes=None, area_margin=0.0,
                   "fl_rango": f"FL{min(info['fls']):03d}–FL{max(info['fls']):03d}", "generado": True},
          "tabla": [dict(r) for r in rows],
          "generado": dt.datetime.now(dt.timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")}
+    if info.get("aumento"):
+        d["aumento"] = dict(info["aumento"])
     if info.get("guardado"):
         d["guardado"] = dict(info["guardado"])
     if region is not None:

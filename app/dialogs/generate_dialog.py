@@ -6,8 +6,11 @@ sus casillas y margen), resolución (0,25 / 0,50 / 1,00°), carpeta y nombre.
 Abajo, la tabla de niveles: un botón por modo (INDRA 14, OACI 17, OACI 56,
 WAFS 56) la llena con los FL de ese modo y fija cómo se etiquetan; en cada
 fila se escribe la temperatura, la velocidad y la dirección del viento. Los
-valores son uniformes en toda la grilla. El viento se puede grabar como
-U/V o como dirección y velocidad.
+valores son uniformes en toda la grilla, salvo que en la fila se marque
+«+5/°» junto a la velocidad o a la dirección: entonces esa capa vale lo de
+la fila en la primera celda del archivo (la esquina que fija «Orden de las
+celdas») y suma eso por cada grado de latitud y de longitud. El viento se
+puede grabar como U/V o como dirección y velocidad.
 """
 import datetime as dt
 import os
@@ -31,9 +34,52 @@ from .. import grib_encode as ge
 from ..widgets.save_options import SaveOptionsBox
 from .download_dialog import MODE_BUTTONS
 
-COLS = ("FL", "Presión", "T (°C)", "Viento (kt)", "Dir (°)")
-COL_FL, COL_P, COL_T, COL_SPD, COL_DIR = range(5)
+COLS = ("FL", "Presión", "T (°C)", "Viento (kt)", "Aumento", "Dir (°)", "Aumento")
+COL_FL, COL_P, COL_T, COL_SPD, COL_SPD_INC, COL_DIR, COL_DIR_INC = range(7)
 EDITABLE_COLS = (COL_FL, COL_T, COL_SPD, COL_DIR)
+INC_COLS = {COL_SPD_INC: ("spd_inc", gg.INC_MAX_KT, "kt"), COL_DIR_INC: ("dir_inc", gg.INC_MAX_DEG, "°")}
+
+
+class _IncCell(QWidget):
+    """Celda «Aumento»: una casilla y, a su lado, el aumento por grado
+    («+5/°», con flechas). Sin la casilla el aumento es 0: la capa es
+    uniforme. `value()` es lo que se aplica; `set_value(0)` destilda y
+    conserva lo que decía el número."""
+
+    def __init__(self, unit, maximum, parent=None):
+        super().__init__(parent)
+        self.setAutoFillBackground(False)
+        lay = QHBoxLayout(self)
+        lay.setContentsMargins(6, 0, 6, 0)
+        lay.setSpacing(4)
+        self.chk = QCheckBox()
+        self.chk.setToolTip(f"Con la casilla, la capa no es uniforme: vale lo de la fila en la "
+                            f"primera celda del archivo (la esquina que fija «Orden de las celdas») "
+                            f"y suma este valor en {unit} por cada grado de latitud y por cada grado "
+                            f"de longitud que la separa de ella.")
+        self.spin = QSpinBox()
+        self.spin.setRange(1, int(maximum))
+        self.spin.setValue(int(gg.INC_DEFAULT))
+        self.spin.setPrefix("+")
+        self.spin.setSuffix("/°")
+        self.spin.setToolTip(f"{unit} que se suman por cada grado de latitud y por cada grado de "
+                             f"longitud desde la primera celda del archivo")
+        self.spin.setEnabled(False)
+        self.spin.setFixedWidth(88)
+        self.chk.toggled.connect(self.spin.setEnabled)
+        lay.addStretch()
+        lay.addWidget(self.chk)
+        lay.addWidget(self.spin)
+        lay.addStretch()
+
+    def value(self):
+        return float(self.spin.value()) if self.chk.isChecked() else 0.0
+
+    def set_value(self, inc):
+        inc = float(inc or 0.0)
+        self.chk.setChecked(inc > 0)
+        if inc > 0:
+            self.spin.setValue(int(round(inc)))
 
 
 class _CellDelegate(QStyledItemDelegate):
@@ -276,7 +322,8 @@ class GenerateGribDialog(GlassDialog):
         lay.addLayout(zg)
 
         # ── Niveles y valores ──
-        lay = self._group(plan, "Niveles y valores (uniformes en toda la grilla)")
+        lay = self._group(plan, "Niveles y valores (uniformes en la grilla, o en aumento por grado "
+                                "desde la primera celda)")
         row = QHBoxLayout()
         row.addWidget(QLabel("Niveles"))
         self.mode_buttons = {}
@@ -328,16 +375,19 @@ class GenerateGribDialog(GlassDialog):
         self.table.currentCellChanged.connect(self._on_current_cell_changed)
         self.table.setToolTip("FL (de a 10, FL050–FL600), temperatura en °C, velocidad en kt y "
                               "dirección verdadera en grados (de dónde sopla). La presión es la "
-                              "etiqueta con la que se graba el nivel en el modo elegido. Siempre "
-                              "hay una fila elegida: Agregar inserta FL+10 encima de ella y "
-                              "Quitar la saca y pasa a la de abajo.")
+                              "etiqueta con la que se graba el nivel en el modo elegido. Con la "
+                              "casilla «Aumento» (+5/°) la velocidad o la dirección de esa capa "
+                              "valen lo de la fila en la primera celda del archivo y suman eso por "
+                              "cada grado de latitud y de longitud. Siempre hay una fila elegida: "
+                              "Agregar inserta FL+10 encima de ella y Quitar la saca y pasa a la "
+                              "de abajo.")
         self.table.itemChanged.connect(self._on_item_changed)
         lay.addWidget(self.table)
         row = QHBoxLayout()
         for text, fn, tip in (
                 ("Temperatura ISA", self._fill_isa, "Pone en cada fila la temperatura ISA de su FL"),
-                ("Copiar hacia abajo", self._copy_down, "Copia T, viento y dirección de la fila "
-                                                        "elegida a todas las de abajo"),
+                ("Copiar hacia abajo", self._copy_down, "Copia T, viento, dirección y sus aumentos "
+                                                        "de la fila elegida a todas las de abajo"),
                 ("Agregar FL", self._add_row, "Agrega una fila (FL siguiente libre)"),
                 ("Quitar FL", self._remove_row, "Quita la fila elegida")):
             b = QPushButton(text)
@@ -545,16 +595,33 @@ class GenerateGribDialog(GlassDialog):
         self.table.setFocus()
 
     def _append_row(self, r):
-        i = self.table.rowCount()
+        self._insert_row(self.table.rowCount(), r)
+
+    def _insert_row(self, i, r):
+        """Fila `i` nueva con los valores de `r` (los aumentos, si vienen)."""
         self.table.insertRow(i)
-        vals = (f"{int(r['fl'])}", "", f"{float(r['t_c']):g}", f"{float(r['spd_kt']):g}",
-                f"{float(r['dir_deg']):g}")
-        for c, v in enumerate(vals):
-            it = QTableWidgetItem(v)
+        vals = {COL_FL: f"{int(r['fl'])}", COL_P: "", COL_T: f"{float(r['t_c']):g}",
+                COL_SPD: f"{float(r['spd_kt']):g}", COL_DIR: f"{float(r['dir_deg']):g}"}
+        for c in range(len(COLS)):
+            it = QTableWidgetItem(vals.get(c, ""))
             it.setTextAlignment(Qt.AlignmentFlag.AlignCenter)
-            if c == COL_P:
+            if c not in EDITABLE_COLS:
                 it.setFlags(it.flags() & ~Qt.ItemFlag.ItemIsEditable)
             self.table.setItem(i, c, it)
+        for c, (key, maximum, unit) in INC_COLS.items():
+            cell = _IncCell(unit, maximum)
+            cell.set_value(r.get(key, 0.0))
+            self.table.setCellWidget(i, c, cell)
+
+    def _inc(self, i, col):
+        """Aumento por grado de la celda (i, col), 0 si no hay casilla."""
+        w = self.table.cellWidget(i, col)
+        return w.value() if isinstance(w, _IncCell) else 0.0
+
+    def _set_inc(self, i, col, inc):
+        w = self.table.cellWidget(i, col)
+        if isinstance(w, _IncCell):
+            w.set_value(inc)
 
     def _refresh_pressures(self):
         """Columna «Presión»: la etiqueta del nivel en el modo vigente (y
@@ -587,15 +654,27 @@ class GenerateGribDialog(GlassDialog):
         self.lbl_levels.setText(f"{n} nivel(es) · modo {self._mode}")
 
     def _on_current_cell_changed(self, row, col, prev_row, prev_col):
-        """La columna Presión no se edita: al caer en ella (Tab, flechas) se
-        sigue de largo en el sentido del movimiento, y se abre el editor. Si
-        la celda la eligió el programa (al entrar, Agregar, Quitar, modo) no
-        se abre: queda la fila elegida sin edición."""
+        """Las columnas Presión y Aumento no se editan como celdas: al caer
+        en una (Tab, flechas) se sigue de largo en el sentido del movimiento
+        hasta la próxima editable (tras el último Aumento, la primera de la
+        fila siguiente), y se abre el editor. Si la celda la eligió el
+        programa (al entrar, Agregar, Quitar, modo) no se abre: queda la
+        fila elegida sin edición."""
         if row < 0:
             return
-        if col == COL_P:
-            nxt = COL_T if prev_col < COL_P or prev_row != row else COL_FL
-            QTimer.singleShot(0, lambda: self.table.setCurrentCell(row, nxt))
+        if col not in EDITABLE_COLS:
+            forward = prev_row != row or prev_col < col
+            if forward:
+                later = [c for c in EDITABLE_COLS if c > col]
+                if later:
+                    nxt_row, nxt = row, later[0]
+                elif row + 1 < self.table.rowCount():
+                    nxt_row, nxt = row + 1, EDITABLE_COLS[0]
+                else:
+                    nxt_row, nxt = row, EDITABLE_COLS[-1]
+            else:
+                nxt_row, nxt = row, [c for c in EDITABLE_COLS if c < col][-1]
+            QTimer.singleShot(0, lambda: self.table.setCurrentCell(nxt_row, nxt))
             return
         if not self._auto_edit:
             return
@@ -633,18 +712,16 @@ class GenerateGribDialog(GlassDialog):
             self._refresh_pressures()
 
     def _rows(self, strict=True):
-        """[{fl, t_c, spd_kt, dir_deg}] de la tabla; con `strict` las filas
-        inválidas se saltean, sin él se devuelven las que se puedan leer."""
+        """[{fl, t_c, spd_kt, dir_deg, spd_inc, dir_inc}] de la tabla; con
+        `strict` una fila inválida es error, sin él se saltea."""
         out = []
         for i in range(self.table.rowCount()):
-            try:
-                out.append({"fl": int(round(float(self.table.item(i, COL_FL).text()))),
-                            "t_c": float(self.table.item(i, COL_T).text().replace(",", ".")),
-                            "spd_kt": float(self.table.item(i, COL_SPD).text().replace(",", ".")),
-                            "dir_deg": float(self.table.item(i, COL_DIR).text().replace(",", "."))})
-            except (AttributeError, ValueError):
+            r = self._row_dict(i)
+            if r is None:
                 if strict:
                     raise ValueError(f"fila {i + 1}: valores incompletos o no numéricos")
+                continue
+            out.append(r)
         return out
 
     def _selected_row(self):
@@ -671,30 +748,35 @@ class GenerateGribDialog(GlassDialog):
             self.lbl_status.setText("Elegí la fila desde la que copiar.")
             return
         vals = [self.table.item(i, c).text() for c in (COL_T, COL_SPD, COL_DIR)]
+        incs = {c: self._inc(i, c) for c in INC_COLS}
         self.table.blockSignals(True)
         try:
             for j in range(i + 1, self.table.rowCount()):
                 for c, v in zip((COL_T, COL_SPD, COL_DIR), vals):
                     self.table.item(j, c).setText(v)
+                for c, v in incs.items():
+                    self._set_inc(j, c, v)
         finally:
             self.table.blockSignals(False)
         self.lbl_status.setText("")
 
     def _row_dict(self, i):
-        """La fila `i` como dict, o None si no se puede leer."""
+        """La fila `i` como dict (con sus aumentos), o None si no se puede leer."""
         try:
             return {"fl": int(round(float(self.table.item(i, COL_FL).text()))),
                     "t_c": float(self.table.item(i, COL_T).text().replace(",", ".")),
                     "spd_kt": float(self.table.item(i, COL_SPD).text().replace(",", ".")),
-                    "dir_deg": float(self.table.item(i, COL_DIR).text().replace(",", "."))}
+                    "dir_deg": float(self.table.item(i, COL_DIR).text().replace(",", ".")),
+                    "spd_inc": self._inc(i, COL_SPD_INC),
+                    "dir_inc": self._inc(i, COL_DIR_INC)}
         except (AttributeError, ValueError):
             return None
 
     def _add_row(self):
         """Inserta una fila encima de la elegida con FL + 10 (aunque ese FL ya
         esté: la columna Presión lo marca «repetido» para corregirlo), con la
-        T ISA y el viento de la fila elegida; la elegida sigue siéndolo. Sin
-        filas, agrega FL050 y la elige."""
+        T ISA y el viento (y sus aumentos) de la fila elegida; la elegida
+        sigue siéndolo. Sin filas, agrega FL050 y la elige."""
         i = self._selected_row()
         if i is None or self.table.rowCount() == 0:
             fl = flt.FL_LOWEST
@@ -707,19 +789,13 @@ class GenerateGribDialog(GlassDialog):
             self._select_row(self.table.rowCount() - 1)
             self._uncheck_modes()
             return
-        base = self._row_dict(i) or {"fl": flt.FL_LOWEST, "t_c": 0.0, "spd_kt": 0.0, "dir_deg": 0.0}
+        base = self._row_dict(i) or {"fl": flt.FL_LOWEST, "t_c": 0.0, "spd_kt": 0.0, "dir_deg": 0.0,
+                                     "spd_inc": 0.0, "dir_inc": 0.0}
         fl = min(flt.FL_HIGHEST, base["fl"] + flt.FL_STEP)
-        new = {"fl": fl, "t_c": round(gg.isa_temp_c(fl), 1), "spd_kt": base["spd_kt"], "dir_deg": base["dir_deg"]}
+        new = dict(base, fl=fl, t_c=round(gg.isa_temp_c(fl), 1))
         self.table.blockSignals(True)
         try:
-            self.table.insertRow(i)
-            vals = (f"{new['fl']}", "", f"{new['t_c']:g}", f"{new['spd_kt']:g}", f"{new['dir_deg']:g}")
-            for c, v in enumerate(vals):
-                it = QTableWidgetItem(v)
-                it.setTextAlignment(Qt.AlignmentFlag.AlignCenter)
-                if c == COL_P:
-                    it.setFlags(it.flags() & ~Qt.ItemFlag.ItemIsEditable)
-                self.table.setItem(i, c, it)
+            self._insert_row(i, new)
         finally:
             self.table.blockSignals(False)
         self._refresh_pressures()
@@ -795,7 +871,7 @@ class GenerateGribDialog(GlassDialog):
             opts = self.save_options()
             data, info = gg.generate_grib(rows, region, self.resolution(), mode=self._mode,
                                           run=self.run(), steps=self.hours(),
-                                          wind_format=opts["wind"])
+                                          wind_format=opts["wind"], scan=opts["scan"])
             if not ge.is_default(dict(opts, wind="uv")):
                 data, ginfo = ge.recode(data, opts, labeled=True, mode=self._mode)
                 info["guardado"] = dict({k: ginfo[k] for k in ge.KEYS}, descripcion=ge.describe(opts))
