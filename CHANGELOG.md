@@ -1,5 +1,12 @@
 # Cambios
 
+## Sin publicar
+
+- Ficha del punto: si el mapa cambia de alto con la ficha abierta (la
+  ventana se achica, o el mapa termina de acomodarse justo después del
+  clic, que en Linux la dejaba un píxel afuera), se vuelve a ajustar al
+  alto nuevo en el mismo lugar.
+
 ## 0.5.3 — 2026-10-25
 
 - Generar GRIB: junto a la velocidad y a la dirección de cada fila, una

@@ -312,6 +312,36 @@ class TestDialogo(unittest.TestCase):
         self.assertLessEqual(abs(pop.query.profile._row_h() - ref_row), 1)
         self.assertLessEqual(abs(pop.height() - ref_h), ref_row + 2 + len(pop.query.profile.rows()))
 
+    def test_ficha_se_reajusta_si_el_mapa_cambia_de_alto(self):
+        """El mapa puede terminar de acomodarse después del clic (con fuente
+        15 baja 18 px justo después de mostrar la ficha; en Linux, 1 px), o
+        la ventana achicarse con la ficha abierta: la ficha se vuelve a
+        ajustar al alto nuevo y sigue entera dentro del mapa."""
+        import json
+        from app import config
+        from app.main_window import MainWindow
+        self.w.close()
+        self.w.deleteLater()
+        self.app.processEvents()
+        with open(config.CONFIG_PATH, "w") as fh:
+            json.dump({"font_size": 15}, fh)
+        self.w = MainWindow()
+        self.w.show()
+        self.app.processEvents()
+        w = self.w
+        r = _reader_sintetico(list(range(1000, 95, -25)), shape=(5, 6))
+        r.path = os.path.join(self._tmp.name, "sintetico.grib2")
+        w.resize(1000, 560)
+        w.load_reader(r, r.path)
+        self.app.processEvents()
+        pop = w._show_point_popup(0.0, -42.0)
+        self.app.processEvents()
+        canvas = w.plot.canvas
+        self.assertTrue(pop.isVisible())
+        self.assertTrue(pop.query.profile.isVisible())
+        self.assertLessEqual(pop.height(), canvas.height())
+        self.assertLessEqual(pop.y() + pop.height(), canvas.height())
+
     def test_clic_abre_la_ficha_editable(self):
         w = self.w
         r = _reader_sintetico([850, 700, 500, 300, 200], shape=(5, 6))

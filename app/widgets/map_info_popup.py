@@ -24,6 +24,8 @@ class MapInfoPopup(QFrame):
         self.setFocusPolicy(Qt.FocusPolicy.StrongFocus)
         self._sections = []
         self._swallow_click = False
+        self._anchor = None                 # última posición pedida a show_at (coord. del padre)
+        self._refit_pending = False
         lay = QVBoxLayout(self)
         lay.setContentsMargins(14, 10, 14, 10)
         lay.setSpacing(4)
@@ -110,6 +112,7 @@ class MapInfoPopup(QFrame):
         parent = self.parentWidget()
         pw, ph = parent.width(), parent.height()
         prof = self.query.profile
+        self._anchor = QPoint(pos)
 
         def refresh_layouts():
             # Los layouts cachean el sizeHint (updateGeometry lo renueva recién
@@ -213,4 +216,15 @@ class MapInfoPopup(QFrame):
                   and event.key() == Qt.Key.Key_Escape):
                 self.hide()
                 return True
+            elif t == QEvent.Type.Resize and obj is self.parentWidget() and not self._refit_pending:
+                # El mapa cambió de tamaño con la ficha abierta (la ventana se
+                # achicó, o el mapa termina de acomodarse justo después del
+                # clic): se vuelve a ajustar al alto nuevo en el mismo lugar,
+                # en el acto (show_at sólo toca la ficha, no al mapa)
+                self._refit_pending = True
+                try:
+                    if self._anchor is not None:
+                        self.show_at(self._anchor)
+                finally:
+                    self._refit_pending = False
         return super().eventFilter(obj, event)
