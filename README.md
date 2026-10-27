@@ -308,7 +308,7 @@ vuelve el de la última selección del bloque Área.
 
 | Fuente | Modelo / producto | Tipo y variables | Resolución y zona | Corridas y plazos | Credenciales | Niveles por FL | Documentación |
 |---|---|---|---|---|---|---|---|
-| **NOAA GFS** | GFS (NCEP) vía NOMADS grib filter (`pgrb2` + `pgrb2b`) | altura: T, U, V, HGT, RH en 42 niveles isobáricos | 0,25° / 0,50° / 1,00°; recorte en el servidor; regrillado y suavizado local opcionales | 00/06/12/18; +0…+120 cada 1 h, +123…+384 cada 3 h | no | no (con los intermedios cubre los niveles OACI) | <https://nomads.ncep.noaa.gov/> |
+| **NOAA GFS** | GFS (NCEP) vía NOMADS grib filter (`pgrb2` + `pgrb2b`) | altura: T, U, V, HGT, RH en 42 niveles isobáricos | 0,25° / 0,50° / 1,00°, y 1,25° desde 0,25°; recorte en el servidor; regrillado y suavizado local opcionales | 00/06/12/18; +0…+120 cada 1 h, +123…+384 cada 3 h | no | no (con los intermedios cubre los niveles OACI) | <https://nomads.ncep.noaa.gov/> |
 | **NOAA WAFS 0,25° (WIFS)** ✓ FL | WAFC Washington (o Londres), producto OACI de viento y temperatura en altura | altura: U/V, T, altura geopotencial en **FL050–FL600 cada 1000 ft** (56 niveles); el nivel del archivo coincide con el FL del visor | 0,25° global; recorte local; se filtran los FL pedidos | 00/06/12/18 (sólo la última); +6…+24 cada 1 h, +27…+48 cada 3 h, +54…+120 cada 6 h (archivos de tres plazos) | **sí**: clave de API de WIFS (Token, `X-API-Key`); cuenta aprobada por la autoridad meteorológica del Estado y la FAA | **sí** | <https://aviationweather.gov/wifs/users_guide/> |
 | **ECMWF Open Data** | IFS 0,25° (CC BY 4.0), librería oficial `ecmwf-opendata`; reintentos y espera ante «503 Slow Down» configurables | altura: u, v, t, gh, r en 13 niveles (1000…50 hPa) | 0,25° global; recorte local | 00/12 hasta +240 h (cada 3 h hasta +144, cada 6 h después); 06/18 hasta +90 h | no | no | <https://www.ecmwf.int/en/forecasts/datasets/open-data> |
 | **DWD ICON global** | ICON ~13 km, grilla icosaédrica regrillada localmente a 0,25° con los pesos de DWD (vecino más cercano, sin cdo) | altura: U, V, T, FI, RELHUM en 18 niveles (1000…30 hPa) | 0,25° tras regrillar; recorte local | 00/12 hasta +180 h, 06/18 hasta +120 h; cada 1 h hasta +78, cada 3 h después; sólo la última corrida de cada ciclo | no | no | <https://www.dwd.de/EN/ourservices/opendata/opendata.html> |
@@ -356,7 +356,13 @@ Los productos de 0,50° y 1,00° del GFS son muestras puntuales del campo de
 0,25° (verificado: tomar un punto cada dos o cuatro reproduce el producto
 real salvo la cuantización del empaquetado). Por eso la fuente ofrece:
 
-* **Resolución**: la grilla objetivo (0,25° / 0,50° / 1,00°).
+* **Resolución**: la grilla objetivo (0,25° / 0,50° / 1,00° / 1,25°). NOAA
+  no publica 1,25° (la grilla del WAFS clásico): se baja siempre 0,25° y se
+  toma un punto de cada 5, que cae justo sobre la grilla fina, así que los
+  valores son los del modelo, sin interpolar (o el promedio de área, con
+  suavizado). El perfil «FDP» de «Archivo a guardar» la
+  elige solo, con «Bajar siempre 0,25°» y sin suavizado; el regrillado del
+  bloque queda entonces sin nada que hacer.
 * **Bajar siempre 0,25° y regrillar localmente**: pide el producto fino y
   lo submuestrea a la resolución objetivo (el archivo resulta igual al
   producto grueso de NOAA). Sirve también para tener niveles intermedios a
@@ -365,8 +371,10 @@ real salvo la cuantización del empaquetado). Por eso la fuente ofrece:
   ponderado de las celdas de 0,25° que cubre cada celda gruesa (los bordes
   pesan la mitad); da un campo más representativo de la celda pero distinto
   del publicado, con diferencias locales de hasta 15–30 kt en bordes de
-  chorro y cordillera. Activa la bajada a 0,25° automáticamente. No actúa
-  si la resolución objetivo es 0,25°.
+  chorro y cordillera. Evita el aliasing: lo que pasa entre dos puntos de
+  la grilla gruesa no se pierde (a 1,25°, entre puntos hay 140 km). Activa
+  la bajada a 0,25° automáticamente. No actúa si la resolución objetivo es
+  0,25°.
 * **Niveles intermedios cada 25 hPa** (875 … 125; pgrb2b a 0,25°,
   incluidos en pgrb2full a 0,50°). Ningún nivel del GFS coincide
   exactamente con la presión ISA de un FL salvo F340 (250 hPa) y F530
@@ -1125,16 +1133,20 @@ longitud y el orden de las celdas, y al final los decimales.
 
 **Perfil** carga de una vez los valores de un formato conocido; después se
 puede cambiar cualquiera y el perfil pasa a «Personalizado» (al revés,
-elegir uno por uno los valores de un perfil lo muestra elegido):
+elegir uno por uno los valores de un perfil lo muestra elegido). Cada
+diálogo arranca en «Personalizado», con los valores de Preferencias,
+aunque coincidan con un perfil:
 
 | Perfil | Regrillar | Viento | Decimales | Etiqueta | Empaquetado | Tablas | Celdas | Longitudes |
 |---|---|---|---|---|---|---|---|---|
 | Como el origen | — | U/V | origen | según el modo | origen | origen | origen | origen |
 | NOAA GFS | — | U/V | origen | según el modo | origen | origen | N→S, O→E | desde Greenwich |
-| WAFS WAFC Washington | 0,25° | U/V | origen | ISA | origen | origen | N→S, O→E | desde Greenwich |
-| WAFC London clásico | 1,25° | U/V | 1 y 1 | nominal | JPEG 2000 | 4 | S→N, O→E | desde Greenwich |
+| WAFS WAFC Washington | 0,25° | U/V | origen | ISA exacta | origen | origen | N→S, O→E | desde 180°W (−180…180) |
+| WAFS WAFC London | 0,25° | U/V | origen | ISA exacta | origen | origen | N→S, O→E | desde Greenwich (0…360) |
+| FDP | 1,25° | U/V | 1 y 1 | nominal (OACI17, OACI56, INDRA14) | JPEG 2000 | 4 | S→N, O→E | desde Greenwich |
 
-El de WAFC London reproduce la grilla de los boletines GTS `YUXM70 EGRR`
+Los dos WAFS son el mismo formato y sólo cambian dónde empieza la vuelta.
+El FDP reproduce la grilla de los boletines GTS `YUXM70 EGRR`
 (288 × 145, 90S/0E a 90N/358,75E, `scanningMode` 64, 70000 Pa para FL100),
 con la versión de tablas 4 y JPEG 2000 sin pérdida (10 bits con un decimal
 en el viento, como el original). No cambia el centro (EGRR diría que el dato
@@ -1149,7 +1161,7 @@ sobre GTS (cabeceras WMO).
 | Etiqueta de capa | según el modo · nominal (850) · ISA con un decimal (843,1) · ISA entera (843) | Presión grabada como capa de cada FL en un archivo por Nivel; el dato está siempre en la ISA exacta. «Según el modo» deja la del modo de etiquetado (nominal en INDRA/OACI/OACI56, ISA en WAFS). ISA entera redondea al hPa (84300 Pa); el visor la reconoce como ISA (modo WAFS). En un archivo de capas crudas la opción está deshabilitada. |
 | Empaquetado | como el origen · simple · JPEG 2000 sin pérdida · un valor por celda (IEEE 32 bits) | Simple: referencia más N bits por punto. JPEG 2000 (plantilla 5.40, compresión sin pérdida): los mismos valores, D y bits que el simple, comprimidos como en los boletines GTS de WAFC London; ocupa cerca de la mitad. IEEE: un float de 32 bits por celda, sin escalas; ocupa más (654 bytes contra 179 en una grilla de 11 × 11) y cualquier lector lo decodifica tal cual. Al cambiar de plantilla los valores se recargan, así no se corren. |
 | Centro generador y subcentro | el del origen · sin centro (65535) · cualquiera de la tabla C-11 · subcentro como el origen o un número | Sección 1, tabla común C-11 de la OMM (la lista sale de ecCodes: 7 NCEP, 41 Buenos Aires, 74 Met Office/EGRR, 98 ECMWF…); 65535 es «faltante»: el archivo no es de un modelo. El subcentro no tiene tabla común (lo asigna cada centro; los boletines de WAFC London graban 5). El centro dice quién produjo el dato: ningún perfil lo cambia. Los generados llevan siempre 65535 y en Generar GRIB… no se ofrece. |
-| Versión de tablas | como el origen · 4 (WAFC London clásico) · 25 (la de Exportar a WAFS) | Tabla maestra de la sección 1: con qué edición de las tablas OMM se codificó. El GFS graba 2, los boletines GTS de WAFC London 4 y Exportar a WAFS 25; U, V y T significan lo mismo en todas. Al fijarla, un parámetro estándar queda con tablas locales 0. El centro y el subcentro no se tocan (dicen quién hizo el dato); en Exportar a WAFS la del bloque manda sobre la 25. |
+| Versión de tablas | como el origen · 4 (FDP, boletines GTS de EGRR) · 25 (la de Exportar a WAFS) | Tabla maestra de la sección 1: con qué edición de las tablas OMM se codificó. El GFS graba 2, los boletines GTS de WAFC London 4 y Exportar a WAFS 25; U, V y T significan lo mismo en todas. Al fijarla, un parámetro estándar queda con tablas locales 0. El centro y el subcentro no se tocan (dicen quién hizo el dato); en Exportar a WAFS la del bloque manda sobre la 25. |
 | Orden de las celdas | como el origen · N→S, O→E (GFS, WAFC Washington) · N→S, E→O · S→N, O→E (WAFC London) · S→N, E→O | Modo de barrido de la sección 3: en qué sentido corren las filas (norte a sur o sur a norte) y las celdas dentro de cada fila (oeste a este o este a oeste). El GFS y el WAFS de WAFC Washington van N→S, O→E; el de WAFC London, S→N, O→E (la guía del Met Office lo lista como diferencia conocida entre los dos centros y pide leer el octeto 72 de la sección 3 en vez de suponerlo). Las longitudes van siempre 0–360. Se reordenan los valores y se corrigen las esquinas de la grilla (`swapScanningX/Y` de ecCodes); el dato no cambia. El inventario dice el orden del archivo abierto. |
 | Longitudes | como el origen · desde 180°W (−180…180) · desde Greenwich (0…360, WAFC London) | Dónde empieza una grilla que da la vuelta completa: las columnas se rotan para que la primera sea 180°W o 0°, en el sentido de barrido que tenga (con E→O, la del oeste queda última). En una grilla regional no hace nada, porque GRIB2 graba siempre las longitudes de 0 a 360. Con 1,25° global, S→N, O→E y desde Greenwich, Generar GRIB… escribe la grilla de los boletines `YUXM70 EGRR` (288 × 145, 90S/0E a 90N/358,75E, `scanningMode` 64). |
 | Filas | como el origen · todas en el mismo sentido · intercaladas (bustrofedón) | Bit 4 del barrido: con filas intercaladas la segunda fila corre al revés que la primera, y así. ecCodes no las reordena ni las tiene en cuenta en su iterador, así que el visor las endereza al leer (y wgrib2 las informa como `EW|WE`). |

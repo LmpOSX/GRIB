@@ -1,5 +1,24 @@
 # Cambios
 
+## 0.6.1 — 2026-10-26
+
+- NOAA GFS: resolución 1,25° (la del WAFS clásico), que NOMADS no publica:
+  se baja 0,25° y se toma un punto de cada 5, sin interpolar (los puntos de
+  1,25° caen sobre la grilla de 0,25°), o el promedio de área para evitar
+  el aliasing. Al elegir en Obtener datos un perfil con regrillado la
+  fuente pasa sola a esa grilla sin suavizado (FDP: 1,25° desde 0,25°).
+- Perfiles: «WAFS WAFC Washington» y «WAFS WAFC London» son el mismo
+  formato (0,25°, etiqueta ISA exacta, N→S, O→E) y sólo cambian las
+  longitudes: −180…180 y 0…360. El perfil que era «WAFC London clásico»
+  (1,25°, S→N, 1 decimal, JPEG 2000, tablas 4, etiqueta nominal) pasa a
+  llamarse «FDP». El combo arranca siempre en «Personalizado»: un perfil se
+  muestra sólo cuando se lo elige.
+- Descarga global: ya no avisa «La grilla obtenida es más chica que la zona
+  pedida… este: pedido 180.00°, obtenido 178.75°». Una grilla que da la
+  vuelta no repite el meridiano de corte (180°E y 180°W son el mismo), así
+  que cubre −180…180. Por lo mismo, la estimación de Obtener datos cuenta
+  288 columnas a 1,25° (no 289) y 360 a 1° (no 361).
+
 ## 0.6.0 — 2026-10-26
 
 - Generar GRIB: resolución 1,25° (el WAFS clásico de WAFC London) y botón

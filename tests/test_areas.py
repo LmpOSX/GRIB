@@ -133,6 +133,11 @@ class TestEnvolvente(unittest.TestCase):
         self.assertAlmostEqual(s["dlat"], 18.0)
         self.assertAlmostEqual(s["dlon"], 64.0)
         self.assertEqual(A.region_size((1.0, 0.0, 0.0, 1.0))["puntos"], None)
+        # Global: 180°E = 180°W, el meridiano de corte va una sola vez
+        g = A.region_size((90.0, -90.0, -180.0, 180.0), 1.25)
+        self.assertEqual((g["nlat"], g["nlon"], g["puntos"]), (145, 288, 41760))
+        self.assertEqual(A.region_size((90.0, -90.0, -180.0, 180.0), 1.0)["nlon"], 360)
+        self.assertEqual(A.region_size((90.0, -90.0, -180.0, 180.0), 0.25)["nlon"], 1440)
         txt = A.describe_size((-29.0, -47.0, -73.0, -9.0), 0.25, n_messages=33)
         self.assertIn("73 × 257", txt)
         self.assertIn("MB", txt)
@@ -273,6 +278,15 @@ class TestRecorte(unittest.TestCase):
         self.assertEqual(lats.max(), -39.0)
         self.assertEqual((lons.min(), lons.max()), (-75.0, -9.0))
         self.assertEqual(t.shape, (52, 67))
+
+    def test_global_cubre_toda_la_vuelta(self):
+        """Una grilla global no repite el meridiano de corte (0…358,75 a
+        1,25°, −180…179 a 1°): 180°E y 180°W son el mismo, así que cubre
+        −180…180 y la descarga global no avisa de un este faltante."""
+        for res, lon0 in ((1.25, 0.0), (1.0, -180.0)):
+            bbox = self.regrid.grid_bbox(_grib_global(res, lon0=lon0))
+            self.assertEqual(bbox[:2], (-180.0, 180.0))
+            self.assertEqual(A.check_coverage((90.0, -90.0, -180.0, 180.0), bbox, tol=1e-3), [])
 
     def test_cruza_greenwich_en_grilla_0_360(self):
         """Zona 21W…16E sobre una grilla 0…359: el recorte se reordena para

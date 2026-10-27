@@ -1,8 +1,9 @@
 # -*- coding: utf-8 -*-
 """Fuente NOAA GFS (NOMADS grib filter), integrada al esquema de fuentes.
 
-Parámetros propios: resolución objetivo (0,25 / 0,50 / 1,00°), bajar
-siempre 0,25° y regrillar localmente, suavizado (promedio de área) y
+Parámetros propios: resolución objetivo (0,25 / 0,50 / 1,00°, o 1,25°
+que NOMADS no publica y sale siempre de 0,25°), bajar siempre 0,25° y
+regrillar localmente, suavizado (promedio de área) y
 niveles intermedios cada 25 hPa (pgrb2b). El recorte por zona lo hace el
 servidor.
 """
@@ -10,7 +11,10 @@ from .. import gfs_download as gfs
 from ..regrid import SMOOTHING, regrid_grib
 from .base import Source, Param, Request
 
-RES_DEG = {"0p25": 0.25, "0p50": 0.5, "1p00": 1.0}
+RES_DEG = {"0p25": 0.25, "0p50": 0.5, "1p00": 1.0, "1p25": 1.25}
+# Resoluciones que NOMADS no publica: se bajan a 0,25° y se regrillan acá
+# (1,25° es un punto de cada 5 de 0,25°: el WAFS clásico)
+LOCAL_ONLY = {"1p25"}
 
 
 class GFSSource(Source):
@@ -24,11 +28,14 @@ class GFSSource(Source):
                    "cada 3 h hasta +384 h. El servidor recorta por variable, nivel y zona.")
     params = [
         Param("resolucion", "Resolución de la grilla", "choice", "0p25",
-              choices=[(k, n) for k, n, *_ in gfs.RESOLUTIONS],
-              help="0,50° y 1,00° son muestras puntuales del campo de 0,25°."),
+              choices=[(k, n) for k, n, *_ in gfs.RESOLUTIONS] + [("1p25", "1,25° (desde 0,25°)")],
+              help="0,50° y 1,00° son muestras puntuales del campo de 0,25°. 1,25° (la grilla "
+                   "del WAFS clásico) no la publica NOAA: se baja 0,25° y se toma un punto de "
+                   "cada 5, que cae justo sobre la grilla fina (o el promedio de área)."),
         Param("suavizado", "Suavizado al regrillar", "choice", "ninguno", choices=SMOOTHING,
               help="Promedio ponderado por área de las celdas de 0,25° que cubre cada celda "
-                   "gruesa. Sólo actúa al regrillar a 0,50° o 1,00°."),
+                   "gruesa: evita el aliasing (lo que hay entre puntos no se pierde). Sólo "
+                   "actúa al regrillar a 0,50°, 1,00° o 1,25°."),
         Param("solo_0p25", "Bajar siempre 0,25° y regrillar localmente", "bool", False,
               help="Para suavizar hace falta el campo fino; con suavizado se activa solo."),
         Param("niveles_intermedios", "Incluir niveles intermedios cada 25 hPa (pgrb2b)", "bool",
@@ -66,9 +73,18 @@ class GFSSource(Source):
     def download_resolution(self, params):
         """Resolución que realmente se pide al servidor."""
         p = self.merged_params(params)
-        if p["solo_0p25"] or p["suavizado"] == "promedio":
+        if p["solo_0p25"] or p["suavizado"] == "promedio" or p["resolucion"] in LOCAL_ONLY:
             return "0p25"
         return p["resolucion"]
+
+    def params_for_regrid(self, res_deg, params=None):
+        for key, deg in RES_DEG.items():
+            if abs(deg - float(res_deg)) < 1e-9:
+                out = {"resolucion": key, "suavizado": "ninguno"}
+                if key in LOCAL_ONLY:
+                    out["solo_0p25"] = True
+                return out
+        return None
 
     def default_basename(self, job):
         p = self.merged_params(job.params)

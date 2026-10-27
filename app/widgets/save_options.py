@@ -1,7 +1,7 @@
 # -*- coding: utf-8 -*-
 """Bloque «Archivo a guardar»: las mismas opciones en Preferencias (valores
 por defecto), Obtener datos, Exportar a WAFS, Generar GRIB y Guardar como…:
-perfil (NOAA GFS, WAFC Washington, WAFC London clásico), regrillado,
+perfil (NOAA GFS, WAFS WAFC Washington, WAFS WAFC London, FDP), regrillado,
 viento, decimales del viento y de la temperatura, etiqueta de capa (por
 Nivel), empaquetado y centro y subcentro generadores, versión de tablas, orden de las celdas,
 filas intercaladas y primera longitud de una grilla global. `values()` devuelve
@@ -20,6 +20,7 @@ from .. import wind_format as wfm
 
 class SaveOptionsBox(QWidget):
     changed = pyqtSignal()              # cualquier opción del bloque
+    profile_chosen = pyqtSignal(str)    # el usuario eligió un perfil (no «Personalizado»)
 
     def __init__(self, parent=None, cfg=None, show_decimals=True, show_label=True,
                  show_packing=True, show_centre=True, compact=False, rows=False,
@@ -34,6 +35,9 @@ class SaveOptionsBox(QWidget):
         self._show_centre = show_centre
         self._build(show_decimals, show_label, show_packing, show_centre, compact, rows)
         self.set_values(ge.options_from_config(self._cfg))
+        # Arranca en «Personalizado» aunque los valores guardados coincidan
+        # con un perfil: un perfil se muestra sólo cuando se lo elige
+        self.cb_profile.setCurrentIndex(0)
         for cb in self._option_combos():
             if isinstance(cb, QSpinBox):
                 cb.valueChanged.connect(self._on_option_changed)
@@ -53,11 +57,13 @@ class SaveOptionsBox(QWidget):
             self.cb_profile.addItem(text, key)
         self.cb_profile.setToolTip("Carga de una vez los valores de un formato conocido; después se "
                                    "puede cambiar cualquiera (queda «Personalizado»). NOAA GFS: U/V, "
-                                   "filas de norte a sur, desde Greenwich. WAFC Washington: además "
-                                   "regrillado a 0,25° y capas con la presión ISA. WAFC London clásico: "
-                                   "como los boletines GTS YUXM/YTXJ de EGRR: 1,25°, de sur a norte, "
-                                   "desde Greenwich, 1 decimal, JPEG 2000 sin pérdida, etiqueta nominal y "
-                                   "tablas versión 4. El centro no se toca: dice quién hizo el dato.")
+                                   "filas de norte a sur, desde Greenwich. WAFS WAFC Washington y WAFS "
+                                   "WAFC London: 0,25° con la etiqueta ISA exacta; Washington desde "
+                                   "180°W (−180…180) y London desde Greenwich (0…360). FDP: como los "
+                                   "boletines GTS YUXM/YTXJ de EGRR: 1,25°, de sur a norte, desde "
+                                   "Greenwich, 1 decimal, JPEG 2000 sin pérdida, tablas versión 4 y "
+                                   "etiqueta nominal (OACI17, OACI56, INDRA14). Ningún perfil cambia "
+                                   "el centro: dice quién hizo el dato.")
         self.cb_regrid = QComboBox()
         for key, text in ge.REGRIDS:
             self.cb_regrid.addItem(text, key)
@@ -347,6 +353,7 @@ class SaveOptionsBox(QWidget):
         if key is None:
             return                       # «Personalizado»: se queda como está
         self.set_profile(key)
+        self.profile_chosen.emit(key)
 
     def _on_option_changed(self, _i):
         self._sync_profile()

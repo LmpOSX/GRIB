@@ -88,6 +88,16 @@ class TestFuenteGFS(unittest.TestCase):
         job = _job(params={"resolucion": "0p50", "suavizado": "promedio"})
         self.assertEqual(s.download_resolution(job.params), "0p25")
         self.assertTrue(s.default_basename(job).endswith("_0p50_desde_0p25_suav"))
+        # 1,25° (WAFS clásico): NOMADS no la publica, se baja siempre 0,25°
+        job = _job(params={"resolucion": "1p25"})
+        self.assertEqual(s.download_resolution(job.params), "0p25")
+        self.assertEqual(s.grid_resolution(job.params), 1.25)
+        self.assertIn("filter_gfs_0p25.pl", s.build_requests(job, 6)[0].url)
+        self.assertTrue(s.default_basename(job).endswith("_1p25_desde_0p25"))
+        self.assertEqual(s.params_for_regrid(1.25),
+                         {"resolucion": "1p25", "suavizado": "ninguno", "solo_0p25": True})
+        self.assertEqual(s.params_for_regrid(1.0), {"resolucion": "1p00", "suavizado": "ninguno"})
+        self.assertIsNone(s.params_for_regrid(0.7))
         self.assertTrue(s.level_enabled(850, {}))
         self.assertFalse(s.level_enabled(275, {}))
         self.assertTrue(s.level_enabled(275, {"niveles_intermedios": True}))

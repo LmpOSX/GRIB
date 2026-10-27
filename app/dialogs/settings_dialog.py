@@ -602,7 +602,7 @@ class SettingsDialog(GlassDialog):
         self._hint(lay, "Valores por defecto del bloque «Archivo a guardar» de Obtener datos…, "
                         "Exportar a WAFS…, Generar GRIB… y Guardar como…; también se aplican al "
                         "convertir un archivo al abrirlo. El perfil carga de una vez los valores de "
-                        "NOAA GFS, WAFC Washington o WAFC London clásico. Regrillado bilineal a "
+                        "NOAA GFS, WAFS WAFC Washington, WAFS WAFC London o FDP. Regrillado bilineal a "
                         "0,25, 0,50, 1,00 o 1,25° (con wgrib2 si es el motor y tiene la "
                         "interpolación). Viento como U/V o como dirección y velocidad; decimales del "
                         "viento y de la temperatura (factor decimal con escala binaria 0: se "

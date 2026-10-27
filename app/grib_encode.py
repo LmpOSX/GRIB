@@ -27,8 +27,9 @@ Además pasan sin tocarse `engine` y `wgrib2_path` (Preferencias ▸ motor):
 con «wgrib2» y un wgrib2 con la interpolación se regrilla con -new_grid;
 si no, con el bilineal propio.
 
-`PROFILES` son juegos de valores con nombre (NOAA GFS, WAFC Washington,
-WAFC London clásico) que el bloque ofrece para no elegir uno por uno.
+`PROFILES` son juegos de valores con nombre (NOAA GFS, WAFS WAFC
+Washington, WAFS WAFC London, FDP) que el bloque ofrece para no elegir uno
+por uno.
 
 El orden de las celdas se cambia con `swapScanningX` / `swapScanningY` de
 ecCodes (reordenan los valores y actualizan los bits y las esquinas); las
@@ -84,7 +85,7 @@ REGRIDS = [("origen", "Sin regrillar (como el origen)"),
 # Versión de la tabla maestra (sección 1, octeto 10): sólo dice con qué
 # edición de las tablas OMM se codificó; U, V y T son los mismos desde la 2.
 # Al fijarla, un parámetro estándar deja de apuntar a tablas locales (0)
-TABLES = [("origen", "Como el origen"), ("4", "4 (WAFC London clásico)"),
+TABLES = [("origen", "Como el origen"), ("4", "4 (FDP, boletines GTS de EGRR)"),
           ("25", "25 (la de Exportar a WAFS)")]
 KEYS = ("wind", "dec_wind", "dec_temp", "label", "packing", "centre", "sub_centre", "scan", "rows",
         "lons", "regrid", "tables")
@@ -95,13 +96,20 @@ _PASS = ("engine", "wgrib2_path")       # motor del regrillado (Preferencias), s
 _BASE = {"wind": "uv", "dec_wind": None, "dec_temp": None, "label": "modo", "packing": "origen",
          "centre": "origen", "sub_centre": None, "scan": "origen", "rows": "origen", "lons": "origen", "regrid": "origen",
          "tables": "origen"}
+# WAFS (Washington y London): 0,25° con la etiqueta ISA exacta; sólo cambia
+# dónde empieza la vuelta. FDP: el formato de los boletines GTS clásicos de
+# EGRR (1,25°, S→N, desde Greenwich, 1 decimal, JPEG 2000, tablas 4) con la
+# etiqueta nominal de OACI17 / OACI56 / INDRA14
+_WAFS = dict(_BASE, regrid="0.25", label="isa", scan="ns_we", rows="consecutivas")
 PROFILES = [
     ("origen", "Como el origen (sin cambios)", dict(_BASE)),
     ("gfs", "NOAA GFS (U/V, N→S, O→E, desde Greenwich)",
      dict(_BASE, scan="ns_we", rows="consecutivas", lons="0_360")),
-    ("wafc_washington", "WAFS WAFC Washington (0,25°, N→S, O→E, etiqueta ISA)",
-     dict(_BASE, regrid="0.25", label="isa", scan="ns_we", rows="consecutivas", lons="0_360")),
-    ("wafc_london", "WAFC London clásico (1,25°, S→N, O→E, 1 decimal; boletín GTS)",
+    ("wafc_washington", "WAFS WAFC Washington (0,25°, etiqueta ISA, −180…180)",
+     dict(_WAFS, lons="m180")),
+    ("wafc_london", "WAFS WAFC London (0,25°, etiqueta ISA, 0…360)",
+     dict(_WAFS, lons="0_360")),
+    ("fdp", "FDP (1,25°, S→N, 0…360, etiqueta nominal, 1 decimal, JPEG 2000)",
      dict(_BASE, regrid="1.25", dec_wind=1, dec_temp=1, label="nominal", packing="jpeg",
           scan="sn_we", rows="consecutivas", lons="0_360", tables="4")),
 ]

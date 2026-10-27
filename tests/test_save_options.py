@@ -99,15 +99,19 @@ class TestOpciones(unittest.TestCase):
 
     def test_perfiles(self):
         """Cada perfil se reconoce por sus valores; un cambio lo vuelve
-        personalizado. WAFC London clásico es la grilla del boletín GTS."""
+        personalizado. FDP es la grilla del boletín GTS; los dos WAFS sólo
+        difieren en dónde empieza la vuelta."""
         for key, _text, vals in ge.PROFILES:
             self.assertEqual(ge.profile_of(vals), key)
         self.assertEqual(ge.profile_of({}), "origen")
-        lon = ge.profile_values("wafc_london")
+        lon = ge.profile_values("fdp")
         self.assertEqual((lon["regrid"], lon["scan"], lon["lons"], lon["dec_wind"], lon["tables"]),
                          ("1.25", "sn_we", "0_360", 1, "4"))
         self.assertIsNone(ge.profile_of(dict(lon, dec_temp=2)))
         self.assertIsNone(ge.profile_values("zzz"))
+        was, lnd = ge.profile_values("wafc_washington"), ge.profile_values("wafc_london")
+        self.assertEqual((was["regrid"], was["label"], was["lons"]), ("0.25", "isa", "m180"))
+        self.assertEqual(dict(was, lons="0_360"), lnd)
 
     def test_migracion_de_config(self):
         cfg = dict(config.DEFAULTS, download_wind_format="dirspeed")
@@ -183,7 +187,7 @@ class TestRecodificar(unittest.TestCase):
         self.assertEqual(reg, self.wafs)
 
     def test_regrillado_en_el_bloque(self):
-        """El perfil WAFC London clásico lleva un global de 1° a la grilla de
+        """El perfil FDP lleva un global de 1° a la grilla de
         los boletines YUXM de EGRR: 288 × 145 desde 90S/0E, barrido 64, un
         decimal. Si el origen está en dirección y velocidad se regrilla
         sobre U/V y se vuelve a dirección y velocidad."""
@@ -192,7 +196,7 @@ class TestRecodificar(unittest.TestCase):
         rows = [{"fl": 100, "t_c": 0, "spd_kt": 30, "dir_deg": 250, "spd_inc": 2}]
         data, _ = gg.generate_grib(rows, (90, -90, -180, 180), 1.0, mode="OACI",
                                    run=_dt.datetime(2026, 10, 24, tzinfo=_dt.timezone.utc), step_h=36)
-        out, info = ge.recode(data, ge.profile_values("wafc_london"), labeled=True, mode="OACI")
+        out, info = ge.recode(data, ge.profile_values("fdp"), labeled=True, mode="OACI")
         self.assertEqual(info["regrillado_con"], "eccodes")
         for gid, _p, _s in wf.iter_messages(out):
             try:
@@ -494,14 +498,19 @@ class TestDialogos(unittest.TestCase):
         self.assertFalse(self.w.cb_label.isEnabled())
         self.w.set_labeled(True)
         self.assertTrue(self.w.cb_label.isEnabled())
-        # Perfil: carga los valores; un cambio lo vuelve personalizado
+        # Perfil: arranca en «Personalizado» aunque la config coincida con uno
         self.assertEqual(self.w.profile(), None)
-        self.w.cb_profile.setCurrentIndex(self.w.cb_profile.findData("wafc_london"))
+        cfg_fdp = dict(config.DEFAULTS, **{"save_" + k: v for k, v in ge.profile_values("fdp").items()})
+        box_fdp = SaveOptionsBox(cfg=cfg_fdp)
+        self.assertIsNone(box_fdp.profile())
+        self.assertEqual(box_fdp.values()["regrid"], "1.25")
+        box_fdp.close()
+        self.w.cb_profile.setCurrentIndex(self.w.cb_profile.findData("fdp"))
         self.w.cb_profile.activated.emit(self.w.cb_profile.currentIndex())
         v = self.w.values()
         self.assertEqual((v["regrid"], v["scan"], v["lons"], v["packing"], v["tables"]),
                          ("1.25", "sn_we", "0_360", "jpeg", "4"))
-        self.assertEqual(self.w.profile(), "wafc_london")
+        self.assertEqual(self.w.profile(), "fdp")
         self.w.cb_dec_temp.setCurrentIndex(self.w.cb_dec_temp.findData(2))
         self.assertIsNone(self.w.profile())
         self.w.set_values({})

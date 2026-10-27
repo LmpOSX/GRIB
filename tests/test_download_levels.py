@@ -80,6 +80,24 @@ class TestBotonesDeModo(unittest.TestCase):
     def _on(self):
         return [lv for lv, c in self.w.level_checks.items() if c.isChecked()]
 
+    def test_perfil_london_elige_1p25_en_la_fuente(self):
+        """El perfil FDP (1,25°) lleva la fuente GFS a 1,25° desde
+        0,25° sin suavizado; el suavizado se puede elegir después y el
+        perfil no cambia."""
+        d = self._dialog()
+        box = d.save_box
+        box.cb_profile.setCurrentIndex(box.cb_profile.findData("fdp"))
+        box.cb_profile.activated.emit(box.cb_profile.currentIndex())
+        v = d.form.values()
+        self.assertEqual((v["resolucion"], v["suavizado"], v["solo_0p25"]), ("1p25", "ninguno", True))
+        d.form.set_values({"suavizado": "promedio"})
+        self.assertEqual(box.profile(), "fdp")
+        self.assertEqual(d.job().params["suavizado"], "promedio")
+        # WAFS WAFC London: 0,25°, la fuente vuelve a 0,25° sin suavizado
+        box.cb_profile.setCurrentIndex(box.cb_profile.findData("wafc_london"))
+        box.cb_profile.activated.emit(box.cb_profile.currentIndex())
+        self.assertEqual((d.form.values()["resolucion"], d.form.values()["suavizado"]), ("0p25", "ninguno"))
+
     def test_arranca_con_el_modo_de_preferencias(self):
         d = self._dialog(wafs_mode="INDRA", wafs_convert=False)
         self.assertEqual(d._mode, "INDRA")

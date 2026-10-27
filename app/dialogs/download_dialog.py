@@ -306,6 +306,7 @@ class DownloadDialog(GlassDialog):
         self.save_box = SaveOptionsBox(cfg=self._cfg, compact=True, rows=True)
         self.cb_wind = self.save_box.cb_wind
         self.save_box.changed.connect(self._on_save_changed)
+        self.save_box.profile_chosen.connect(self._on_profile_chosen)
         lay.addWidget(self.save_box)
 
         self.form = None
@@ -886,6 +887,20 @@ class DownloadDialog(GlassDialog):
     def save_options(self):
         """Bloque «Archivo a guardar» del diálogo."""
         return self.save_box.values()
+
+    def _on_profile_chosen(self, _key):
+        """Un perfil con regrillado (WAFC London: 1,25°) lleva también las
+        opciones de la fuente a esa grilla si la fuente puede entregarla (el
+        GFS: 1,25° desde 0,25°, sin suavizado); el regrillado del bloque
+        queda entonces sin nada que hacer. El suavizado se puede volver a
+        elegir después."""
+        from .. import grib_encode as ge
+        res = ge.regrid_res(self.save_box.values())
+        if res is None or self.form is None or self.source is None:
+            return
+        vals = self.source.params_for_regrid(res, self.form.values())
+        if vals:
+            self.form.set_values(vals)
 
     def _on_save_changed(self, _i=None):
         self._cfg.update(self.save_box.config_values())

@@ -315,7 +315,8 @@ def round_outward(region, res_deg):
 
 def region_size(region, res_deg=None):
     """Tamaño de la zona: dict con dlat, dlon (grados), y, si se conoce la
-    resolución, nlat, nlon y puntos."""
+    resolución, nlat, nlon y puntos (una zona de 360° de longitud cuenta el
+    meridiano de corte una sola vez, como la grilla que entrega el servidor)."""
     top, bottom, left, right = region
     dlat, dlon = float(top - bottom), float(right - left)
     out = {"dlat": dlat, "dlon": dlon, "nlat": None, "nlon": None, "puntos": None}
@@ -323,6 +324,10 @@ def region_size(region, res_deg=None):
         r = float(res_deg)
         nlat = int(round(dlat / r)) + 1
         nlon = int(round(dlon / r)) + 1
+        if dlon >= 360.0 - 1e-6:
+            # La vuelta completa no repite el meridiano de corte (180°E y
+            # 180°W son el mismo): 288 columnas a 1,25°, 360 a 1°
+            nlon = int(round(360.0 / r))
         out.update({"nlat": nlat, "nlon": nlon, "puntos": nlat * nlon})
     return out
 

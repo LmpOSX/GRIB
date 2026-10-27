@@ -241,7 +241,7 @@ def crop_grib(data, region):
 def grid_bbox(data):
     """(lonmin, lonmax, latmin, latmax) de la primera grilla regular lat/lon
     del GRIB2 (bytes o ruta), con las longitudes en −180…180 (si el dominio
-    cruza el antimeridiano se informa toda la vuelta). None si no hay."""
+    da la vuelta o cruza el antimeridiano se informa −180…180). None si no hay."""
     if ec is None:
         return None
     if isinstance(data, str):
@@ -259,7 +259,9 @@ def grid_bbox(data):
             lat1d, lon1d = grid_axes(gid)
             lon_norm = ((lon1d + 180.0) % 360.0) - 180.0
             lonmin, lonmax = float(lon_norm.min()), float(lon_norm.max())
-            if len(lon1d) > 1 and (lon1d.max() - lon1d.min()) > 180.0 and \
+            if is_global_lon(lon1d):
+                lonmin, lonmax = -180.0, 180.0     # da la vuelta: 180°E y 180°W son el mismo meridiano
+            elif len(lon1d) > 1 and (lon1d.max() - lon1d.min()) > 180.0 and \
                     float(np.max(np.diff(np.sort(lon_norm)))) > 2.0 * float(abs(lon1d[1] - lon1d[0])):
                 lonmin, lonmax = -180.0, 180.0     # cruza el antimeridiano: toda la vuelta
             return (lonmin, lonmax, float(lat1d.min()), float(lat1d.max()))

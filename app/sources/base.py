@@ -216,6 +216,13 @@ class Source:
         redondear la zona hacia afuera y estimar el tamaño de la descarga."""
         return self.grid_resolution_deg
 
+    def params_for_regrid(self, res_deg, params=None):
+        """Parámetros de la fuente que entregan directamente la grilla de
+        `res_deg` grados (lo que pide el bloque «Archivo a guardar»), o None
+        si la fuente no tiene cómo. Lo usa Obtener datos al elegir un perfil
+        con regrillado."""
+        return None
+
     def server_region(self, job):
         """Zona que se le pide al servidor: la del trabajo redondeada hacia
         afuera a la grilla del modelo (nunca más chica que la pedida)."""
