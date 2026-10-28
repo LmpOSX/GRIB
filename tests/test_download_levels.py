@@ -80,16 +80,31 @@ class TestBotonesDeModo(unittest.TestCase):
     def _on(self):
         return [lv for lv, c in self.w.level_checks.items() if c.isChecked()]
 
-    def test_perfil_london_elige_1p25_en_la_fuente(self):
-        """El perfil FDP (1,25°) lleva la fuente GFS a 1,25° desde
-        0,25° sin suavizado; el suavizado se puede elegir después y el
-        perfil no cambia."""
+    def test_perfil_fdp_elige_1p00_desde_0p25_en_la_fuente(self):
+        """El perfil FDP (1°) lleva la fuente GFS a 1° desde 0,25° sin
+        suavizado (NOMADS publica 1° sólo cada 3 h y sin 275/225/175 hPa);
+        el suavizado se puede elegir después y el perfil no cambia."""
         d = self._dialog()
         box = d.save_box
         box.cb_profile.setCurrentIndex(box.cb_profile.findData("fdp"))
         box.cb_profile.activated.emit(box.cb_profile.currentIndex())
         v = d.form.values()
-        self.assertEqual((v["resolucion"], v["suavizado"], v["solo_0p25"]), ("1p25", "ninguno", True))
+        self.assertEqual((v["resolucion"], v["suavizado"], v["solo_0p25"]), ("1p00", "ninguno", True))
+        from app import areas as A
+        # el perfil arrastra la grilla FDP Arg (modo Grilla) y el modo INDRA
+        self.assertEqual((d.area_mode(), d.region()), ("grid", A.FDP_REGION))
+        self.assertEqual(d.cb_grid.currentData(), "fdp_arg")
+        self.assertEqual(d._mode, "INDRA")
+        self.assertEqual(d.job().area_tag, "FDPARG")
+        # El radio «Grilla» a mano: zona y fuente a 1°, también desde «Por FIR»
+        d.rb_fir.setChecked(True)
+        d.form.set_values({"resolucion": "0p25", "solo_0p25": False})
+        d.rb_grid.setChecked(True)
+        self.assertEqual((d.area_mode(), d.region()), ("grid", A.FDP_REGION))
+        self.assertEqual((d.form.values()["resolucion"], d.form.values()["solo_0p25"]), ("1p00", True))
+        self.assertFalse(d.lat_n.isEnabled())
+        self.assertIn("51 × 36", d.lbl_grid.text())
+        self.assertEqual(d.area_state()["download_grid"], "fdp_arg")
         d.form.set_values({"suavizado": "promedio"})
         self.assertEqual(box.profile(), "fdp")
         self.assertEqual(d.job().params["suavizado"], "promedio")

@@ -5,7 +5,9 @@ nivel de sobrevuelo) y el perfil vertical de la celda (WindProfileWidget):
 todos los niveles del archivo con el color de la velocidad, la barba y los
 números, con el FL pedido intercalado (interpolado) y resaltado. Las tres
 capas al estilo del FDP (inferior, FL pedido, superior) siguen disponibles
-en rows() y en el texto que se copia.
+en rows() y en el texto que se copia. La columna «FDP» y la línea de abajo
+dicen lo que mostraría el FDP de INDRA (point_query.fdp_query): el viento
+de la capa superior de la banda y el promedio entero de la temperatura.
 
 El dato es el del origen (esquina suroeste) de la celda de la grilla que
 contiene al punto, como en el FDP. No conoce la ventana principal: recibe
@@ -96,6 +98,13 @@ class PointQueryWidget(QFrame):
         self.lbl_mode = QLabel("")
         self.lbl_mode.setObjectName("PopupHint")
         lay.addWidget(self.lbl_mode)
+        self.lbl_fdp = QLabel("")
+        self.lbl_fdp.setObjectName("PopupHint")
+        self.lbl_fdp.setToolTip("Lo que mostraría el FDP de INDRA para el FL pedido: el viento de la "
+                                "capa superior de la banda y la temperatura como promedio entero "
+                                "(truncado) de las dos capas, 0 si falta alguna. Sólo lee las 14 "
+                                "capas de 850 a 100 hPa, a 1°, en 75°W–25°W, 55°S–20°S.")
+        lay.addWidget(self.lbl_fdp)
         self._fill_rows(None)
 
     # ── Tamaño de los campos según el tipo de letra vigente ──────────────────
@@ -227,14 +236,39 @@ class PointQueryWidget(QFrame):
         self._rows = [(n, pq.layer_name(l), pq.wind_text(l, self._variation), pq.temp_text(l))
                       for n, l in zip(names, layers)]
         column = self._column if res is not None else []
+        fdp = self._fdp_rows(column, fl) if column else None
         self.profile.set_layers(column, value=layers[1] if column else None,
                                 variation=self._variation,
-                                southern=(self.lat is not None and self.lat < 0))
+                                southern=(self.lat is not None and self.lat < 0), fdp=fdp)
+        self.lbl_fdp.setVisible(bool(fdp))
+        if fdp:
+            q = pq.fdp_query(column, fl, self.lat, self.lon)
+            note = self._fdp_note()
+            self.lbl_fdp.setText(f"FDP F{fl:03d}: {pq.fdp_text(q)}" + (f" · {note}" if note else ""))
         self.profile.setVisible(bool(column))
         if res is None:
             self.lbl_mode.setText(f"F{fl:03d} = {fl_to_hpa(fl):.1f} hPa ISA")
         else:
             self.lbl_mode.setText(f"F{fl:03d} = {fl_to_hpa(fl):.1f} hPa ISA · {pq.mode_text(res)}")
+
+    def _fdp_rows(self, column, fl):
+        """{FL: texto} de la columna «FDP»: cada capa que lee el FDP y el FL
+        pedido; None si el archivo no tiene ninguna de sus capas."""
+        fls = {pq.fdp_layer_fl(l) for l in column} - {None}
+        if not fls:
+            return None
+        fls.add(int(fl))
+        out = {}
+        for f in fls:
+            q = pq.fdp_query(column, f, self.lat, self.lon)
+            if q is not None:
+                # la caja va en la línea de abajo; en la columna, sólo el dato
+                out[f] = pq.fdp_text(q, band=False).split(" · ")[0].replace(" (falta una capa)", "*")
+        return out or None
+
+    def _fdp_note(self):
+        r = self._reader
+        return pq.fdp_grid_note(getattr(r, "lats", None), getattr(r, "lons", None)) if r is not None else None
 
     def rows(self):
         """[(capa, nivel, viento, temperatura)] de las tres filas, en texto."""
@@ -247,7 +281,7 @@ class PointQueryWidget(QFrame):
         idx, step, inside = self._step if self._step else (None, None, False)
         return pq.report_text(self.lat, self.lon, self.ed_time.text().strip(), self.fl(),
                               step, idx, inside, self._res, self._variation, self.cell(),
-                              column=self._column)
+                              column=self._column, fdp_note=self._fdp_note())
 
     def copy_text(self):
         if self.lat is None:

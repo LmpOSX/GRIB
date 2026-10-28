@@ -313,6 +313,34 @@ class TestDialogoGenerar(unittest.TestCase):
     def _fls(self):
         return [r["fl"] for r in self.w._rows(strict=False)]
 
+    def test_perfil_fdp_lleva_la_grilla_a_1_grado(self):
+        """Generar no regrilla: el perfil FDP cambia la resolución de la
+        grilla a 1° (la única que lee el FDP de INDRA)."""
+        d = self._dialog(generate_res_deg=0.25)
+        self.assertEqual(d.resolution(), 0.25)
+        box = d.save_box
+        box.cb_profile.setCurrentIndex(box.cb_profile.findData("fdp"))
+        box.cb_profile.activated.emit(box.cb_profile.currentIndex())
+        self.assertEqual(d.resolution(), 1.0)
+        # y la grilla FDP Arg (modo Grilla): 51 × 36 puntos; y el modo INDRA
+        from app import areas as A
+        self.assertEqual(d.area_mode(), "grid")
+        self.assertEqual(d.region(), A.FDP_REGION)
+        self.assertEqual(d._mode, "INDRA")
+        lats, lons, _zone = gg.grid_axes(d.region(), d.resolution())
+        self.assertEqual((len(lons), len(lats)), (51, 36))
+        self.assertIn("grilla 51 × 36 puntos", d.lbl_size.text())
+        box.cb_profile.setCurrentIndex(box.cb_profile.findData("gfs"))     # sin regrillado: no la toca
+        box.cb_profile.activated.emit(box.cb_profile.currentIndex())
+        self.assertEqual(d.resolution(), 1.0)
+        # El radio «Grilla» a mano elige la zona y la resolución, también desde «Por FIR»
+        d.rb_fir.setChecked(True)
+        d.cb_res.setCurrentIndex(d.cb_res.findData(0.25))
+        d.rb_grid.setChecked(True)
+        self.assertEqual((d.area_mode(), d.region(), d.resolution()), ("grid", A.FDP_REGION, 1.0))
+        self.assertIn("grilla 51 × 36 puntos", d.lbl_size.text())
+        self.assertTrue(d.output_path().endswith("_FDPARG_INDRA.grib2"))
+
     def test_tabla_por_modo(self):
         d = self._dialog(wafs_mode="INDRA")
         self.assertEqual(d._mode, "INDRA")

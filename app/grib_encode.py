@@ -80,8 +80,8 @@ LONS = [("origen", "Como el origen"), ("m180", "Desde 180°W (−180…180)"),
 REGRIDS = [("origen", "Sin regrillar (como el origen)"),
            ("0.25", "0,25° (GFS, WAFS actual)"),
            ("0.5", "0,50°"),
-           ("1.0", "1,00° (GFS 1°, FDP)"),
-           ("1.25", "1,25° (WAFS clásico, WAFC London)")]
+           ("1.0", "1,00° (GFS 1°, FDP de INDRA)"),
+           ("1.25", "1,25° (WAFS clásico, boletines GTS de EGRR)")]
 # Versión de la tabla maestra (sección 1, octeto 10): sólo dice con qué
 # edición de las tablas OMM se codificó; U, V y T son los mismos desde la 2.
 # Al fijarla, un parámetro estándar deja de apuntar a tablas locales (0)
@@ -97,9 +97,11 @@ _BASE = {"wind": "uv", "dec_wind": None, "dec_temp": None, "label": "modo", "pac
          "centre": "origen", "sub_centre": None, "scan": "origen", "rows": "origen", "lons": "origen", "regrid": "origen",
          "tables": "origen"}
 # WAFS (Washington y London): 0,25° con la etiqueta ISA exacta; sólo cambia
-# dónde empieza la vuelta. FDP: el formato de los boletines GTS clásicos de
-# EGRR (1,25°, S→N, desde Greenwich, 1 decimal, JPEG 2000, tablas 4) con la
-# etiqueta nominal de OACI17 / OACI56 / INDRA14
+# dónde empieza la vuelta. FDP: lo que lee el FDP de INDRA (m_323_grib), con
+# el formato de los boletines GTS de EGRR (S→N, desde Greenwich, 1 decimal,
+# JPEG 2000, tablas 4) pero a 1°: el FDP recorta 75°W–25°W, 55°S–20°S y
+# espera 51 × 36 puntos (a 1,25° rechaza el archivo). Etiqueta nominal de
+# OACI17 / OACI56 / INDRA14
 _WAFS = dict(_BASE, regrid="0.25", label="isa", scan="ns_we", rows="consecutivas")
 PROFILES = [
     ("origen", "Como el origen (sin cambios)", dict(_BASE)),
@@ -109,8 +111,8 @@ PROFILES = [
      dict(_WAFS, lons="m180")),
     ("wafc_london", "WAFS WAFC London (0,25°, etiqueta ISA, 0…360)",
      dict(_WAFS, lons="0_360")),
-    ("fdp", "FDP (1,25°, S→N, 0…360, etiqueta nominal, 1 decimal, JPEG 2000)",
-     dict(_BASE, regrid="1.25", dec_wind=1, dec_temp=1, label="nominal", packing="jpeg",
+    ("fdp", "FDP (1°, S→N, 0…360, etiqueta nominal, 1 decimal, JPEG 2000)",
+     dict(_BASE, regrid="1.0", dec_wind=1, dec_temp=1, label="nominal", packing="jpeg",
           scan="sn_we", rows="consecutivas", lons="0_360", tables="4")),
 ]
 
@@ -123,17 +125,19 @@ def options_from_config(cfg, prefix="save_"):
     return normalize(o)
 
 
-def profile_of(opts):
-    """Clave del perfil que coincide con `opts`, o None (personalizado)."""
+def profile_of(opts, profiles=None):
+    """Clave del perfil (de fábrica, o de `profiles`: [(clave, texto,
+    valores)]) que coincide con `opts`, o None (personalizado). La tabla
+    configurable, con desempate, está en app/profiles.py."""
     o = normalize(opts)
-    for key, _text, vals in PROFILES:
-        if all(o[k] == vals[k] for k in KEYS):
+    for key, _text, vals in (PROFILES if profiles is None else profiles):
+        if all(o[k] == vals.get(k) for k in KEYS):
             return key
     return None
 
 
-def profile_values(key):
-    for k, _text, vals in PROFILES:
+def profile_values(key, profiles=None):
+    for k, _text, vals in (PROFILES if profiles is None else profiles):
         if k == key:
             return dict(vals)
     return None

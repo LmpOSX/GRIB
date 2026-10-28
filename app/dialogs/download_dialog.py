@@ -189,6 +189,9 @@ class DownloadDialog(GlassDialog):
         self._domain_region = None
         self._regions_fn = regions_fn       # capa FIR (para «Extremos de la capa FIR»)
         self._areas = [a for a in A.areas_from_config(self._cfg)]
+        self._grids = A.grids_from_config(self._cfg)
+        self._prev_mode = None
+        self._applying_grid = False
         self._area_checks = {}
         self._area_updating = False
         self.source = None
@@ -394,11 +397,18 @@ class DownloadDialog(GlassDialog):
         zg.addWidget(self.lbl_zone, 0, 0)
         self.rb_manual = QRadioButton("Manual")
         self.rb_fir = QRadioButton("Por FIR")
+        self.rb_grid = QRadioButton("Grilla")
+        self.rb_grid.setToolTip("Una grilla con nombre (Preferencias ▸ Áreas / FIR): recuadro exacto "
+                                "y resolución, sin margen. FDP Arg es la que lee el FDP de INDRA.")
         self._mode_group = QButtonGroup(self)
         self._mode_group.addButton(self.rb_manual)
         self._mode_group.addButton(self.rb_fir)
-        (self.rb_fir if self._cfg.get("download_area_mode", "fir") == "fir" else self.rb_manual).setChecked(True)
-        self.rb_manual.toggled.connect(self._on_mode_changed)
+        self._mode_group.addButton(self.rb_grid)
+        mode_cfg = self._cfg.get("download_area_mode", "fir")
+        {"fir": self.rb_fir, "grid": self.rb_grid}.get(mode_cfg, self.rb_manual).setChecked(True)
+        self._prev_mode = mode_cfg if mode_cfg in ("fir", "grid") else "manual"
+        for rb in (self.rb_manual, self.rb_fir, self.rb_grid):
+            rb.toggled.connect(self._on_mode_changed)
         zg.addWidget(self.rb_manual, 0, 1)
         g = QGridLayout()
         g.setContentsMargins(0, 0, 0, 0)
@@ -445,7 +455,22 @@ class DownloadDialog(GlassDialog):
         fl.addStretch()
         zg.addWidget(self.fir_box, 1, 2)
         self._build_area_checks()
-        # Fila 3: configurar áreas · modo manual (todo el globo / dominio del
+        # Fila 3: Grilla · combo de grillas con nombre · resumen (recuadro,
+        # resolución y puntos)
+        zg.addWidget(self.rb_grid, 2, 1)
+        self.grid_box = QWidget()
+        gl = QHBoxLayout(self.grid_box)
+        gl.setContentsMargins(0, 0, 0, 0)
+        gl.setSpacing(8)
+        self.cb_grid = QComboBox()
+        self.cb_grid.currentIndexChanged.connect(self._on_grid_changed)
+        gl.addWidget(self.cb_grid)
+        self.lbl_grid = QLabel("")
+        self.lbl_grid.setObjectName("Hint")
+        gl.addWidget(self.lbl_grid, 1)
+        zg.addWidget(self.grid_box, 2, 2)
+        self._build_grid_combo()
+        # Fila 4: configurar áreas · modo manual (todo el globo / dominio del
         # archivo) · tamaño resultante
         row = QHBoxLayout()
         self.btn_areas = QPushButton("Configurar áreas…")
@@ -469,7 +494,7 @@ class DownloadDialog(GlassDialog):
         self.lbl_size.setObjectName("Hint")
         self.lbl_size.setWordWrap(True)
         row.addWidget(self.lbl_size, 1)
-        zg.addLayout(row, 2, 0, 1, 3)
+        zg.addLayout(row, 3, 0, 1, 3)
         zg.setColumnStretch(2, 1)
         lay.addWidget(self.zone_box)
         self.chk_draw = QCheckBox("Mostrar el área en el mapa")
@@ -558,7 +583,65 @@ class DownloadDialog(GlassDialog):
             self.area_grid.addWidget(QLabel("No hay áreas habilitadas: Configurar áreas…"), 0, 0)
 
     def area_mode(self):
-        return "fir" if self.rb_fir.isChecked() else "manual"
+        if self.rb_fir.isChecked():
+            return "fir"
+        if self.rb_grid.isChecked():
+            return "grid"
+        return "manual"
+
+    # ── Grillas con nombre ───────────────────────────────────────────────
+
+    def _build_grid_combo(self):
+        cur = self.cb_grid.currentData() if self.cb_grid.count() else self._cfg.get("download_grid")
+        self.cb_grid.blockSignals(True)
+        try:
+            self.cb_grid.clear()
+            for g in self._grids:
+                if g.enabled:
+                    self.cb_grid.addItem(g.name, g.id)
+                    self.cb_grid.setItemData(self.cb_grid.count() - 1, g.note or g.summary(),
+                                             Qt.ItemDataRole.ToolTipRole)
+            self.cb_grid.setCurrentIndex(max(0, self.cb_grid.findData(cur)))
+        finally:
+            self.cb_grid.blockSignals(False)
+        self.rb_grid.setEnabled(self.cb_grid.count() > 0)
+
+    def grid(self):
+        """La grilla con nombre elegida (Grid), o None."""
+        return A.find_grid(self._grids, self.cb_grid.currentData()) if self.cb_grid.count() else None
+
+    def set_grid(self, gid):
+        """Pasa al modo Grilla con esa grilla: su zona y, si tiene
+        resolución y la fuente puede entregarla, la resolución de la fuente
+        (el GFS: 1° desde 0,25°)."""
+        i = self.cb_grid.findData(gid)
+        if i < 0:
+            return False
+        self.cb_grid.setCurrentIndex(i)
+        self.rb_grid.setChecked(True)
+        self._apply_grid_res()
+        self._refresh_area()
+        return True
+
+    def _apply_grid_res(self):
+        g = self.grid()
+        if g is None or not g.res or self.form is None or self.source is None:
+            return
+        if self._applying_grid:
+            return                                  # set_values vuelve a refrescar el área
+        vals = self.source.params_for_regrid(g.res, self.form.values())
+        cur = self.form.values()
+        if vals and any(cur.get(k) != v for k, v in vals.items()):
+            self._applying_grid = True
+            try:
+                self.form.set_values(vals)
+            finally:
+                self._applying_grid = False
+
+    def _on_grid_changed(self, _i):
+        if self.area_mode() == "grid":
+            self._apply_grid_res()
+            self._refresh_area()
 
     def selected_codes(self):
         """Códigos marcados, en el orden de la tabla."""
@@ -583,12 +666,18 @@ class DownloadDialog(GlassDialog):
         self._refresh_area()
 
     def _on_mode_changed(self, _checked):
-        manual = self.rb_manual.isChecked()
-        if manual:
-            # Los campos calculados quedan como punto de partida
-            env = self.fir_envelope() if not self.chk_global.isChecked() else None
+        mode = self.area_mode()
+        if mode == self._prev_mode:
+            return                                  # el toggled del radio que se apagó
+        if mode == "manual" and self._prev_mode == "fir" and not self.chk_global.isChecked():
+            # Los campos calculados quedan como punto de partida (desde una
+            # grilla ya están en los campos)
+            env = self.fir_envelope()
             if env is not None:
                 self._set_fields(env)
+        if mode == "grid":
+            self._apply_grid_res()
+        self._prev_mode = mode
         self._refresh_area()
 
     def _set_fields(self, region):
@@ -601,19 +690,27 @@ class DownloadDialog(GlassDialog):
         y muestra el tamaño resultante."""
         if self._area_updating or not hasattr(self, "lbl_size"):
             return
-        fir = self.area_mode() == "fir"
+        mode = self.area_mode()
+        fir, grid = mode == "fir", mode == "grid"
         self.fir_box.setEnabled(fir)
-        self.manual_box.setEnabled(not fir)
+        self.grid_box.setEnabled(grid)
+        self.manual_box.setEnabled(mode == "manual")
         if fir:
             env = self.fir_envelope()
             if env is not None:
                 self._set_fields(env)
-        glob = (not fir) and self.chk_global.isChecked()
+        g = self.grid() if grid else None
+        if g is not None:
+            self._set_fields(g.region)
+            self.lbl_grid.setText(g.summary())
+        glob = (mode == "manual") and self.chk_global.isChecked()
         for ed in (self.lat_n, self.lat_s, self.lon_w, self.lon_e):
-            ed.setEnabled(not fir and not glob)
+            ed.setEnabled(mode == "manual" and not glob)
         region = self.region()
         if fir and not self.selected_codes():
             self.lbl_size.setText("Marcá al menos una FIR (o pasá a modo manual).")
+        elif grid and g is None:
+            self.lbl_size.setText("No hay grillas con nombre habilitadas: Configurar áreas…")
         elif region is None:
             self.lbl_size.setText("Todo el globo.")
         else:
@@ -627,6 +724,8 @@ class DownloadDialog(GlassDialog):
                 notes.append("cruza el meridiano de Greenwich")
             if fir:
                 notes.append(f"margen {self.margin():g}° incluido")
+            if g is not None:
+                notes.append(f"grilla {g.name}")
             if notes:
                 txt += "  ·  " + ", ".join(notes)
             self.lbl_size.setText(txt)
@@ -644,8 +743,12 @@ class DownloadDialog(GlassDialog):
         fuente sin zona)."""
         if self.source is not None and self.source.region_filter == "ninguno":
             return None
-        if self.area_mode() == "fir":
+        mode = self.area_mode()
+        if mode == "fir":
             return self.fir_envelope()
+        if mode == "grid":
+            g = self.grid()
+            return g.region if g is not None else None
         if self.chk_global.isChecked():
             return None
         return (self.lat_n.value(), self.lat_s.value(), self.lon_w.value(), self.lon_e.value())
@@ -656,8 +759,10 @@ class DownloadDialog(GlassDialog):
         if dlg.exec():
             self._cfg.update(dlg.values())
             self._areas = A.areas_from_config(self._cfg)
+            self._grids = A.grids_from_config(self._cfg)
             self._cfg["download_area_codes"] = self.selected_codes()
             self._build_area_checks()
+            self._build_grid_combo()
             self.spin_margin.setValue(float(self._cfg.get("areas_margin_deg", A.DEFAULT_MARGIN_DEG)))
             fmt = self._cfg.get("areas_coord_format", "decimal")
             for ed in (self.lat_n, self.lat_s, self.lon_w, self.lon_e):
@@ -668,6 +773,7 @@ class DownloadDialog(GlassDialog):
         """Claves de configuración con la última selección del bloque Área."""
         return {"download_area_mode": self.area_mode(),
                 "download_area_codes": self.selected_codes(),
+                "download_grid": self.cb_grid.currentData() or self._cfg.get("download_grid"),
                 "download_manual_region": [self.lat_n.value(), self.lat_s.value(),
                                            self.lon_w.value(), self.lon_e.value()],
                 "download_area_draw": self.chk_draw.isChecked(),
@@ -786,6 +892,8 @@ class DownloadDialog(GlassDialog):
         if has_zone and default_region and self._region is None:
             self._set_fields(default_region)
         self._refresh_steps_hint()
+        if self.area_mode() == "grid":
+            self._apply_grid_res()
         self._refresh_area()
         # Ahora y otra vez cuando los widgets nuevos ya estén pulidos (fuentes,
         # métricas) y los viejos borrados: recién ahí el sizeHint es el real
@@ -888,13 +996,19 @@ class DownloadDialog(GlassDialog):
         """Bloque «Archivo a guardar» del diálogo."""
         return self.save_box.values()
 
-    def _on_profile_chosen(self, _key):
-        """Un perfil con regrillado (WAFC London: 1,25°) lleva también las
-        opciones de la fuente a esa grilla si la fuente puede entregarla (el
-        GFS: 1,25° desde 0,25°, sin suavizado); el regrillado del bloque
-        queda entonces sin nada que hacer. El suavizado se puede volver a
-        elegir después."""
+    def _on_profile_chosen(self, key):
+        """Lo que el perfil arrastra: su grilla con nombre (zona y
+        resolución), su modo de FL, y el regrillado del bloque lleva también
+        la fuente a esa grilla si puede entregarla (el GFS: 1° desde 0,25°,
+        sin suavizado), con lo que el regrillado queda sin nada que hacer.
+        El suavizado se puede volver a elegir después."""
         from .. import grib_encode as ge
+        p = self.save_box.profile_obj(key)
+        if p is not None and p.grid:
+            self.set_grid(p.grid)
+        if p is not None and p.fl_mode and self.level_checks and not self.source.flight_levels:
+            self._mode = p.fl_mode
+            self._apply_mode()
         res = ge.regrid_res(self.save_box.values())
         if res is None or self.form is None or self.source is None:
             return
@@ -1024,6 +1138,8 @@ class DownloadDialog(GlassDialog):
         day, cyc = self.cb_run.currentData() or self.source.latest_run()
         region = self.region()
         mode = self.area_mode() if region is not None else "manual"
+        g = self.grid() if mode == "grid" else None
+        codes = self.selected_codes() if mode == "fir" else ([g.tag] if g is not None else [])
         return DownloadJob(
             run_date=day, cycle=cyc, steps=self.hours(),
             variables=[k for k, c in self.var_checks.items() if c.isChecked()],
@@ -1033,7 +1149,7 @@ class DownloadDialog(GlassDialog):
             params=self.params(),
             suffix=("_dirvel" if self.wind_format() == "dirspeed" else "")
                    + ("_wafs" if self._wafs_options() is not None else ""),
-            area_mode=mode, area_codes=self.selected_codes() if mode == "fir" else [],
+            area_mode=mode, area_codes=codes,
             area_margin=self.margin() if mode == "fir" else 0.0,
             wind_format=self.wind_format(),
             save_opts=self.save_options(),

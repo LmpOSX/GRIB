@@ -81,7 +81,10 @@ class GFSSource(Source):
         for key, deg in RES_DEG.items():
             if abs(deg - float(res_deg)) < 1e-9:
                 out = {"resolucion": key, "suavizado": "ninguno"}
-                if key in LOCAL_ONLY:
+                # 1,00°: NOMADS lo publica sólo cada 3 h y sin los niveles
+                # intermedios (275/225/175 hPa, que usa el FDP), así que
+                # también se baja 0,25° y se toma un punto de cada 4
+                if key in LOCAL_ONLY or key == "1p00":
                     out["solo_0p25"] = True
                 return out
         return None

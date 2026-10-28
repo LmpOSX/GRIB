@@ -103,9 +103,14 @@ DEFAULTS = {
     "areas": [],                        # vacío = las cinco FIR argentinas por defecto
     "areas_margin_deg": 1.0,            # margen que se suma por fuera al usar el área
     "areas_coord_format": "decimal",    # 'decimal' | 'gm' (grados-minutos con hemisferio)
-    "download_area_mode": "fir",        # último modo del bloque Área: 'fir' | 'manual'
+    "download_area_mode": "fir",        # último modo del bloque Área: 'fir' | 'manual' | 'grid'
     "download_area_codes": ["SARR", "SACF", "SAMF", "SAEF", "SAVF"],   # casillas marcadas
     "download_manual_region": [4.0, -64.0, -90.0, -22.0],              # última zona manual (N, S, W, E)
+    "download_grid": "fdp_arg",         # última grilla con nombre elegida (areas.Grid.id)
+    # Grillas con nombre (ver areas.Grid) y perfiles del bloque «Archivo a
+    # guardar» (ver app/profiles.py): vacío = los de fábrica
+    "grids": [],
+    "profiles": [],
     "download_area_draw": False,        # dibujar los rectángulos del área en el mapa
     # Bloque «Archivo a guardar» (Preferencias ▸ Guardar; también en Obtener
     # datos, Generar GRIB y Guardar como…): cómo se graba lo que escribe el visor

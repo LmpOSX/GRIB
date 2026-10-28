@@ -721,6 +721,36 @@ class TestVentanaWAFS(_Base):
         dlg.close()
         dlg.deleteLater()
 
+    def test_exportar_zona_fdp(self):
+        """La grilla «FDP Arg» y el perfil FDP recortan a la zona del FDP."""
+        import shutil
+        from app.main_window import MainWindow
+        from app.dialogs.export_wafs_dialog import ExportWafsDialog
+        from app import wafs_format as wf, areas as A
+        src = os.path.join(self.DATA, "WAFS_like_test.grib2")
+        if not os.path.isfile(src) or wf.ec is None:
+            self.skipTest("sin datos de prueba o eccodes")
+        local = os.path.join(self._tmp.name, "w.grib2")
+        shutil.copy(src, local)
+        self.w = MainWindow()
+        self.w.open_file(local)
+        dlg = ExportWafsDialog(self.w, reader=self.w._reader, cfg=self.w._cfg,
+                               dest_dir=self._tmp.name, provenance=self.w._provenance)
+        self.assertFalse(dlg.chk_crop.isChecked())
+        box = dlg.save_box
+        box.cb_profile.setCurrentIndex(box.cb_profile.findData("fdp"))
+        box.cb_profile.activated.emit(box.cb_profile.currentIndex())
+        got = (dlg.lat_n.value(), dlg.lat_s.value(), dlg.lon_w.value(), dlg.lon_e.value())
+        self.assertTrue(dlg.chk_crop.isChecked())
+        self.assertEqual(got, A.FDP_REGION)
+        dlg.chk_crop.setChecked(False)
+        box.cb_regrid.setCurrentIndex(box.cb_regrid.findData("origen"))
+        dlg.cb_grid.setCurrentIndex(dlg.cb_grid.findData("fdp_arg"))
+        dlg.cb_grid.activated.emit(dlg.cb_grid.currentIndex())
+        self.assertTrue(dlg.chk_crop.isChecked())
+        self.assertEqual(box.values()["regrid"], "1.0")
+        dlg.close()
+
     def test_preferencias_wafs(self):
         from app.dialogs.settings_dialog import SettingsDialog
         self.w = SettingsDialog(None, cfg={"wafs_fl_max": 600, "wafs_extrapolate": True})

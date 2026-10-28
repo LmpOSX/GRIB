@@ -1,7 +1,8 @@
 # -*- coding: utf-8 -*-
 """Bloque «Archivo a guardar»: las mismas opciones en Preferencias (valores
 por defecto), Obtener datos, Exportar a WAFS, Generar GRIB y Guardar como…:
-perfil (NOAA GFS, WAFS WAFC Washington, WAFS WAFC London, FDP), regrillado,
+perfil (la tabla configurable de app/profiles.py: NOAA GFS, WAFS WAFC
+Washington, WAFS WAFC London, FDP y los propios), regrillado,
 viento, decimales del viento y de la temperatura, etiqueta de capa (por
 Nivel), empaquetado y centro y subcentro generadores, versión de tablas, orden de las celdas,
 filas intercaladas y primera longitud de una grilla global. `values()` devuelve
@@ -9,11 +10,13 @@ filas intercaladas y primera longitud de una grilla global. `values()` devuelve
 tables}
 más el motor del regrillado; `config_values()` las del bloque con el
 prefijo `save_`."""
-from PyQt6.QtCore import pyqtSignal
+from PyQt6.QtCore import Qt, pyqtSignal
 from PyQt6.QtWidgets import QWidget, QGridLayout, QLabel, QComboBox, QSpinBox
 
+from .. import areas as A
 from .. import fl_table as flt
 from .. import grib_encode as ge
+from .. import profiles as PR
 from ..grib_centres import CENTRES_C11, centre_text
 from .. import wind_format as wfm
 
@@ -24,15 +27,21 @@ class SaveOptionsBox(QWidget):
 
     def __init__(self, parent=None, cfg=None, show_decimals=True, show_label=True,
                  show_packing=True, show_centre=True, compact=False, rows=False,
-                 show_regrid=True):
+                 show_regrid=True, show_profile=True, profiles=None, grids=None):
         """`rows`: disposición apaisada (tres pares rótulo + combo por fila)
         para los diálogos de descarga y generación; si no, un renglón por
         opción, como en Preferencias y Guardar como. Sin `show_regrid`
-        (Generar GRIB, donde la grilla la define la tabla) no se regrilla."""
+        (Generar GRIB, donde la grilla la define la tabla) no se regrilla.
+        Sin `show_profile` (el editor de perfiles) no hay combo de perfil.
+        `profiles` / `grids`: las tablas (si no, las de la configuración)."""
         super().__init__(parent)
         self._cfg = cfg or {}
         self._show_regrid = show_regrid
         self._show_centre = show_centre
+        self._show_profile = show_profile
+        self._profiles = list(profiles) if profiles is not None else PR.profiles_from_config(self._cfg)
+        self._grids = list(grids) if grids is not None else A.grids_from_config(self._cfg)
+        self._chosen = None                 # último perfil elegido a mano (desempate)
         self._build(show_decimals, show_label, show_packing, show_centre, compact, rows)
         self.set_values(ge.options_from_config(self._cfg))
         # Arranca en «Personalizado» aunque los valores guardados coincidan
@@ -52,18 +61,17 @@ class SaveOptionsBox(QWidget):
 
     def _combos(self):
         self.cb_profile = QComboBox()
-        self.cb_profile.addItem("Personalizado", None)
-        for key, text, _vals in ge.PROFILES:
-            self.cb_profile.addItem(text, key)
-        self.cb_profile.setToolTip("Carga de una vez los valores de un formato conocido; después se "
-                                   "puede cambiar cualquiera (queda «Personalizado»). NOAA GFS: U/V, "
-                                   "filas de norte a sur, desde Greenwich. WAFS WAFC Washington y WAFS "
-                                   "WAFC London: 0,25° con la etiqueta ISA exacta; Washington desde "
-                                   "180°W (−180…180) y London desde Greenwich (0…360). FDP: como los "
-                                   "boletines GTS YUXM/YTXJ de EGRR: 1,25°, de sur a norte, desde "
-                                   "Greenwich, 1 decimal, JPEG 2000 sin pérdida, tablas versión 4 y "
-                                   "etiqueta nominal (OACI17, OACI56, INDRA14). Ningún perfil cambia "
-                                   "el centro: dice quién hizo el dato.")
+        self._fill_profile_combo()
+        self.cb_profile.setToolTip("Carga de una vez los valores de un perfil; después se puede "
+                                   "cambiar cualquiera (queda «Personalizado»). Un perfil puede "
+                                   "traer además una grilla con nombre y el modo de etiquetado de "
+                                   "los niveles, que los diálogos aplican al elegirlo. NOAA GFS: "
+                                   "U/V, filas de norte a sur, desde Greenwich. WAFS WAFC "
+                                   "Washington y London: 0,25° con la etiqueta ISA exacta, desde "
+                                   "180°W o desde Greenwich. FDP: lo que lee el FDP de INDRA (1°, "
+                                   "grilla FDP Arg de 51 × 36 puntos, 14 FL, JPEG 2000, tablas 4, "
+                                   "S→N, 0…360). Ningún perfil cambia el centro: dice quién hizo el "
+                                   "dato. Se editan en Preferencias ▸ Perfiles.")
         self.cb_regrid = QComboBox()
         for key, text in ge.REGRIDS:
             self.cb_regrid.addItem(text, key)
@@ -163,7 +171,7 @@ class SaveOptionsBox(QWidget):
         g.setContentsMargins(0, 0, 0, 0)
         g.setHorizontalSpacing(6)
         g.setVerticalSpacing(4)
-        pairs = [("Perfil", self.cb_profile, True),
+        pairs = [("Perfil", self.cb_profile, self._show_profile),
                  ("Regrillar", self.cb_regrid, self._show_regrid),
                  ("Viento", self.cb_wind, True),
                  ("Decimales viento", self.cb_dec_wind, show_decimals),
@@ -218,8 +226,11 @@ class SaveOptionsBox(QWidget):
             lbl.setObjectName("FieldNote" if compact else "")
             return lbl
 
-        g.addWidget(label("Perfil"), row, 0)
+        lbl = label("Perfil")
+        g.addWidget(lbl, row, 0)
         g.addWidget(self.cb_profile, row, 1, 1, 3)
+        lbl.setVisible(self._show_profile)
+        self.cb_profile.setVisible(self._show_profile)
         row += 1
 
         lbl = label("Regrillar")
@@ -340,12 +351,53 @@ class SaveOptionsBox(QWidget):
         self.cb_rows.setCurrentIndex(max(0, self.cb_rows.findData(o["rows"])))
         self.cb_lons.setCurrentIndex(max(0, self.cb_lons.findData(o["lons"])))
 
+    # ── Perfiles ─────────────────────────────────────────────────────────
+
+    def _fill_profile_combo(self):
+        cur = self.cb_profile.currentData() if self.cb_profile.count() else None
+        self.cb_profile.blockSignals(True)
+        try:
+            self.cb_profile.clear()
+            self.cb_profile.addItem("Personalizado", None)
+            for p in self._profiles:
+                if not p.enabled:
+                    continue
+                self.cb_profile.addItem(p.name or p.id, p.id)
+                tip = ge.describe(p.values)
+                extra = PR.describe(p, self._grids)
+                if extra:
+                    tip += "\n" + extra
+                self.cb_profile.setItemData(self.cb_profile.count() - 1, tip, Qt.ItemDataRole.ToolTipRole)
+            self.cb_profile.setCurrentIndex(max(0, self.cb_profile.findData(cur)) if cur else 0)
+        finally:
+            self.cb_profile.blockSignals(False)
+
+    def profiles(self):
+        return list(self._profiles)
+
+    def grids(self):
+        return list(self._grids)
+
+    def set_profiles(self, profiles, grids=None):
+        """Otra tabla de perfiles (y de grillas): se rehace el combo y se
+        vuelve a buscar cuál coincide con lo elegido."""
+        self._profiles = list(profiles)
+        if grids is not None:
+            self._grids = list(grids)
+        self._fill_profile_combo()
+        self._sync_profile()
+
     def profile(self):
         return self.cb_profile.currentData()
 
+    def profile_obj(self, key=None):
+        """El Profile elegido (o el de `key`), o None."""
+        return PR.find_profile(self._profiles, key if key is not None else self.profile())
+
     def set_profile(self, key):
-        vals = ge.profile_values(key)
+        vals = PR.profile_values(key, self._profiles)
         if vals is not None:
+            self._chosen = key
             self.set_values(vals)
 
     def _on_profile(self, _i):
@@ -360,8 +412,9 @@ class SaveOptionsBox(QWidget):
         self.changed.emit()
 
     def _sync_profile(self):
-        """El combo de perfil muestra el que coincide con lo elegido."""
-        key = ge.profile_of(self._combo_values())
+        """El combo de perfil muestra el que coincide con lo elegido (si hay
+        varios iguales, el elegido a mano)."""
+        key = PR.profile_of(self._combo_values(), self._profiles, prefer=self._chosen)
         self.cb_profile.blockSignals(True)
         self.cb_profile.setCurrentIndex(0 if key is None else max(0, self.cb_profile.findData(key)))
         self.cb_profile.blockSignals(False)

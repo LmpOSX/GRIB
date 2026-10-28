@@ -1,11 +1,13 @@
 # -*- coding: utf-8 -*-
-"""Diálogo «Áreas / FIR»: la misma tabla de áreas que la pestaña de
-Preferencias, abierta desde el bloque Área de «Obtener datos…». Devuelve en
-`values()` las claves `areas`, `areas_margin_deg` y `areas_coord_format`."""
+"""Diálogo «Áreas / FIR»: las mismas tablas de áreas y de grillas con
+nombre que la pestaña de Preferencias, abierto desde el bloque Área de
+«Obtener datos…». Devuelve en `values()` las claves `areas`,
+`areas_margin_deg`, `areas_coord_format` y `grids`."""
 from PyQt6.QtWidgets import QVBoxLayout, QHBoxLayout, QLabel, QPushButton, QFrame, QMessageBox
 
 from .glass_dialog import GlassDialog, add_shadow as _add_shadow
 from ..widgets.areas_editor import AreasEditor
+from ..widgets.grids_editor import GridsEditor
 
 
 class AreasDialog(GlassDialog):
@@ -27,7 +29,14 @@ class AreasDialog(GlassDialog):
         title.setObjectName("Heading")
         lay.addWidget(title)
         self.editor = AreasEditor(self._cfg, regions_fn=regions_fn)
-        lay.addWidget(self.editor, 1)
+        lay.addWidget(self.editor, 2)
+        lbl = QLabel("Grillas con nombre")
+        lbl.setObjectName("SubHeading")
+        lay.addWidget(lbl)
+        self.grids_editor = GridsEditor(self._cfg)
+        self.editor.cb_format.currentIndexChanged.connect(
+            lambda _i: self.grids_editor.set_coord_format(self.editor.coord_format()))
+        lay.addWidget(self.grids_editor, 1)
         row = QHBoxLayout()
         row.addStretch()
         b = QPushButton("Cancelar")
@@ -40,7 +49,7 @@ class AreasDialog(GlassDialog):
         lay.addLayout(row)
 
     def _accept(self):
-        errs = self.editor.errors()
+        errs = self.editor.errors() + self.grids_editor.errors()
         if errs:
             QMessageBox.warning(self, "Áreas / FIR", "Corregí la tabla antes de aplicar:\n"
                                 + "\n".join(errs[:6]))
@@ -48,4 +57,4 @@ class AreasDialog(GlassDialog):
         self.accept()
 
     def values(self):
-        return self.editor.values()
+        return dict(self.editor.values(), **self.grids_editor.values())

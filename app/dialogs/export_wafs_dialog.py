@@ -15,6 +15,7 @@ from PyQt6.QtWidgets import (
 
 from .glass_dialog import GlassDialog, add_shadow as _add_shadow
 from ..widgets.save_options import SaveOptionsBox
+from .. import areas as A
 from .. import wafs_format as wf
 from .. import fl_table as flt
 
@@ -195,6 +196,19 @@ class ExportWafsDialog(GlassDialog):
         self.lat_s = self._coord(grid, "Sur", 0, 2, -90, 90, ext[2])
         self.lon_w = self._coord(grid, "Oeste", 1, 0, -180, 360, ext[0])
         self.lon_e = self._coord(grid, "Este", 1, 2, -180, 360, ext[1])
+        self._grids = A.grids_from_config(self._cfg)
+        grid.addWidget(QLabel("Grilla"), 0, 4, alignment=Qt.AlignmentFlag.AlignRight)
+        self.cb_grid = QComboBox()
+        self.cb_grid.addItem("—", None)
+        for g in self._grids:
+            if g.enabled:
+                self.cb_grid.addItem(g.name, g.id)
+                self.cb_grid.setItemData(self.cb_grid.count() - 1, g.summary(), Qt.ItemDataRole.ToolTipRole)
+        self.cb_grid.setToolTip("Recorta a una grilla con nombre (Preferencias ▸ Áreas / FIR) y, si "
+                                "tiene resolución, regrilla a ella: FDP Arg da los 51 × 36 puntos "
+                                "del FDP de INDRA")
+        self.cb_grid.activated.connect(lambda _i: self.set_grid(self.cb_grid.currentData()))
+        grid.addWidget(self.cb_grid, 0, 5)
         lay.addLayout(grid)
         self.chk_crop.toggled.connect(self._on_crop_toggled)
         self._on_crop_toggled(False)
@@ -203,6 +217,7 @@ class ExportWafsDialog(GlassDialog):
         # como (perfil, regrillado, viento, decimales, orden, longitudes…)
         self._sub(lay, "Archivo a guardar")
         self.save_box = SaveOptionsBox(cfg=self._cfg, compact=True, rows=True)
+        self.save_box.profile_chosen.connect(self._on_profile_chosen)
         lay.addWidget(self.save_box)
 
         # Salida
@@ -275,6 +290,34 @@ class ExportWafsDialog(GlassDialog):
         key = (self._prov or {}).get("fuente", "")
         return {"gfs": "gfs", "wafs": "gfs", "ecmwf": "ecmwf", "icon": "icon",
                 "generica": "gen"}.get(key, "gfs")
+
+    def set_grid(self, gid, regrid=True):
+        """Recorte a la grilla con nombre y, salvo que lo ponga el perfil,
+        regrillado a su resolución (FDP Arg: 1°, 51 × 36 puntos)."""
+        g = A.find_grid(self._grids, gid)
+        if g is None:
+            return
+        self.cb_grid.setCurrentIndex(max(0, self.cb_grid.findData(gid)))
+        self.chk_crop.setChecked(True)
+        for sb, v in ((self.lat_n, g.north), (self.lat_s, g.south), (self.lon_w, g.west), (self.lon_e, g.east)):
+            sb.setValue(v)
+        if regrid and g.res:
+            from .. import grib_encode as ge
+            key = next((k for k, _t in ge.REGRIDS if k != "origen" and abs(float(k) - g.res) < 1e-9), None)
+            cb = self.save_box.cb_regrid
+            if key is not None and cb.findData(key) >= 0:
+                cb.setCurrentIndex(cb.findData(key))
+
+    def _on_profile_chosen(self, key):
+        """Lo que el perfil arrastra: su grilla (el regrillado ya lo puso el
+        perfil) y su modo de FL."""
+        p = self.save_box.profile_obj(key)
+        if p is None:
+            return
+        if p.grid:
+            self.set_grid(p.grid, regrid=False)
+        if p.fl_mode:
+            self.cb_mode.setCurrentIndex(max(0, self.cb_mode.findData(p.fl_mode)))
 
     def _on_crop_toggled(self, on):
         for w in (self.lat_n, self.lat_s, self.lon_w, self.lon_e):

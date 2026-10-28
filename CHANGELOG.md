@@ -1,5 +1,33 @@
 # Cambios
 
+## 0.7.0 — 2026-10-27
+
+- Perfil «FDP» a 1° (antes 1,25°) en Preferencias, Obtener datos, Generar,
+  Exportar a WAFS y Guardar como: el FDP de INDRA recorta 75°W–25°W,
+  55°S–20°S en una grilla fija de 51 × 36 puntos y rechaza cualquier otra
+  resolución. En Obtener datos el GFS pasa a 1° desde 0,25° (NOMADS publica
+  1° sólo cada 3 h y sin 275/225/175 hPa); en Generar, la resolución de la
+  grilla pasa a 1°.
+- Grillas con nombre (Preferencias ▸ Áreas / FIR): recuadro exacto más
+  resolución, sin margen, con nombre, nota y los puntos que resultan; de
+  fábrica, «FDP Arg», la que lee el FDP de INDRA (20°S–55°S, 75°W–25°W a
+  1°: 51 × 36 puntos). En Obtener datos y Generar es el tercer modo del
+  Área, «Grilla», junto a Manual y Por FIR (los campos quedan bloqueados con
+  el resumen; tocar algo pasa a Manual); en Exportar a WAFS, un combo del
+  recorte. El nombre del archivo y la procedencia llevan su etiqueta
+  (`FDPARG`).
+- Perfiles configurables (Preferencias ▸ Perfiles): los de fábrica se
+  editan y renombran (no se borran: se ocultan; «Restaurar de fábrica»), se
+  agregan y duplican propios. Un perfil arrastra, si se quiere, una grilla
+  con nombre y el modo de FL: el FDP trae «FDP Arg» e INDRA, y al elegirlo
+  Obtener datos, Generar y Exportar pasan a esa grilla y a ese modo. Si dos
+  perfiles tienen los mismos valores, el combo muestra el elegido a mano.
+- Ficha del punto: columna «FDP» y una línea con lo que mostraría el FDP de
+  INDRA para cada nivel: el viento de la capa superior de la banda y la
+  temperatura como promedio entero (truncado) de las dos capas, 0 si falta
+  alguna; avisa si la grilla no es la que lee el FDP o el punto queda fuera
+  de su caja. También va en el texto que se copia.
+
 ## 0.6.1 — 2026-10-26
 
 - NOAA GFS: resolución 1,25° (la del WAFS clásico), que NOMADS no publica:

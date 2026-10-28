@@ -55,6 +55,46 @@ class TestFormatos(unittest.TestCase):
         self.assertEqual(pq.temp_text({"t": None}), "—")
 
 
+class TestFDP(unittest.TestCase):
+    """Lo que muestra el FDP de INDRA, contra su pantalla real (27-10-2026,
+    archivo generado con 14 niveles, celda 32S 63W)."""
+
+    @staticmethod
+    def _col(rows):
+        return [dict(label=float(h), p=float(h), t=t + 273.15, spd=s, dir=175.0) for h, t, s in rows]
+
+    def test_bandas_como_la_pantalla_del_fdp(self):
+        col = self._col([(600, 40, 37), (500, 35, 36), (400, 30, 35), (350, 25, 53), (300, 20, 51)])
+        got = {fl: pq.fdp_query(col, fl, -31.87, -62.12) for fl in (300, 270, 240, 180)}
+        self.assertEqual({fl: (q["spd"], q["dir"], q["t"]) for fl, q in got.items()},
+                         {300: (51, 175, 25), 270: (53, 175, 27), 240: (35, 175, 32), 180: (36, 175, 37)})
+        self.assertTrue(all(q["inside"] and not q["t_missing"] for q in got.values()))
+        self.assertEqual(pq.fdp_text(got[240]), "banda 181–240 (F180+F240): 35 kt 175°  32 °C")
+
+    def test_falta_una_capa_da_cero(self):
+        """Con un solo nivel (lo que antes mostraba 0) la temperatura es 0."""
+        q = pq.fdp_query(self._col([(400, -22.5, 30)]), 240)
+        self.assertEqual((q["t"], q["t_missing"], q["spd"]), (0, True, 30))
+        self.assertIn("falta una capa", pq.fdp_text(q))
+
+    def test_bandas_raras_y_truncado(self):
+        self.assertEqual(pq.fdp_band(300)[2:], (240, 300))      # saltea F270
+        self.assertEqual(pq.fdp_band(410)[2:], (390, 450))      # F410 no se usa
+        self.assertEqual(pq.fdp_band(50)[2:], (50, 50))
+        self.assertIsNone(pq.fdp_band(0))
+        self.assertIsNone(pq.fdp_band(531))
+        q = pq.fdp_query(self._col([(500, -35, 10), (400, -40, 10)]), 240)
+        self.assertEqual(q["t"], -37)                           # −37,5 se trunca hacia 0
+        self.assertIsNone(pq.fdp_layer_fl({"label": 843.1}))     # etiqueta ISA: el FDP no la lee
+        self.assertFalse(pq.fdp_query(self._col([(400, 0, 10)]), 240, -10.0, -60.0)["inside"])
+
+    def test_grilla(self):
+        lats1, lons1 = np.arange(-60.0, -17.0, 1.0), np.arange(280.0, 341.0, 1.0)
+        self.assertIsNone(pq.fdp_grid_note(lats1, lons1))
+        self.assertIn("1°", pq.fdp_grid_note(np.arange(-90.0, 90.1, 1.25), np.arange(0.0, 360.0, 1.25)))
+        self.assertIn("no cubre", pq.fdp_grid_note(np.arange(-50.0, -17.0, 1.0), lons1))
+
+
 class TestLector(unittest.TestCase):
     def test_paso_por_hora(self):
         r = _reader_sintetico([850, 700])

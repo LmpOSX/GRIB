@@ -145,6 +145,7 @@ class GenerateGribDialog(GlassDialog):
         self._cfg = cfg if cfg is not None else {}
         self._dest_dir = dest_dir
         self._areas = list(A.areas_from_config(self._cfg))
+        self._grids = A.grids_from_config(self._cfg)
         self._area_checks = {}
         self._area_updating = False
         self._mode = flt.normalize_mode(self._cfg.get("wafs_mode", flt.DEFAULT_MODE))
@@ -250,12 +251,17 @@ class GenerateGribDialog(GlassDialog):
         zg.addWidget(QLabel("Área"), 0, 0, alignment=Qt.AlignmentFlag.AlignRight)
         self.rb_manual = QRadioButton("Manual")
         self.rb_fir = QRadioButton("Por FIR")
+        self.rb_grid = QRadioButton("Grilla")
+        self.rb_grid.setToolTip("Una grilla con nombre (Preferencias ▸ Áreas / FIR): recuadro exacto "
+                                "y resolución. FDP Arg es la que lee el FDP de INDRA: 51 × 36 a 1°.")
         grp = QButtonGroup(self)
         grp.addButton(self.rb_manual)
         grp.addButton(self.rb_fir)
+        grp.addButton(self.rb_grid)
         mode_cfg = self._cfg.get("download_area_mode", "fir")
-        (self.rb_fir if mode_cfg == "fir" else self.rb_manual).setChecked(True)
-        self.rb_manual.toggled.connect(lambda _c: self._refresh_area())
+        {"fir": self.rb_fir, "grid": self.rb_grid}.get(mode_cfg, self.rb_manual).setChecked(True)
+        for rb in (self.rb_manual, self.rb_fir, self.rb_grid):
+            rb.toggled.connect(self._on_area_mode_toggled)
         zg.addWidget(self.rb_manual, 0, 1)
         self.manual_box = QWidget()
         g = QGridLayout(self.manual_box)
@@ -294,7 +300,20 @@ class GenerateGribDialog(GlassDialog):
         fl.addStretch()
         zg.addWidget(self.fir_box, 1, 2)
         self._build_area_checks()
-        zg.addWidget(QLabel("Resolución"), 2, 0, alignment=Qt.AlignmentFlag.AlignRight)
+        zg.addWidget(self.rb_grid, 2, 1)
+        self.grid_box = QWidget()
+        gl = QHBoxLayout(self.grid_box)
+        gl.setContentsMargins(0, 0, 0, 0)
+        gl.setSpacing(8)
+        self.cb_grid = QComboBox()
+        self.cb_grid.currentIndexChanged.connect(self._on_grid_changed)
+        gl.addWidget(self.cb_grid)
+        self.lbl_grid = QLabel("")
+        self.lbl_grid.setObjectName("Hint")
+        gl.addWidget(self.lbl_grid, 1)
+        zg.addWidget(self.grid_box, 2, 2)
+        self._build_grid_combo()
+        zg.addWidget(QLabel("Resolución"), 3, 0, alignment=Qt.AlignmentFlag.AlignRight)
         res_row = QHBoxLayout()
         self.cb_res = QComboBox()
         for val, text in gg.RESOLUTIONS:
@@ -315,7 +334,7 @@ class GenerateGribDialog(GlassDialog):
         self.spin_margin.valueChanged.connect(lambda _v: self._refresh_area())
         res_row.addWidget(self.spin_margin)
         res_row.addStretch()
-        zg.addLayout(res_row, 2, 1, 1, 2)
+        zg.addLayout(res_row, 3, 1, 1, 2)
         self.lbl_size = QLabel("")
         self.lbl_size.setObjectName("Hint")
         self.lbl_size.setWordWrap(True)
@@ -351,6 +370,7 @@ class GenerateGribDialog(GlassDialog):
         srow.addWidget(lbl)
         self.save_box = SaveOptionsBox(cfg=self._cfg, show_decimals=False, show_centre=False,
                                        compact=True, rows=True, show_regrid=False)
+        self.save_box.profile_chosen.connect(self._on_profile_chosen)
         self.cb_wind = self.save_box.cb_wind
         self.cb_wind.setToolTip("La tabla se carga siempre en velocidad y dirección; el archivo se "
                                 "graba como U/V (UGRD/VGRD, como los modelos) o como dirección y "
@@ -492,8 +512,68 @@ class GenerateGribDialog(GlassDialog):
             self._area_updating = False
         self._refresh_area()
 
+    def _area_codes(self):
+        """Códigos FIR marcados, la etiqueta de la grilla con nombre, o nada."""
+        if self.area_mode() == "fir":
+            return self.selected_codes()
+        g = self.grid() if self.area_mode() == "grid" else None
+        return [g.tag] if g is not None else []
+
     def area_mode(self):
-        return "fir" if self.rb_fir.isChecked() else "manual"
+        if self.rb_fir.isChecked():
+            return "fir"
+        if self.rb_grid.isChecked():
+            return "grid"
+        return "manual"
+
+    # ── Grillas con nombre ───────────────────────────────────────────────
+
+    def _build_grid_combo(self):
+        cur = self.cb_grid.currentData() if self.cb_grid.count() else self._cfg.get("download_grid")
+        self.cb_grid.blockSignals(True)
+        try:
+            self.cb_grid.clear()
+            for g in self._grids:
+                if g.enabled:
+                    self.cb_grid.addItem(g.name, g.id)
+                    self.cb_grid.setItemData(self.cb_grid.count() - 1, g.note or g.summary(),
+                                             Qt.ItemDataRole.ToolTipRole)
+            self.cb_grid.setCurrentIndex(max(0, self.cb_grid.findData(cur)))
+        finally:
+            self.cb_grid.blockSignals(False)
+        self.rb_grid.setEnabled(self.cb_grid.count() > 0)
+
+    def grid(self):
+        return A.find_grid(self._grids, self.cb_grid.currentData()) if self.cb_grid.count() else None
+
+    def set_grid(self, gid):
+        """Pasa al modo Grilla con esa grilla: su zona y su resolución."""
+        i = self.cb_grid.findData(gid)
+        if i < 0:
+            return False
+        self.cb_grid.setCurrentIndex(i)
+        self.rb_grid.setChecked(True)
+        self._apply_grid_res()
+        self._refresh_area()
+        return True
+
+    def _apply_grid_res(self):
+        g = self.grid()
+        if g is not None and g.res:
+            i = self.cb_res.findData(float(g.res))
+            if i >= 0:
+                self.cb_res.setCurrentIndex(i)
+
+    def _on_grid_changed(self, _i):
+        if self.area_mode() == "grid":
+            self._apply_grid_res()
+            self._refresh_area()
+
+    def _on_area_mode_toggled(self, on):
+        if on and self.area_mode() == "grid":
+            self._apply_grid_res()
+        if on:
+            self._refresh_area()
 
     def selected_codes(self):
         return [a.code for a in self._areas if a.code in self._area_checks
@@ -508,8 +588,12 @@ class GenerateGribDialog(GlassDialog):
 
     def region(self):
         """Zona (top, bottom, left, right) elegida, o None si falta."""
-        if self.area_mode() == "fir":
+        mode = self.area_mode()
+        if mode == "fir":
             return self.fir_envelope()
+        if mode == "grid":
+            g = self.grid()
+            return g.region if g is not None else None
         return (self.lat_n.value(), self.lat_s.value(), self.lon_w.value(), self.lon_e.value())
 
     def set_region(self, top, bottom, left, right):
@@ -518,20 +602,46 @@ class GenerateGribDialog(GlassDialog):
             ed.set_value(v)
         self._refresh_area()
 
+    def _on_profile_chosen(self, key):
+        """Lo que el perfil arrastra: su grilla con nombre (zona y
+        resolución) o, si no tiene, su regrillado como resolución de la
+        grilla (acá no se regrilla: se genera directamente así), y su modo
+        de FL (la tabla conserva los valores de los FL que ya tenía)."""
+        p = self.save_box.profile_obj(key)
+        if p is None:
+            return
+        if not (p.grid and self.set_grid(p.grid)):
+            res = ge.regrid_res(p.values)
+            i = self.cb_res.findData(float(res)) if res is not None else -1
+            if i >= 0:
+                self.cb_res.setCurrentIndex(i)
+        if p.fl_mode:
+            self._apply_mode(p.fl_mode)
+
     def resolution(self):
         return float(self.cb_res.currentData() or 0.25)
 
     def _refresh_area(self):
         if self._area_updating or not hasattr(self, "lbl_size"):
             return
-        fir = self.area_mode() == "fir"
+        mode = self.area_mode()
+        fir, grid = mode == "fir", mode == "grid"
         self.fir_box.setEnabled(fir)
-        self.manual_box.setEnabled(not fir)
+        self.grid_box.setEnabled(grid)
+        self.manual_box.setEnabled(mode == "manual")
         self.spin_margin.setEnabled(fir)
         self.lbl_margin.setEnabled(fir)
+        g = self.grid() if grid else None
+        if g is not None:
+            for ed, v in zip((self.lat_n, self.lat_s, self.lon_w, self.lon_e), g.region):
+                ed.set_value(v)
+            self.lbl_grid.setText(g.summary(self.resolution()))
         region = self.region()
         if fir and not self.selected_codes():
             self.lbl_size.setText("Marcá al menos una FIR (o pasá a modo manual).")
+            return
+        if grid and g is None:
+            self.lbl_size.setText("No hay grillas con nombre habilitadas (Preferencias ▸ Áreas / FIR).")
             return
         if region is None:
             self.lbl_size.setText("")
@@ -841,7 +951,7 @@ class GenerateGribDialog(GlassDialog):
 
     def output_path(self):
         run, step = self.run(), self.step_h()
-        tag = A.area_tag(self.selected_codes() if self.area_mode() == "fir" else [], self.area_mode())
+        tag = A.area_tag(self._area_codes(), self.area_mode())
         base = self.name.text().strip() or gg.default_basename(run, step, self.resolution(), tag,
                                                                  self.wind_format(), self._mode,
                                                                  steps=self.hours())
@@ -880,8 +990,7 @@ class GenerateGribDialog(GlassDialog):
             if not ge.is_default(dict(opts, wind="uv")):
                 data, ginfo = ge.recode(data, opts, labeled=True, mode=self._mode)
                 info["guardado"] = dict({k: ginfo[k] for k in ge.KEYS}, descripcion=ge.describe(opts))
-            prov = gg.provenance(rows, info, self.area_mode(),
-                                 self.selected_codes() if self.area_mode() == "fir" else [],
+            prov = gg.provenance(rows, info, self.area_mode(), self._area_codes(),
                                  self.margin() if self.area_mode() == "fir" else 0.0, region)
             gg.write_generated(path, data, prov)
         except Exception as exc:
@@ -895,6 +1004,8 @@ class GenerateGribDialog(GlassDialog):
         self._cfg["download_h_step"] = int(self.h_step.value())
         self._cfg.update(self.save_box.config_values())
         self._cfg["download_area_mode"] = self.area_mode()
+        if self.area_mode() == "grid" and self.cb_grid.currentData():
+            self._cfg["download_grid"] = self.cb_grid.currentData()
         if self.area_mode() == "fir":
             self._cfg["download_area_codes"] = self.selected_codes()
         else:

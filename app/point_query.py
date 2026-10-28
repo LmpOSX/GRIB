@@ -6,6 +6,8 @@ salida al estilo del FDP, sin interfaz gráfica.
 * parse_overflown_time / format_overflown_time: `YYMMDDHHMM` en UTC.
 * report_text: el bloque de texto que se copia al portapapeles con la
   capa inferior, la superior y el valor en el FL pedido.
+* fdp_query / fdp_text: lo que respondería el FDP de INDRA para un FL
+  (sacado de su binario: P_VALIDATE_GRIB_LEVEL y F_GET_TEMPERATURE).
 """
 import datetime as dt
 import math
@@ -126,8 +128,107 @@ def temp_text(layer):
     return f"{layer['t'] - KELVIN:.1f} °C"
 
 
+# ── El FDP de INDRA (proceso m_323_grib) ─────────────────────────────────────
+# Lee sólo estas capas, por la etiqueta en hPa del inventario de wgrib2
+# («NNN mb»), cada una con su FL
+FDP_LAYERS = {850: 50, 700: 100, 600: 140, 500: 180, 400: 240, 350: 270, 300: 300,
+              275: 320, 250: 340, 225: 360, 200: 390, 175: 410, 150: 450, 100: 530}
+# Bandas de consulta (desde, hasta, capa inferior, capa superior): el viento
+# es el de la capa superior y la temperatura el promedio entero (truncado)
+# de las dos, 0 si falta alguna. Tal cual el binario: 271–300 promedia F240
+# con F300 (saltea F270) y F410 no se usa nunca
+FDP_BANDS = [(1, 50, 50, 50), (51, 100, 50, 100), (101, 140, 100, 140), (141, 180, 140, 180),
+             (181, 240, 180, 240), (241, 270, 240, 270), (271, 300, 240, 300),
+             (301, 320, 300, 320), (321, 340, 320, 340), (341, 360, 340, 360),
+             (361, 390, 360, 390), (391, 450, 390, 450), (451, 530, 450, 530)]
+# Grilla fija del FDP: 1°, 51 × 36 puntos desde 55°S 75°W
+FDP_BOX = (-55.0, -20.0, -75.0, -25.0)       # lat S, lat N, lon W, lon E (areas.FDP_REGION)
+FDP_RES = 1.0
+
+
+def _ada_int(x):
+    """Conversión de Ada a entero: redondea, y las mitades se alejan del 0."""
+    return int(math.copysign(math.floor(abs(float(x)) + 0.5), float(x)))
+
+
+def fdp_band(fl):
+    """(desde, hasta, FL inferior, FL superior) de la banda del FL, o None."""
+    fl = int(fl)
+    return next((b for b in FDP_BANDS if b[0] <= fl <= b[1]), None)
+
+
+def fdp_layer_fl(layer):
+    """FL del FDP de una capa del archivo (por su etiqueta en hPa), o None."""
+    lab = None if layer is None else layer.get("label")
+    if lab is None or abs(lab - round(lab)) > 1e-6:
+        return None
+    return FDP_LAYERS.get(int(round(lab)))
+
+
+def fdp_grid_note(lats, lons):
+    """None si la grilla le sirve al FDP (1°, en grados enteros, cubriendo
+    su caja); si no, por qué la rechazaría o le faltarían puntos."""
+    if lats is None or lons is None or len(lats) < 2 or len(lons) < 2:
+        return "grilla desconocida"
+    dlat, dlon = abs(float(lats[1]) - float(lats[0])), abs(float(lons[1]) - float(lons[0]))
+    if abs(dlat - FDP_RES) > 1e-6 or abs(dlon - FDP_RES) > 1e-6:
+        return f"el FDP sólo lee 1° (este archivo es de {dlon:g}°)"
+    if abs(float(lats[0]) - round(float(lats[0]))) > 1e-6 or abs(float(lons[0]) - round(float(lons[0]))) > 1e-6:
+        return "el FDP necesita los puntos en grados enteros"
+    s, n, w, e = FDP_BOX
+    lo = [((float(x) + 180.0) % 360.0) - 180.0 for x in lons]
+    if min(lats) > s or max(lats) < n or not (any(abs(x - w) < 1e-6 for x in lo) and any(abs(x - e) < 1e-6 for x in lo)):
+        return "el archivo no cubre la caja del FDP (75°W–25°W, 55°S–20°S)"
+    return None
+
+
+def fdp_query(column, fl, lat=None, lon=None):
+    """Lo que mostraría el FDP para el FL en esta celda, a partir de la
+    columna del archivo (column_query): {'band', 'spd', 'dir', 't' (°C
+    entero), 't_missing', 'wind_missing', 'inside'}, o None si el FL está
+    fuera de las bandas (0 o más de 530)."""
+    band = fdp_band(fl)
+    if band is None:
+        return None
+    by_fl = {}
+    for layer in column or []:
+        f = fdp_layer_fl(layer)
+        if f is not None:
+            by_fl[f] = layer
+    lower, upper = by_fl.get(band[2]), by_fl.get(band[3])
+    out = {"band": band, "spd": None, "dir": None, "t": 0, "t_missing": True, "wind_missing": True,
+           "inside": True}
+    if lat is not None and lon is not None:
+        s, n, w, e = FDP_BOX
+        x = ((float(lon) + 180.0) % 360.0) - 180.0
+        out["inside"] = s <= float(lat) <= n and w <= x <= e
+    if upper is not None and upper.get("spd") is not None:
+        out.update(spd=_ada_int(upper["spd"]), dir=_ada_int(upper["dir"]) % 360, wind_missing=False)
+    if (lower is not None and upper is not None and lower.get("t") is not None
+            and upper.get("t") is not None):
+        ta, tb = _ada_int(lower["t"] - KELVIN), _ada_int(upper["t"] - KELVIN)
+        out.update(t=int((ta + tb) / 2), t_missing=False)
+    return out
+
+
+def fdp_text(q, band=True):
+    """`35 kt 175°  32 °C` (y la banda: `181–240: F180+F240 → …`)."""
+    if q is None:
+        return "fuera de las bandas del FDP"
+    lo, hi, a, b = q["band"]
+    wind = "—" if q["wind_missing"] else f"{q['spd']} kt {q['dir']:03d}°"
+    temp = f"{q['t']} °C" + (" (falta una capa)" if q["t_missing"] else "")
+    txt = f"{wind}  {temp}"
+    if band:
+        layers = f"F{a:03d}" if a == b else f"F{a:03d}+F{b:03d}"
+        txt = f"banda {lo}–{hi} ({layers}): {txt}"
+    if not q["inside"]:
+        txt += " · fuera de la caja del FDP"
+    return txt
+
+
 def report_text(lat, lon, when_text, fl, step, step_idx, in_window, res, variation=0.0,
-                cell="nearest", column=None):
+                cell="nearest", column=None, fdp_note=None):
     """Bloque de texto (para copiar) con la consulta y sus resultados, al
     estilo del FDP. `res` es lo que devuelve GribReader.point_query;
     `column`, si se da, es la columna completa de la celda (column_query)
@@ -161,6 +262,9 @@ def report_text(lat, lon, when_text, fl, step, step_idx, in_window, res, variati
         lines.append(f"{name} {layer_name(layer)}{extra}")
         lines.append(f"  Viento (kt / grados): {wind_text(layer, variation)}")
         lines.append(f"  Temperatura (°C): {temp_text(layer)}")
+    if column:
+        q = fdp_query(column, fl, lat, lon)
+        lines.append(f"FDP F{int(fl):03d}: {fdp_text(q)}" + (f" · {fdp_note}" if fdp_note else ""))
     if column:
         lines.append("Perfil de la celda (de arriba hacia abajo):")
         w = max(len(layer_name(l)) for l in column)

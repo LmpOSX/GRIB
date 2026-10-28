@@ -7,7 +7,11 @@
 * Fuentes: habilitar cada fuente, sus parámetros, credenciales y prueba.
 * Descarga: plazos y destino por defecto de «Obtener datos…», caché.
 * Áreas / FIR: tabla de áreas de descarga (recuadros por FIR), margen y
-  formato de coordenadas; exportar / importar la tabla.
+  formato de coordenadas; exportar / importar la tabla; y la tabla de
+  grillas con nombre (FDP Arg y las propias).
+* Guardar: valores por defecto del bloque «Archivo a guardar».
+* Perfiles: los perfiles de ese bloque (de fábrica y propios), con la
+  grilla y el modo de FL que arrastran.
 * Motor: biblioteca ecCodes o programa wgrib2 (con su ruta y un botón para
   probarlo).
 
@@ -19,7 +23,7 @@ import os
 from PyQt6.QtWidgets import (
     QVBoxLayout, QHBoxLayout, QGridLayout, QLabel, QPushButton, QFrame,
     QColorDialog, QSlider, QTabWidget, QWidget, QComboBox, QCheckBox, QSpinBox,
-    QRadioButton, QButtonGroup, QLineEdit, QFileDialog,
+    QRadioButton, QButtonGroup, QLineEdit, QFileDialog, QScrollArea,
 )
 from PyQt6.QtCore import Qt, pyqtSignal
 from PyQt6.QtGui import QColor, QPainter, QBrush
@@ -35,6 +39,8 @@ from ..fl_table import MODES, MODE_LABELS, DEFAULT_MODE
 from ..sources import all_sources, source_config, set_source_config, source_label
 from ..sources.cache import DownloadCache
 from ..widgets.areas_editor import AreasEditor
+from ..widgets.grids_editor import GridsEditor
+from ..widgets.profiles_editor import ProfilesEditor
 from ..widgets.save_options import SaveOptionsBox
 
 
@@ -71,7 +77,8 @@ class SettingsDialog(GlassDialog):
         ("#8A3A5F", "Bordo"),
     ]
 
-    TABS = ("Apariencia", "Mapa", "Fuentes", "Descarga", "Áreas / FIR", "WAFS", "Guardar", "Motor")
+    TABS = ("Apariencia", "Mapa", "Fuentes", "Descarga", "Áreas / FIR", "WAFS", "Guardar", "Perfiles",
+            "Motor")
 
     def __init__(self, parent=None, cfg: dict = None, owner=None):
         """`parent` es la ventana sobre la que se apila (puede ser otro
@@ -113,7 +120,8 @@ class SettingsDialog(GlassDialog):
         self.tabs.addTab(self._tab_areas(), self.TABS[4])
         self.tabs.addTab(self._tab_wafs(), self.TABS[5])
         self.tabs.addTab(self._tab_guardar(), self.TABS[6])
-        self.tabs.addTab(self._tab_motor(), self.TABS[7])
+        self.tabs.addTab(self._tab_perfiles(), self.TABS[7])
+        self.tabs.addTab(self._tab_motor(), self.TABS[8])
         lay.addWidget(self.tabs, 1)
 
         btn_row = QHBoxLayout()
@@ -479,6 +487,16 @@ class SettingsDialog(GlassDialog):
     # ── Áreas / FIR ──
     def _tab_areas(self):
         w, lay = self._page()
+        scroll = QScrollArea()
+        scroll.setWidgetResizable(True)
+        scroll.setFrameShape(QFrame.Shape.NoFrame)
+        scroll.setHorizontalScrollBarPolicy(Qt.ScrollBarPolicy.ScrollBarAlwaysOff)
+        inner = QWidget()
+        lay.addWidget(scroll, 1)
+        scroll.setWidget(inner)
+        lay = QVBoxLayout(inner)
+        lay.setContentsMargins(0, 0, 8, 0)
+        lay.setSpacing(10)
         row = QHBoxLayout()
         lbl = QLabel("Áreas de descarga por FIR (envolvente de las marcadas + margen)")
         lbl.setObjectName("SubHeading")
@@ -495,8 +513,25 @@ class SettingsDialog(GlassDialog):
         if owner is not None and hasattr(owner, "_fir_regions"):
             regions_fn = lambda: getattr(owner, "_fir_regions", {})   # noqa: E731
         self.areas_editor = AreasEditor(self._cfg, regions_fn=regions_fn)
-        lay.addWidget(self.areas_editor, 1)
+        lay.addWidget(self.areas_editor)
+        lbl = QLabel("Grillas con nombre (recuadro exacto y resolución; sin margen)")
+        lbl.setObjectName("SubHeading")
+        lay.addWidget(lbl)
+        self.grids_editor = GridsEditor(self._cfg)
+        self.areas_editor.cb_format.currentIndexChanged.connect(
+            lambda _i: self.grids_editor.set_coord_format(self.areas_editor.coord_format()))
+        self.grids_editor.changed.connect(self._on_grids_changed)
+        lay.addWidget(self.grids_editor)
+        lay.addStretch()
         return w
+
+    def _on_grids_changed(self):
+        """Los perfiles y el bloque de Guardar ven la tabla de grillas nueva."""
+        grids = self.grids_editor.grids()
+        if hasattr(self, "profiles_editor"):
+            self.profiles_editor.set_grids(grids)
+        if hasattr(self, "save_box"):
+            self.save_box.set_profiles(self.save_box.profiles(), grids)
 
     def _open_fir_dialog(self):
         """«Límites de FIR»: por la ventana principal si la hay (aplica y
@@ -532,6 +567,18 @@ class SettingsDialog(GlassDialog):
         if errs:
             self.tabs.setCurrentIndex(self.TABS.index("Áreas / FIR"))
             QMessageBox.warning(self, "Preferencias", "Corregí la tabla de áreas antes de aplicar:\n"
+                                + "\n".join(errs[:6]))
+            return
+        errs = self.grids_editor.errors()
+        if errs:
+            self.tabs.setCurrentIndex(self.TABS.index("Áreas / FIR"))
+            QMessageBox.warning(self, "Preferencias", "Corregí la tabla de grillas antes de aplicar:\n"
+                                + "\n".join(errs[:6]))
+            return
+        errs = self.profiles_editor.errors()
+        if errs:
+            self.tabs.setCurrentIndex(self.TABS.index("Perfiles"))
+            QMessageBox.warning(self, "Preferencias", "Corregí los perfiles antes de aplicar:\n"
                                 + "\n".join(errs[:6]))
             return
         self.accept()
@@ -602,7 +649,8 @@ class SettingsDialog(GlassDialog):
         self._hint(lay, "Valores por defecto del bloque «Archivo a guardar» de Obtener datos…, "
                         "Exportar a WAFS…, Generar GRIB… y Guardar como…; también se aplican al "
                         "convertir un archivo al abrirlo. El perfil carga de una vez los valores de "
-                        "NOAA GFS, WAFS WAFC Washington, WAFS WAFC London o FDP. Regrillado bilineal a "
+                        "uno de la pestaña Perfiles (NOAA GFS, WAFS WAFC Washington, WAFS WAFC London, "
+                        "FDP o los propios). Regrillado bilineal a "
                         "0,25, 0,50, 1,00 o 1,25° (con wgrib2 si es el motor y tiene la "
                         "interpolación). Viento como U/V o como dirección y velocidad; decimales del "
                         "viento y de la temperatura (factor decimal con escala binaria 0: se "
@@ -615,6 +663,20 @@ class SettingsDialog(GlassDialog):
                         "dirección en grados verdaderos, y las coordenadas en millonésimas de "
                         "grado: lo fija el formato. El visor muestra °C y kt.")
         lay.addStretch()
+        return w
+
+    # ── Perfiles ──
+    def _tab_perfiles(self):
+        w, lay = self._page()
+        self._sub(lay, "Perfiles del bloque «Archivo a guardar»")
+        self._hint(lay, "Cada perfil es un juego completo de valores del bloque con nombre, más la "
+                        "grilla con nombre (Áreas / FIR) y el modo de etiquetado de los niveles que "
+                        "arrastra al elegirlo. Los de fábrica se editan y renombran, no se borran: se "
+                        "ocultan; «Restaurar de fábrica» los devuelve.")
+        self.profiles_editor = ProfilesEditor(self._cfg, grids=self.grids_editor.grids())
+        self.profiles_editor.changed.connect(
+            lambda: self.save_box.set_profiles(self.profiles_editor.profiles(), self.grids_editor.grids()))
+        lay.addWidget(self.profiles_editor, 1)
         return w
 
     def _show_fl_table(self):
@@ -753,6 +815,8 @@ class SettingsDialog(GlassDialog):
             "download_h_to": int(self.h_to.value()),
             "download_h_step": int(self.h_step.value()),
             **self.areas_editor.values(),
+            **self.grids_editor.values(),
+            **self.profiles_editor.values(),
             "wafs_convert": self.chk_wafs.isChecked(),
             "wafs_convert_local": self.chk_wafs_local.isChecked(),
             "wafs_mode": self.cb_wafs_mode.currentData() or DEFAULT_MODE,

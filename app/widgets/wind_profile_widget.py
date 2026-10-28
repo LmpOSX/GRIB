@@ -9,7 +9,8 @@ clic: una fila por nivel del archivo, de arriba hacia abajo, con
   largo es la velocidad,
 * la barba sobre una brújula con el norte arriba (barbas del lado del
   hemisferio, como en el mapa) y
-* los números: kt, dirección (° y °M si hay variación) y temperatura.
+* los números: kt, dirección (° y °M si hay variación) y temperatura, y
+* si se da, lo que mostraría el FDP de INDRA para ese FL (columna «FDP»).
 
 El FL pedido se intercala (interpolado) y se resalta con el acento; si
 coincide con un nivel del archivo se resalta ese. Con muchos niveles las
@@ -62,15 +63,19 @@ class WindProfileWidget(QWidget):
         self._variation = 0.0
         self._southern = False
         self._max_h = 440
+        self._fdp = None           # {FL: texto} de la columna «FDP», o None
 
     # ── Datos ────────────────────────────────────────────────────────────────
 
-    def set_layers(self, layers, value=None, variation=0.0, southern=False):
+    def set_layers(self, layers, value=None, variation=0.0, southern=False, fdp=None):
         """`layers`: la columna del archivo de abajo hacia arriba (lo que da
         GribReader.column_query); `value`: la capa del FL pedido (point_query
-        ['value']) que se intercala por presión, o None."""
+        ['value']) que se intercala por presión, o None; `fdp`: {FL: texto}
+        de lo que mostraría el FDP, por el FL de cada capa que el FDP lee y
+        el FL pedido, o None (sin columna)."""
+        from ..point_query import fdp_layer_fl
         rows = [dict(name=level_name(l), spd=l.get("spd"), dir=l.get("dir"), t=l.get("t"),
-                     p=float(l["p"]), hl=False) for l in (layers or [])]
+                     p=float(l["p"]), hl=False, fdp_fl=fdp_layer_fl(l)) for l in (layers or [])]
         if value is not None and value.get("p") is not None:
             p = float(value["p"])
             same = [r for r in rows if abs(r["p"] - p) < 0.05]
@@ -79,8 +84,9 @@ class WindProfileWidget(QWidget):
                 same[0]["name"] = level_name(value) if value.get("fl") is not None else same[0]["name"]
             else:
                 rows.append(dict(name=level_name(value), spd=value.get("spd"), dir=value.get("dir"),
-                                 t=value.get("t"), p=p, hl=True))
+                                 t=value.get("t"), p=p, hl=True, fdp_fl=value.get("fl")))
         rows.sort(key=lambda r: r["p"])          # menos presión primero: arriba
+        self._fdp = dict(fdp) if fdp else None
         self._rows = rows
         self._variation = float(variation or 0.0)
         self._southern = bool(southern)
@@ -138,7 +144,10 @@ class WindProfileWidget(QWidget):
         s = "8888 kt  888°"
         if abs(self._variation) >= 0.05:
             s += "  888°M"
-        return s + "  -88.8 °C"
+        s += "  -88.8 °C"
+        if self._fdp:
+            s += "   888 kt 888° -88 °C"
+        return s
 
     def sizeHint(self):
         if not self._rows:
@@ -162,6 +171,11 @@ class WindProfileWidget(QWidget):
         if r["t"] is not None:
             txt += f"  {r['t'] - KELVIN:5.1f} °C"
         return txt
+
+    def _fdp_text(self, r):
+        if not self._fdp or r.get("fdp_fl") is None:
+            return ""
+        return self._fdp.get(int(r["fdp_fl"]), "")
 
     # ── Dibujo ───────────────────────────────────────────────────────────────
 
@@ -189,6 +203,10 @@ class WindProfileWidget(QWidget):
         for x, t in zip((x_name, x_bar, x_comp, x_txt), hdr):
             p.drawText(QRectF(x, y, total_w - x, self._header_h()),
                        Qt.AlignmentFlag.AlignLeft | Qt.AlignmentFlag.AlignVCenter, t)
+        x_fdp = x_txt + fm.horizontalAdvance(self._text_sample().split("   888 kt")[0]) + GAP
+        if self._fdp:
+            p.drawText(QRectF(x_fdp, y, total_w - x_fdp, self._header_h()),
+                       Qt.AlignmentFlag.AlignLeft | Qt.AlignmentFlag.AlignVCenter, "FDP")
         y = self._header_h()
         dense = row_h < fh
         k = max(1, int(math.ceil(fh / float(row_h)))) if dense else 1
@@ -231,6 +249,10 @@ class WindProfileWidget(QWidget):
                        Qt.AlignmentFlag.AlignLeft | Qt.AlignmentFlag.AlignVCenter, r["name"])
             p.drawText(QRectF(x_txt, ty, total_w - x_txt, fh),
                        Qt.AlignmentFlag.AlignLeft | Qt.AlignmentFlag.AlignVCenter, self._row_text(r))
+            fdp = self._fdp_text(r)
+            if fdp:
+                p.drawText(QRectF(x_fdp, ty, total_w - x_fdp, fh),
+                           Qt.AlignmentFlag.AlignLeft | Qt.AlignmentFlag.AlignVCenter, fdp)
         p.end()
 
     def _draw_barb(self, p, c, size, spd, direc, c_txt, c_dim):

@@ -48,6 +48,21 @@ ARGENTINA_CODES = [a["code"] for a in DEFAULT_AREAS]
 VERIFY_NOTE = "a verificar contra AIP ENR 2.1"
 MANUAL_TAG = "MANUAL"
 DEFAULT_MARGIN_DEG = 1.0
+# Grillas con nombre (ver `Grid`): un recuadro exacto más, si se quiere, la
+# resolución; se usan tal cual, sin envolvente ni margen. De fábrica, la que
+# lee el FDP de INDRA (Argentina): recorta 75°W–25°W, 55°S–20°S a 1° en una
+# grilla fija de 51 × 36 puntos, así que la zona exacta da justo esa grilla.
+# El perfil «FDP» la elige sola. La tabla vive en la configuración (`grids`)
+# y se edita en Preferencias ▸ Áreas / FIR
+FACTORY_GRIDS = [
+    {"id": "fdp_arg", "name": "FDP Arg", "north": -20.0, "south": -55.0, "west": -75.0,
+     "east": -25.0, "res": 1.0, "enabled": True,
+     "note": "La grilla que lee el FDP de INDRA: 20°S–55°S, 75°W–25°W a 1°, 51 × 36 puntos"},
+]
+FDP_REGION = (-20.0, -55.0, -75.0, -25.0)     # la de FACTORY_GRIDS[0], para los tests
+FDP_RES = 1.0
+GRID_RES_CHOICES = [(None, "La de la fuente"), (0.25, "0,25°"), (0.5, "0,50°"), (1.0, "1,00°"),
+                    (1.25, "1,25°")]
 COORD_FORMATS = [("decimal", "Grados decimales con signo (−34.03)"),
                  ("gm", "Grados y minutos con hemisferio (34°01.8'S)")]
 
@@ -163,6 +178,14 @@ def format_coord(value, kind, fmt="decimal"):
     return f"{deg:0{nd}d}°{mn:04.1f}'{hem}"
 
 
+def short_coord(value, kind):
+    """`20°S`, `75°W`, `34.5°S`: para resúmenes cortos."""
+    value = float(value)
+    hem = ("S" if value < 0 else "N") if kind == "lat" else ("W" if value < 0 else "E")
+    a = abs(value)
+    return f"{a:g}°{hem}"
+
+
 # ── Áreas ────────────────────────────────────────────────────────────────────
 
 class Area:
@@ -205,6 +228,166 @@ class Area:
 
     def __repr__(self):
         return f"Area({self.code}, N{self.north:g} S{self.south:g} W{self.west:g} E{self.east:g})"
+
+
+class Grid:
+    """Grilla con nombre: recuadro exacto (norte, sur, oeste, este) más la
+    resolución (grados; None = la que tenga la fuente). `id` es estable (no
+    se edita; los de fábrica conservan el suyo), `name` es lo que se
+    muestra; `builtin` marca los de fábrica, que se ocultan en vez de
+    borrarse (`enabled`)."""
+    FIELDS = ("id", "name", "north", "south", "west", "east", "res", "note", "builtin", "enabled")
+
+    def __init__(self, id, name="", north=0.0, south=0.0, west=0.0, east=0.0, res=None,
+                 note="", builtin=False, enabled=True):
+        self.id = str(id or "").strip()
+        self.name = str(name or "").strip()
+        self.north, self.south = float(north), float(south)
+        self.west, self.east = float(west), float(east)
+        self.res = None if res in (None, "", 0) else float(res)
+        self.note = str(note or "").strip()
+        self.builtin = bool(builtin)
+        self.enabled = bool(enabled)
+
+    @classmethod
+    def from_dict(cls, d):
+        d = dict(d or {})
+        return cls(d.get("id", ""), d.get("name", ""), d.get("north", 0.0), d.get("south", 0.0),
+                   d.get("west", 0.0), d.get("east", 0.0), d.get("res"), d.get("note", ""),
+                   d.get("builtin", False), d.get("enabled", True))
+
+    def to_dict(self):
+        return {k: getattr(self, k) for k in self.FIELDS}
+
+    @property
+    def region(self):
+        return (self.north, self.south, self.west, self.east)
+
+    @property
+    def tag(self):
+        """Etiqueta para el nombre del archivo: el nombre sin espacios ni
+        signos, en mayúsculas (`FDPARG`), o el id."""
+        t = re.sub(r"[^A-Za-z0-9]+", "", self.name).upper()[:12]
+        return t or re.sub(r"[^A-Za-z0-9]+", "", self.id).upper()[:12] or "GRILLA"
+
+    def size(self, res=None):
+        """(columnas, filas) a la resolución propia (o a `res`), o None."""
+        r = self.res if res is None else res
+        if not r:
+            return None
+        s = region_size(self.region, r)
+        return (s["nlon"], s["nlat"])
+
+    def summary(self, res=None):
+        """`20°S–55°S · 75°W–25°W · 1° → 51 × 36 puntos`."""
+        txt = (f"{short_coord(self.north, 'lat')}–{short_coord(self.south, 'lat')} · "
+               f"{short_coord(self.west, 'lon')}–{short_coord(self.east, 'lon')}")
+        r = self.res if res is None else res
+        if r:
+            n = self.size(r)
+            txt += f" · {r:g}° → {n[0]} × {n[1]} puntos"
+        return txt
+
+    def same_values(self, other):
+        return all(getattr(self, k) == getattr(other, k)
+                   for k in ("name", "north", "south", "west", "east", "res", "note"))
+
+    def copy(self):
+        return Grid.from_dict(self.to_dict())
+
+    def __repr__(self):
+        return f"Grid({self.id}, {self.name!r}, N{self.north:g} S{self.south:g} W{self.west:g} E{self.east:g}, {self.res})"
+
+
+def validate_grid(grid):
+    """Mensaje de error (claro, para mostrar) o None."""
+    name = grid.name or grid.id or "(sin nombre)"
+    if not grid.name:
+        return "Una grilla no tiene nombre."
+    for v, what in ((grid.north, "norte"), (grid.south, "sur")):
+        if not -90.0 <= v <= 90.0:
+            return f"{name}: latitud {what} fuera de −90…90."
+    for v, what in ((grid.west, "oeste"), (grid.east, "este")):
+        if not -180.0 <= v <= 180.0:
+            return f"{name}: longitud {what} fuera de −180…180."
+    if not grid.north > grid.south:
+        return f"{name}: la latitud norte debe ser mayor que la sur."
+    if not grid.west < grid.east:
+        return f"{name}: la longitud oeste debe ser menor que la este."
+    if grid.res is not None and not 0.0 < grid.res <= 10.0:
+        return f"{name}: resolución fuera de rango (0…10°)."
+    return None
+
+
+def validate_grids(grids):
+    errors, seen = [], set()
+    for g in grids:
+        err = validate_grid(g)
+        if err:
+            errors.append(err)
+        key = g.name.strip().lower()
+        if key and key in seen:
+            errors.append(f"Nombre de grilla repetido: {g.name}.")
+        seen.add(key)
+    return errors
+
+
+def factory_grids():
+    return [Grid.from_dict(dict(d, builtin=True)) for d in FACTORY_GRIDS]
+
+
+def factory_grid(gid):
+    for d in FACTORY_GRIDS:
+        if d["id"] == gid:
+            return Grid.from_dict(dict(d, builtin=True))
+    return None
+
+
+def grids_from_config(cfg):
+    """Tabla de grillas de la configuración: vacía o ausente = las de
+    fábrica. Se sanea (ids repetidos, sin id) y se agregan al final las de
+    fábrica que falten (una versión nueva trae más) sin revivir las que el
+    usuario ocultó."""
+    raw = cfg.get("grids") if isinstance(cfg, dict) else None
+    if not raw:
+        return factory_grids()
+    out, seen = [], set()
+    for d in raw:
+        try:
+            g = Grid.from_dict(d)
+        except (TypeError, ValueError):
+            continue
+        if not g.id or g.id in seen:
+            continue
+        if factory_grid(g.id) is not None:
+            g.builtin = True
+        seen.add(g.id)
+        out.append(g)
+    for f in factory_grids():
+        if f.id not in seen:
+            out.append(f)
+    return out
+
+
+def grids_to_config(grids):
+    return [g.to_dict() for g in grids]
+
+
+def find_grid(grids, gid, enabled_only=False):
+    for g in grids:
+        if g.id == gid and (g.enabled or not enabled_only):
+            return g
+    return None
+
+
+def grid_is_modified(grid):
+    f = factory_grid(grid.id) if grid.builtin else None
+    return f is not None and not grid.same_values(f)
+
+
+def new_grid_id():
+    import uuid
+    return "u_" + uuid.uuid4().hex[:8]
 
 
 def validate_area(area):
@@ -375,7 +558,10 @@ def reaches_pole(region):
 # ── Etiqueta y procedencia ───────────────────────────────────────────────────
 
 def area_tag(codes=None, mode="fir"):
-    """'SAEF+SACF' (en el orden de la tabla) o 'MANUAL'."""
+    """'SAEF+SACF' (en el orden de la tabla), la etiqueta de la grilla con
+    nombre ('FDPARG') o 'MANUAL'."""
+    if mode == "grid" and codes:
+        return str(codes[0])
     if mode != "fir" or not codes:
         return MANUAL_TAG
     return "+".join(c for c in codes)
@@ -384,7 +570,7 @@ def area_tag(codes=None, mode="fir"):
 def area_info(mode, codes, margin, region, region_requested=None):
     """Bloque `area` de la procedencia de una descarga."""
     tag = area_tag(codes, mode)
-    return {"modo": mode, "codigos": list(codes or []) if mode == "fir" else [], "etiqueta": tag,
+    return {"modo": mode, "codigos": list(codes or []) if mode in ("fir", "grid") else [], "etiqueta": tag,
             "margen_deg": float(margin or 0.0) if mode == "fir" else 0.0,
             "zona_pedida": list(region) if region is not None else None,
             "zona_servidor": list(region_requested) if region_requested is not None else None}

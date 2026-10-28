@@ -95,10 +95,11 @@ class DownloadJob:
         so["wind"] = so.get("wind") or wind_format
         self.save_opts = ge.normalize(so)
         self.wind_format = self.save_opts["wind"]
-        # Área de descarga (ver app/areas.py): 'manual' o 'fir' con los códigos
-        # de las áreas marcadas; `region` ya es la envolvente con el margen.
-        self.area_mode = area_mode if area_mode in ("manual", "fir") else "manual"
-        self.area_codes = list(area_codes or []) if self.area_mode == "fir" else []
+        # Área de descarga (ver app/areas.py): 'manual', 'fir' con los códigos
+        # de las áreas marcadas (`region` ya es la envolvente con el margen)
+        # o 'grid' con la etiqueta de la grilla con nombre.
+        self.area_mode = area_mode if area_mode in ("manual", "fir", "grid") else "manual"
+        self.area_codes = list(area_codes or []) if self.area_mode in ("fir", "grid") else []
         self.area_margin = float(area_margin or 0.0)
         self.cycle = int(cycle)
         self.steps = sorted({int(s) for s in steps})
@@ -117,7 +118,7 @@ class DownloadJob:
 
     @property
     def area_tag(self):
-        """'SAEF+SACF' o 'MANUAL': va en el nombre del archivo y en la procedencia."""
+        """'SAEF+SACF', 'FDPARG' o 'MANUAL': va en el nombre del archivo y en la procedencia."""
         from .. import areas
         return areas.area_tag(self.area_codes, self.area_mode)
 

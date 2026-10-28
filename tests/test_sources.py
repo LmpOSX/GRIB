@@ -96,7 +96,9 @@ class TestFuenteGFS(unittest.TestCase):
         self.assertTrue(s.default_basename(job).endswith("_1p25_desde_0p25"))
         self.assertEqual(s.params_for_regrid(1.25),
                          {"resolucion": "1p25", "suavizado": "ninguno", "solo_0p25": True})
-        self.assertEqual(s.params_for_regrid(1.0), {"resolucion": "1p00", "suavizado": "ninguno"})
+        # 1° también desde 0,25°: NOMADS lo publica cada 3 h y sin 275/225/175 hPa
+        self.assertEqual(s.params_for_regrid(1.0), {"resolucion": "1p00", "suavizado": "ninguno",
+                                                    "solo_0p25": True})
         self.assertIsNone(s.params_for_regrid(0.7))
         self.assertTrue(s.level_enabled(850, {}))
         self.assertFalse(s.level_enabled(275, {}))

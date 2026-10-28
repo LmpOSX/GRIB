@@ -191,7 +191,14 @@ fuente) y **Descarga y archivo**:
 * **Área** (en «Grilla y resolución»): dos modos excluyentes, cada uno en
   su renglón y el otro grisado. *Manual*: lat N/S y lon W/E (grados
   decimales con signo o grados-minutos con hemisferio, p. ej. `34°02'S`),
-  todo el globo, o "Dominio del archivo abierto". *Por FIR*: una casilla
+  todo el globo, o "Dominio del archivo abierto". *Grilla*: una grilla con
+  nombre de Preferencias ▸ Áreas / FIR (recuadro exacto y resolución, sin
+  margen); de fábrica, `FDP Arg`, la que lee el FDP de INDRA: 20°S–55°S,
+  75°W–25°W a 1°, 51 × 36 puntos (en el GFS, 1° desde 0,25°). Los campos
+  quedan bloqueados con el resumen; tocar algo pasa a *Manual* con esos
+  valores. El nombre del archivo lleva la etiqueta de la grilla
+  (`_FDPARG`). El perfil «FDP» de «Archivo a guardar» la elige solo.
+  *Por FIR*: una casilla
   por área habilitada en Preferencias ▸ Áreas / FIR (el código; el nombre
   en el tooltip); los cuatro campos se
   recalculan solos como la **envolvente** de las marcadas (la latitud más
@@ -360,9 +367,11 @@ real salvo la cuantización del empaquetado). Por eso la fuente ofrece:
   no publica 1,25° (la grilla del WAFS clásico): se baja siempre 0,25° y se
   toma un punto de cada 5, que cae justo sobre la grilla fina, así que los
   valores son los del modelo, sin interpolar (o el promedio de área, con
-  suavizado). El perfil «FDP» de «Archivo a guardar» la
-  elige solo, con «Bajar siempre 0,25°» y sin suavizado; el regrillado del
-  bloque queda entonces sin nada que hacer.
+  suavizado). Un perfil de «Archivo a guardar» con regrillado elige solo
+  esa resolución, con «Bajar siempre 0,25°» y sin suavizado; el regrillado
+  del bloque queda entonces sin nada que hacer. El perfil «FDP» (1°) también
+  baja 0,25°: NOMADS publica 1° sólo cada 3 h y sin los niveles de 275, 225
+  y 175 hPa que lee el FDP.
 * **Bajar siempre 0,25° y regrillar localmente**: pide el producto fino y
   lo submuestrea a la resolución objetivo (el archivo resulta igual al
   producto grueso de NOAA). Sirve también para tener niveles intermedios a
@@ -997,7 +1006,9 @@ inventario dice `FORMATO: etiquetado por FL, modo …` y FUENTE agrega
 **Exportar a WAFS…** (Archivo, ⌘⇧W) toma lo cargado y escribe GRIB2 WAFS:
 todos los plazos y niveles o una selección (plazos, rango de FL), sólo
 UGRD/VGRD/TMP o todas las variables, recorte geográfico opcional (el
-recuadro visible como valor inicial), el bloque «Archivo a guardar» (perfil,
+recuadro visible como valor inicial; el combo `Grilla` recorta a una grilla
+con nombre y regrilla a su resolución: `FDP Arg` da los 51 × 36 puntos del
+FDP de INDRA, lo mismo que hace el perfil «FDP»), el bloque «Archivo a guardar» (perfil,
 regrillado bilineal a 0,25° como el operativo, 0,50°, 1,00° para el FDP o
 1,25° como el WAFS clásico de WAFC London, viento, decimales, orden de las
 celdas, longitudes…), un archivo por plazo con el nombre
@@ -1029,8 +1040,10 @@ cuatro recuadros: **Corrida y plazo** (fecha, ciclo 00/06/12/18 y plazos
 desde / hasta / cada como en la descarga, con la cantidad y la validez
 resultantes; el mismo perfil se escribe en cada plazo); **Área y grilla** (`Manual` con Lat N /
 Lat S / Lon W / Lon E, o `Por FIR` con las casillas de las áreas
-configuradas, Todas / Ninguna y Margen; un botón `Global` pone 90N–90S y
-180W–180E; resolución 0,25°, 0,50°, 1,00° o 1,25°, y con la vuelta completa
+configuradas, Todas / Ninguna y Margen, o `Grilla` con una grilla con
+nombre, que fija zona y resolución: `FDP Arg` es la del FDP de INDRA,
+20°S–55°S, 75°W–25°W a 1°, 51 × 36 puntos, y el perfil «FDP» la elige solo;
+un botón `Global` pone 90N–90S y 180W–180E; resolución 0,25°, 0,50°, 1,00° o 1,25°, y con la vuelta completa
 la grilla no repite el meridiano de corte: a 1,25° son 288 × 145 puntos,
 como el WAFS clásico de WAFC London; la
 zona se redondea hacia afuera a la resolución y se muestra la grilla
@@ -1143,13 +1156,29 @@ aunque coincidan con un perfil:
 | NOAA GFS | — | U/V | origen | según el modo | origen | origen | N→S, O→E | desde Greenwich |
 | WAFS WAFC Washington | 0,25° | U/V | origen | ISA exacta | origen | origen | N→S, O→E | desde 180°W (−180…180) |
 | WAFS WAFC London | 0,25° | U/V | origen | ISA exacta | origen | origen | N→S, O→E | desde Greenwich (0…360) |
-| FDP | 1,25° | U/V | 1 y 1 | nominal (OACI17, OACI56, INDRA14) | JPEG 2000 | 4 | S→N, O→E | desde Greenwich |
+| FDP | 1,00° | U/V | 1 y 1 | nominal (OACI17, OACI56, INDRA14) | JPEG 2000 | 4 | S→N, O→E | desde Greenwich |
+
+Los perfiles se editan en **Preferencias ▸ Perfiles**: lista y, al lado, el
+mismo bloque como formulario más el nombre, si se muestra en los diálogos,
+la **grilla con nombre** y el **modo de FL** que el perfil arrastra al
+elegirlo (el FDP trae la grilla `FDP Arg` y el modo INDRA de 14 FL). Los de
+fábrica se editan y renombran, no se borran (se ocultan); «Restaurar de
+fábrica» devuelve uno o todos; Agregar y Duplicar crean propios. La
+configuración guarda los valores sueltos, nunca «el perfil elegido»: borrar
+un perfil no rompe nada, y si dos perfiles tienen los mismos valores el
+combo muestra el que se eligió a mano. Las grillas con nombre se editan en
+Preferencias ▸ Áreas / FIR (nombre, recuadro, resolución, los puntos que
+resultan, habilitada y nota), con los mismos botones.
 
 Los dos WAFS son el mismo formato y sólo cambian dónde empieza la vuelta.
-El FDP reproduce la grilla de los boletines GTS `YUXM70 EGRR`
-(288 × 145, 90S/0E a 90N/358,75E, `scanningMode` 64, 70000 Pa para FL100),
-con la versión de tablas 4 y JPEG 2000 sin pérdida (10 bits con un decimal
-en el viento, como el original). No cambia el centro (EGRR diría que el dato
+El FDP es lo que lee el FDP de INDRA (proceso `m_323_grib`): una grilla de
+1° en grados enteros que cubra 75°W–25°W, 55°S–20°S (la recorta en 51 × 36
+puntos; con otra resolución el recorte no da 1836 valores por campo y
+rechaza el archivo con `CONSTRAINT_ERROR`), U/V en m/s y T en K, las 14
+capas de 850 a 100 hPa con la etiqueta nominal y plazos de +1 a +48 h desde
+la hora en curso (la hora en curso la descarta). El resto es el formato de
+los boletines GTS `YUXM70 EGRR` (`scanningMode` 64, 70000 Pa para FL100,
+tablas 4 y JPEG 2000 sin pérdida con un decimal en el viento). No cambia el centro (EGRR diría que el dato
 es del Met Office; se puede elegir a mano, con el subcentro 5) ni escribe el
 sobre GTS (cabeceras WMO).
 
